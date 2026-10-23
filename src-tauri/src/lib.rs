@@ -1,3 +1,4 @@
+mod backup;
 mod connection;
 mod error;
 mod monitor;
@@ -16,6 +17,7 @@ use crate::state::AppState;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let result = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
             app.manage(AppState::new(ProfileStore::new(dir)));
@@ -40,6 +42,9 @@ pub fn run() {
             monitor::interface_stats,
             monitor::routes,
             monitor::wireguard_dump,
+            monitor::dhcp_leases,
+            backup::export_config,
+            backup::import_config,
             monitor::open_stream,
             monitor::open_terminal,
             monitor::term_write,

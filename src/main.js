@@ -12,20 +12,25 @@ import { openRevisions } from "./components/system.js";
 import { openTerminal } from "./components/terminal.js";
 import { openSyslog } from "./components/syslog.js";
 import { openPing, openTraceroute, openCapture } from "./components/tools.js";
+import { openFirewall } from "./components/firewall.js";
+import { openNat } from "./components/nat.js";
+import { openDhcpLeases } from "./components/dhcp.js";
+import { openBackup } from "./components/backup.js";
 
-// Left menu. Firewall/NAT/etc. use the generic config editor rooted at that node.
+// Left menu. Sections without a dedicated window use the generic config editor.
 const MENU = [
   { label: "Interfaces", open: openInterfaces },
   {
     label: "IP",
     children: [
       { label: "Routes", open: openRoutes },
+      { label: "DHCP Leases", open: openDhcpLeases },
       { label: "DHCP Server", open: () => openConfigTree(["service", "dhcp-server"], "DHCP Server") },
       { label: "DNS Forwarding", open: () => openConfigTree(["service", "dns", "forwarding"], "DNS Forwarding") },
     ],
   },
-  { label: "Firewall", open: () => openConfigTree(["firewall"], "Firewall") },
-  { label: "NAT", open: () => openConfigTree(["nat"], "NAT") },
+  { label: "Firewall", open: openFirewall },
+  { label: "NAT", open: openNat },
   { label: "VPN", open: openVpn },
   { label: "Routing Protocols", open: () => openConfigTree(["protocols"], "Protocols") },
   { label: "VRF", open: () => openConfigTree(["vrf"], "VRF") },
@@ -42,6 +47,7 @@ const MENU = [
     label: "System",
     children: [
       { label: "Revisions / Rollback", open: openRevisions },
+      { label: "Backup / Restore", open: openBackup },
       { label: "System Settings", open: () => openConfigTree(["system"], "System") },
       { label: "Services", open: () => openConfigTree(["service"], "Services") },
       { label: "Full Configuration", open: () => openConfigTree([], "Configuration") },

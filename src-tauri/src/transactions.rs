@@ -28,7 +28,7 @@ pub struct TxStatus {
     message: String,
 }
 
-async fn status(state: &AppState, message: String) -> TxStatus {
+pub(crate) async fn status(state: &AppState, message: String) -> TxStatus {
     let mut tx = state.tx.lock().await;
     let now = Instant::now();
     if matches!(tx.confirm_deadline, Some(d) if d <= now) {
@@ -52,7 +52,7 @@ fn check_minutes(m: u32) -> AppResult<u32> {
     Ok(m)
 }
 
-async fn record_commit(state: &AppState, confirm_minutes: u32) {
+pub(crate) async fn record_commit(state: &AppState, confirm_minutes: u32) {
     let mut tx = state.tx.lock().await;
     tx.unsaved = true;
     tx.confirm_deadline = if confirm_minutes > 0 {

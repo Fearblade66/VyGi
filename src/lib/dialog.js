@@ -81,6 +81,9 @@ export async function formDialog(title, fields, submit, { intro, okLabel = "OK" 
       input = h("textarea", { rows: f.rows || 4, value: f.value ?? "" });
     } else if (f.type === "checkbox") {
       input = h("input", { type: "checkbox", checked: !!f.value });
+    } else if (f.type === "multicheck") {
+      const chosen = new Set(f.value || []);
+      input = h("span", (f.options || []).map((o) => h("label", { style: { marginRight: "10px", whiteSpace: "nowrap" } }, h("input", { type: "checkbox", value: o, checked: chosen.has(o) }), " ", o)));
     } else {
       input = h("input", { type: f.type || "text", value: f.value ?? "", placeholder: f.placeholder || "" });
     }
@@ -96,7 +99,8 @@ export async function formDialog(title, fields, submit, { intro, okLabel = "OK" 
     const out = {};
     for (const f of fields) {
       const el = inputs[f.name];
-      out[f.name] = f.type === "checkbox" ? el.checked : f.type === "number" ? Number(el.value) : el.value;
+      if (f.type === "multicheck") out[f.name] = [...el.querySelectorAll("input:checked")].map((c) => c.value);
+      else out[f.name] = f.type === "checkbox" ? el.checked : f.type === "number" ? Number(el.value) : el.value;
     }
     return out;
   };

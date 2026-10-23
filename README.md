@@ -16,7 +16,11 @@ Targets current VyOS (1.5 / rolling). The API calls were checked against `vyos-1
 | Interfaces | Live table with flags, type, comment, IPs, MAC, MTU, Tx/Rx rates and a traffic sparkline. You can add VLAN, bridge or dummy interfaces, remove, enable and disable them, and double-click a row to edit it. |
 | IP → Routes | The kernel routing table per VRF, for IPv4 or IPv6. You can add and remove static routes. |
 | VPN | WireGuard peers (handshake age, traffic, named from your config). IPsec and OpenVPN status. |
-| Firewall, NAT, DHCP, DNS, Protocols, VRF, System, Services | A config tree editor for that section: browse it, set values, delete nodes, and view it as `set` commands. |
+| Firewall | Rule table per chain (forward / input / output / custom chains) for IPv4 and IPv6. Add, edit, remove, enable, disable and reorder rules, set the default action (with lock-out warnings), and create custom chains. Groups open in the config editor. |
+| NAT | Source NAT (masquerade) and Destination NAT (port forwards) as rule tables with guided forms. |
+| IP → DHCP Leases | Who got which address, with **Make Static** to reserve an address for a device. |
+| System → Backup / Restore | Save the config to a file on your computer (config.boot or `set` commands), or restore a config.boot backup live, protected by Safe Mode. |
+| DHCP/DNS server settings, Protocols, VRF, System, Services | A config tree editor for that section: browse it, set values, delete nodes, and view it as `set` commands. |
 | Tools | Ping, Traceroute, and Packet Capture ("Torch", using tcpdump). |
 | Log | Live system journal with severity and text filters. |
 | System → Revisions | Commit history, a colored diff of each commit, and rollback to any revision **without rebooting**. |
@@ -99,16 +103,19 @@ The original plan had a few problems:
 ## Limitations
 
 - Packet Capture shows raw tcpdump lines. It is not Winbox Torch's per-flow rate table.
-- The Firewall, NAT, DHCP and other sections use the generic config tree editor, not purpose-built forms.
+- Firewall and NAT forms cover the common fields (addresses, ports, interfaces, state, groups). Other options (rate limits, TCP flags, etc.) are kept when you edit a rule but are only editable in the config tree.
+- DHCP and DNS server settings, routing protocols, VPN setup and system settings use the generic config tree editor, not purpose-built forms.
+- Backup restore only accepts config.boot-format files, not `set` command exports.
 - You can be connected to one router at a time.
-- Log and Packet Capture use `sudo` over SSH. That works by default for VyOS admin users.
+- Log, Packet Capture and DHCP Leases use `sudo` over SSH. That works by default for VyOS admin users.
 
 ## Project layout
 
 ```
 index.html, src/              UI (plain JavaScript + Vite)
   main.js                     menu and app startup
-  lib/                        windows (mdi.js), tables, dialogs, session/Safe Mode
+  lib/                        windows (mdi.js), tables, dialogs, session/Safe Mode,
+                              rules.js (shared firewall/NAT rule editor)
   components/                 one file per window
 src-tauri/src/                Rust backend
   vyos_api.rs                 HTTPS API client
@@ -116,7 +123,8 @@ src-tauri/src/                Rust backend
   ssh.rs                      SSH terminal / commands / streams, host-key pinning
   connection.rs               connect/disconnect, saved routers
   transactions.rs             commit, Safe Mode confirm, save, revisions, rollback
-  monitor.rs                  live stats, routes, WireGuard, log/ping/capture streams
+  monitor.rs                  live stats, routes, WireGuard, DHCP leases, log/ping/capture streams
+  backup.rs                   config export/import
   security.rs                 OS keychain + routers.json
   state.rs, error.rs
 ```

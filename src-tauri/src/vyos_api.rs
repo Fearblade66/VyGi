@@ -139,6 +139,17 @@ impl VyosApi {
             .await
     }
 
+    /// Running config in curly-brace config.boot syntax (no version footer).
+    pub async fn show_config_raw(&self) -> AppResult<String> {
+        let v = self
+            .post(
+                "/retrieve",
+                json!({ "op": "showConfig", "path": [], "configFormat": "raw" }),
+            )
+            .await?;
+        Ok(value_to_text(v))
+    }
+
     pub async fn return_value(&self, path: &[String]) -> AppResult<Option<String>> {
         let v = self
             .post("/retrieve", json!({ "op": "returnValue", "path": path }))

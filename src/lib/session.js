@@ -53,6 +53,12 @@ export async function applyChanges(commands, what = "Changes") {
   return tx;
 }
 
+/** Updates the toolbar from a TxStatus returned by a command. */
+export function applyTxStatus(tx) {
+  applyTx(tx);
+  listeners.forEach((fn) => fn(session));
+}
+
 export async function rollbackTo(rev) {
   const tx = await api.rollbackTo(rev, safeMinutes());
   applyTx(tx);

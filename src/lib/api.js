@@ -27,6 +27,9 @@ export const api = {
   interfaceStats: () => invoke("interface_stats"),
   routes: (family, vrf) => invoke("routes", { family, vrf }),
   wireguardDump: () => invoke("wireguard_dump"),
+  dhcpLeases: (family) => invoke("dhcp_leases", { family }),
+  exportConfig: (file, format) => invoke("export_config", { file, format }),
+  importConfig: (file, confirmMinutes) => invoke("import_config", { file, confirmMinutes }),
 
   /** Opens a streaming SSH command. `onEvent` gets {event:"data"|"closed", data}. */
   async openStream(kind, onEvent) {
