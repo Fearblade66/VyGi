@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VyGi</title>
+    <link rel="icon" href="data:," />
+  </head>
+  <body>
+    <div id="app">
+      <header id="toolbar">
+        <button id="btn-connect" class="tb-btn">Connect</button>
+        <span class="tb-sep"></span>
+        <label class="tb-check" title="Changes auto-revert unless you press Confirm (VyOS commit-confirm)">
+          <input type="checkbox" id="safe-mode" checked /> Safe Mode
+        </label>
+        <select id="safe-minutes" title="Minutes before an unconfirmed change is reverted">
+          <option value="1">1 min</option>
+          <option value="2" selected>2 min</option>
+          <option value="5">5 min</option>
+          <option value="10">10 min</option>
+        </select>
+        <button id="btn-confirm" class="tb-btn badge-warn" hidden>Confirm</button>
+        <button id="btn-save" class="tb-btn" disabled title="Write running config to the boot config">Save</button>
+        <span class="tb-sep"></span>
+        <button id="btn-terminal" class="tb-btn" disabled>New Terminal</button>
+        <span class="tb-spacer"></span>
+        <span id="conn-label">Not connected</span>
+      </header>
+      <div id="body">
+        <div id="brand"><span>VyGi</span></div>
+        <nav id="menu"></nav>
+        <main id="workspace"></main>
+      </div>
+      <footer id="statusbar"><span id="status-text">Ready</span></footer>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
