@@ -7,7 +7,7 @@ use tauri::State;
 
 use crate::connection::path;
 use crate::error::{AppError, AppResult};
-use crate::state::AppState;
+use crate::state::{AppState, Connection};
 use crate::transactions::{record_commit, status, TxStatus};
 
 /// Refuse to load anything this big; real configs are a few hundred KB.
@@ -30,6 +30,20 @@ pub struct ExportResult {
     has_version_footer: bool,
 }
 
+/// The running config as a full config.boot. Revision 0 of the commit archive
+/// includes the version footer that migrations rely on; fall back to the raw
+/// config tree if the archive is unavailable.
+pub(crate) async fn running_boot(conn: &Connection) -> AppResult<String> {
+    match conn
+        .api
+        .show(&path(&["system", "commit", "file", "0"]))
+        .await
+    {
+        Ok(t) if !t.trim().is_empty() => Ok(t),
+        _ => conn.api.show_config_raw().await,
+    }
+}
+
 /// Writes the running config to `file` (a path the user picked in a save dialog).
 #[tauri::command]
 pub async fn export_config(
@@ -39,16 +53,7 @@ pub async fn export_config(
 ) -> AppResult<ExportResult> {
     let conn = state.conn().await?;
     let text = match format {
-        // Revision 0 of the commit archive is the running config as a full
-        // config.boot, including the version footer that migrations rely on.
-        ExportFormat::Boot => match conn
-            .api
-            .show(&path(&["system", "commit", "file", "0"]))
-            .await
-        {
-            Ok(t) if !t.trim().is_empty() => t,
-            _ => conn.api.show_config_raw().await?,
-        },
+        ExportFormat::Boot => running_boot(&conn).await?,
         ExportFormat::Commands => conn.api.show(&path(&["configuration", "commands"])).await?,
     };
     if text.trim().is_empty() {

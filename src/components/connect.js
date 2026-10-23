@@ -3,6 +3,7 @@ import { api, errorText } from "../lib/api.js";
 import { h, clear, setStatus } from "../lib/dom.js";
 import { modal, confirmBox, alertBox } from "../lib/dialog.js";
 import { setConnected, refreshTx } from "../lib/session.js";
+import { runCheckup } from "./checkup.js";
 
 export async function showConnectDialog() {
   const routers = await api.listRouters().catch(() => []);
@@ -84,6 +85,7 @@ export async function showConnectDialog() {
   );
 
   const trust = { tls: null, ssh: null };
+  let connected = null;
   await modal("Connect to VyOS", content, [
     { label: "Cancel", value: "cancel" },
     { label: "Connect", value: "connect", primary: true },
@@ -107,10 +109,9 @@ export async function showConnectDialog() {
     for (let attempt = 0; attempt < 3; attempt++) {
       setStatus(`Connecting to ${f.host.value}…`);
       try {
-        const info = await api.connect(req());
-        setConnected(info);
-        setStatus(`Connected to ${info.hostname}.`);
-        if (info.revertAction !== "reload") warnRevertAction();
+        connected = await api.connect(req());
+        setConnected(connected);
+        setStatus(`Connected to ${connected.hostname}.`);
         return true;
       } catch (e) {
         const accepted = await handleTrust(e, trust);
@@ -123,6 +124,9 @@ export async function showConnectDialog() {
     }
     return false;
   });
+  if (!connected) return;
+  if (connected.revertAction !== "reload") await warnRevertAction();
+  await runCheckup();
 }
 
 /** Asks the user about an unknown or changed fingerprint. Returns true if accepted. */

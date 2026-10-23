@@ -12,6 +12,8 @@ use crate::vyos_api::VyosApi;
 
 /// A live connection to one router.
 pub struct Connection {
+    /// `user@host`, used to file this router's local backups.
+    pub profile_id: String,
     pub api: VyosApi,
     pub ssh: SshClient,
 }

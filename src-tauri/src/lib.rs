@@ -1,4 +1,5 @@
 mod backup;
+mod checkup;
 mod connection;
 mod error;
 mod monitor;
@@ -46,6 +47,10 @@ pub fn run() {
             monitor::dhcp_leases,
             wireguard::wireguard_keypair,
             wireguard::wireguard_psk,
+            checkup::connect_checkup,
+            checkup::history_list,
+            checkup::history_diff,
+            checkup::history_restore,
             backup::export_config,
             backup::save_text_file,
             backup::import_config,

@@ -22,7 +22,8 @@ Targets current VyOS (1.5 / rolling). The API calls were checked against `vyos-1
 | IP → DHCP Server | Set up a DHCP server on an interface (pool, gateway, DNS and lease are suggested for you), edit or remove it, see leases, and manage static mappings. **Make Static** turns a lease into a reservation. |
 | IP → DNS | The router's own DNS servers, DNS forwarding (the router answers DNS for your network) and static host names. |
 | System → Users | Router login accounts: add or remove users, change passwords, add or remove SSH keys. Stops you from deleting the account you're logged in with. |
-| System → Backup / Restore | Save the config to a file on your computer (config.boot or `set` commands), or restore a config.boot backup live, protected by Safe Mode. |
+| Check-up on connect | Every time you connect, VyGi:<br>1. **Backs up** the config to your computer if it changed since last time (last 30 versions kept per router).<br>2. Shows **what changed since your last visit**, as `set` lines, including changes made by others or from the CLI. Secrets are masked.<br>3. Runs a **health check**: uptime and recent reboots, load, memory, disk, interfaces that should be up but aren't, errors logged in the last 24 hours, and whether the running config differs from the saved boot config.<br>The window only pops up when there's something to see; otherwise there's a one-line summary in the status bar. Run it any time from System → Check-up. |
+| System → Backup / Restore | Save the config to a file on your computer (config.boot or `set` commands), or restore a config.boot backup live, protected by Safe Mode. The **History** tab lists the automatic snapshots, shows what changed in each one, and restores any of them. |
 | Protocols, VRF, System, Services | A config tree editor for that section: browse it, set values, delete nodes, and view it as `set` commands. |
 | Tools | Ping, Traceroute, and Packet Capture ("Torch", using tcpdump). |
 | Log | Live system journal with severity and text filters. |
@@ -36,6 +37,7 @@ Targets current VyOS (1.5 / rolling). The API calls were checked against `vyos-1
 - **HTTPS certificate pinning.** VyOS uses a self-signed certificate. On the first connection the app shows its SHA-256 fingerprint and asks you to trust it. If the certificate changes later, you get a loud warning. TLS verification is never switched off.
 - **SSH host key pinning** works the same way.
 - **Secrets stay in the OS keychain.** The API key and SSH password go to the Windows Credential Manager, macOS Keychain or GNOME Keyring/KWallet. `routers.json` holds only host, ports, user and fingerprints.
+- **Local backups contain secrets** (WireGuard keys, password hashes, API keys), just like any VyOS config backup. On macOS and Linux they are created readable only by your user account. Keep the computer secure.
 - **No shell injection from the UI.** Interface and VRF names are validated, and capture filters and ping targets are shell-quoted.
 
 ## 1. Prepare the router (once)
@@ -130,6 +132,7 @@ src-tauri/src/                Rust backend
   monitor.rs                  live stats, routes, WireGuard, DHCP leases, log/ping/capture streams
   backup.rs                   config export/import
   wireguard.rs                WireGuard key generation (local)
+  checkup.rs                  connect check-up: snapshots, changes, health
   security.rs                 OS keychain + routers.json
   state.rs, error.rs
 ```

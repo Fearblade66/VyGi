@@ -158,7 +158,11 @@ pub async fn connect(state: State<'_, AppState>, req: ConnectRequest) -> AppResu
     *state.tx.lock().await = TxState::default();
     let profile_id = profile.id();
     state
-        .set_conn(Some(Arc::new(Connection { api, ssh })))
+        .set_conn(Some(Arc::new(Connection {
+            profile_id: profile_id.clone(),
+            api,
+            ssh,
+        })))
         .await;
     Ok(ConnectInfo {
         profile,

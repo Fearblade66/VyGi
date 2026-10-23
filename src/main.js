@@ -17,6 +17,7 @@ import { openNat } from "./components/nat.js";
 import { openDhcp, openDhcpLeases } from "./components/dhcp.js";
 import { openDns } from "./components/dns.js";
 import { openUsers } from "./components/users.js";
+import { runCheckup } from "./components/checkup.js";
 import { openBackup } from "./components/backup.js";
 
 // Left menu. Sections without a dedicated window use the generic config editor.
@@ -49,7 +50,8 @@ const MENU = [
     label: "System",
     children: [
       { label: "Revisions / Rollback", open: openRevisions },
-      { label: "Backup / Restore", open: openBackup },
+      { label: "Check-up", open: () => runCheckup({ alwaysShow: true }) },
+      { label: "Backup / Restore", open: () => openBackup() },
       { label: "Users", open: openUsers },
       { label: "System Settings", open: () => openConfigTree(["system"], "System") },
       { label: "Services", open: () => openConfigTree(["service"], "Services") },

@@ -31,6 +31,10 @@ export const api = {
   wireguardKeypair: () => invoke("wireguard_keypair"),
   wireguardPsk: () => invoke("wireguard_psk"),
   saveTextFile: (file, contents) => invoke("save_text_file", { file, contents }),
+  connectCheckup: () => invoke("connect_checkup"),
+  historyList: () => invoke("history_list"),
+  historyDiff: (id) => invoke("history_diff", { id }),
+  historyRestore: (id, confirmMinutes) => invoke("history_restore", { id, confirmMinutes }),
   exportConfig: (file, format) => invoke("export_config", { file, format }),
   importConfig: (file, confirmMinutes) => invoke("import_config", { file, confirmMinutes }),
 
