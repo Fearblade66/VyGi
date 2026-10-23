@@ -5560,6 +5560,8 @@ dependencies = [
 name = "vygi"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
+ "getrandom 0.4.3",
  "hex",
  "keyring",
  "reqwest",
@@ -5573,6 +5575,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "thiserror 2.0.21",
  "tokio",
+ "x25519-dalek",
 ]
 
 [[package]]
@@ -6312,6 +6315,17 @@ dependencies = [
  "libc",
  "once_cell",
  "pkg-config",
+]
+
+[[package]]
+name = "x25519-dalek"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7e8131a03190127fb2263afc72b322ecadae46b6ff8c6f399ff5d02f5559af6"
+dependencies = [
+ "curve25519-dalek",
+ "rand_core",
+ "zeroize",
 ]
 
 [[package]]

@@ -28,6 +28,9 @@ export const api = {
   routes: (family, vrf) => invoke("routes", { family, vrf }),
   wireguardDump: () => invoke("wireguard_dump"),
   dhcpLeases: (family) => invoke("dhcp_leases", { family }),
+  wireguardKeypair: () => invoke("wireguard_keypair"),
+  wireguardPsk: () => invoke("wireguard_psk"),
+  saveTextFile: (file, contents) => invoke("save_text_file", { file, contents }),
   exportConfig: (file, format) => invoke("export_config", { file, format }),
   importConfig: (file, confirmMinutes) => invoke("import_config", { file, confirmMinutes }),
 

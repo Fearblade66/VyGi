@@ -109,3 +109,47 @@ export function ipv4InCidr(ip, cidr) {
   const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
   return (a & mask) >>> 0 === (b & mask) >>> 0;
 }
+
+function intToIpv4(n) {
+  return [24, 16, 8, 0].map((s) => (n >>> s) & 255).join(".");
+}
+
+/** "192.168.1.1/24" -> { ip, bits, network: "192.168.1.0/24", first, last } (IPv4 only, else null). */
+export function parseIpv4Cidr(s) {
+  const m = String(s || "").trim().match(/^(\d+\.\d+\.\d+\.\d+)\/(\d{1,2})$/);
+  if (!m) return null;
+  const ip = ipv4ToInt(m[1]);
+  const bits = Number(m[2]);
+  if (ip == null || bits > 32) return null;
+  const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
+  const net = (ip & mask) >>> 0;
+  const bcast = (net | (~mask >>> 0)) >>> 0;
+  return {
+    ip: m[1],
+    bits,
+    network: `${intToIpv4(net)}/${bits}`,
+    // usable host range (for /31 and /32 the whole block)
+    first: bits >= 31 ? intToIpv4(net) : intToIpv4(net + 1),
+    last: bits >= 31 ? intToIpv4(bcast) : intToIpv4(bcast - 1),
+  };
+}
+
+/** First address in `cidr` not in `used` (list of IPs or IP/prefix strings), or null. */
+export function nextFreeIpv4(cidr, used) {
+  const c = parseIpv4Cidr(cidr);
+  if (!c) return null;
+  const taken = new Set(used.map((u) => String(u).split("/")[0]));
+  for (let n = ipv4ToInt(c.first), end = ipv4ToInt(c.last); n <= end; n++) {
+    const ip = intToIpv4(n);
+    if (!taken.has(ip)) return ip;
+  }
+  return null;
+}
+
+/** Names of a tag node's children (e.g. name-server servers), whatever JSON shape it came in. */
+export function tagKeys(v) {
+  if (v == null) return [];
+  if (typeof v === "string") return [v];
+  if (Array.isArray(v)) return v.map(String);
+  return Object.keys(v);
+}

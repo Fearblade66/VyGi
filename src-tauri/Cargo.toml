@@ -2,6 +2,7 @@
 name = "vygi"
 version = "0.1.0"
 description = "Winbox-style desktop manager for VyOS routers"
+license = "GPL-3.0-or-later"
 edition = "2021"
 rust-version = "1.80"
 
@@ -22,6 +23,9 @@ rustls = { version = "0.23", default-features = false, features = ["std", "tls12
 russh = "0.64"
 keyring = "4"
 tauri-plugin-dialog = "2"
+x25519-dalek = { version = "3", features = ["static_secrets"] }
+getrandom = "0.4"
+base64 = "0.23"
 thiserror = "2"
 sha2 = "0.11"
 hex = "0.4"

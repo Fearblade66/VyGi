@@ -3,6 +3,8 @@ import { api, errorText } from "../lib/api.js";
 import { h, setStatus, formatBytes, formatAge } from "../lib/dom.js";
 import { openWindow, tabs } from "../lib/mdi.js";
 import { makeTable, filterBox } from "../lib/table.js";
+import { openConfigTree } from "./config_tree.js";
+import { quickSetup, addPeer, removePeer } from "./wireguard.js";
 
 /**
  * Parses `wg show all dump`. Peer lines have 9 tab-separated fields:
@@ -47,7 +49,22 @@ export function openVpn() {
     ],
     { rowKey: (r) => r.iface + r.publicKey, rowClass: (r) => (r.flags === "X" ? "disabled" : "") },
   );
-  t.pages.WireGuard.append(h("div.win-toolbar", h("button", { on: { click: () => loadWg() } }, "⟳"), h("span.hint", "R = handshake in last 3 minutes"), h("span.grow"), filterBox(wg)), wg.wrap, wg.count);
+  const reloadAll = () => loadWgNames().then(loadWg);
+  t.pages.WireGuard.append(
+    h(
+      "div.win-toolbar",
+      h("button", { title: "Create a WireGuard server and a first device", on: { click: () => quickSetup(reloadAll) } }, "Quick Setup…"),
+      h("button.icon-add", { title: "Add a device (peer) and get its config/QR code", on: { click: () => addPeer(reloadAll) } }, "+ Device"),
+      h("button.icon-remove", { title: "Remove the selected peer", on: { click: () => removePeer(wg.selected(), reloadAll) } }, "−"),
+      h("button", { title: "Raw WireGuard configuration", on: { click: () => openConfigTree(["interfaces", "wireguard"], "WireGuard Config") } }, "Config…"),
+      h("button", { on: { click: () => loadWg() } }, "⟳"),
+      h("span.hint", "R = handshake in last 3 minutes"),
+      h("span.grow"),
+      filterBox(wg),
+    ),
+    wg.wrap,
+    wg.count,
+  );
 
   let peerNames = new Map();
   async function loadWgNames() {

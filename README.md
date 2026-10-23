@@ -15,12 +15,15 @@ Targets current VyOS (1.5 / rolling). The API calls were checked against `vyos-1
 |---|---|
 | Interfaces | Live table with flags, type, comment, IPs, MAC, MTU, Tx/Rx rates and a traffic sparkline. You can add VLAN, bridge or dummy interfaces, remove, enable and disable them, and double-click a row to edit it. |
 | IP → Routes | The kernel routing table per VRF, for IPv4 or IPv6. You can add and remove static routes. |
-| VPN | WireGuard peers (handshake age, traffic, named from your config). IPsec and OpenVPN status. |
+| VPN → WireGuard | **Quick Setup** creates a WireGuard server and your first device in one step, optionally opening the firewall port, adding NAT for internet access and DNS for clients. **+ Device** adds more phones and laptops. Each device gets a config file and a **QR code** for the WireGuard app. Keys are generated on your computer, so a device's private key never touches the router. Also shows live peers (handshake age, traffic). |
+| VPN → IPsec / OpenVPN | Status. |
 | Firewall | Rule table per chain (forward / input / output / custom chains) for IPv4 and IPv6. Add, edit, remove, enable, disable and reorder rules, set the default action (with lock-out warnings), and create custom chains. Groups open in the config editor. |
 | NAT | Source NAT (masquerade) and Destination NAT (port forwards) as rule tables with guided forms. |
-| IP → DHCP Leases | Who got which address, with **Make Static** to reserve an address for a device. |
+| IP → DHCP Server | Set up a DHCP server on an interface (pool, gateway, DNS and lease are suggested for you), edit or remove it, see leases, and manage static mappings. **Make Static** turns a lease into a reservation. |
+| IP → DNS | The router's own DNS servers, DNS forwarding (the router answers DNS for your network) and static host names. |
+| System → Users | Router login accounts: add or remove users, change passwords, add or remove SSH keys. Stops you from deleting the account you're logged in with. |
 | System → Backup / Restore | Save the config to a file on your computer (config.boot or `set` commands), or restore a config.boot backup live, protected by Safe Mode. |
-| DHCP/DNS server settings, Protocols, VRF, System, Services | A config tree editor for that section: browse it, set values, delete nodes, and view it as `set` commands. |
+| Protocols, VRF, System, Services | A config tree editor for that section: browse it, set values, delete nodes, and view it as `set` commands. |
 | Tools | Ping, Traceroute, and Packet Capture ("Torch", using tcpdump). |
 | Log | Live system journal with severity and text filters. |
 | System → Revisions | Commit history, a colored diff of each commit, and rollback to any revision **without rebooting**. |
@@ -104,7 +107,8 @@ The original plan had a few problems:
 
 - Packet Capture shows raw tcpdump lines. It is not Winbox Torch's per-flow rate table.
 - Firewall and NAT forms cover the common fields (addresses, ports, interfaces, state, groups). Other options (rate limits, TCP flags, etc.) are kept when you edit a rule but are only editable in the config tree.
-- DHCP and DNS server settings, routing protocols, VPN setup and system settings use the generic config tree editor, not purpose-built forms.
+- Routing protocols, IPsec/OpenVPN setup and most system settings use the generic config tree editor, not purpose-built forms.
+- The forms target VyOS 1.5 config paths (e.g. DHCP `subnet-id` and `option …`). VyOS 1.4 is not supported by those forms.
 - Backup restore only accepts config.boot-format files, not `set` command exports.
 - You can be connected to one router at a time.
 - Log, Packet Capture and DHCP Leases use `sudo` over SSH. That works by default for VyOS admin users.
@@ -125,8 +129,15 @@ src-tauri/src/                Rust backend
   transactions.rs             commit, Safe Mode confirm, save, revisions, rollback
   monitor.rs                  live stats, routes, WireGuard, DHCP leases, log/ping/capture streams
   backup.rs                   config export/import
+  wireguard.rs                WireGuard key generation (local)
   security.rs                 OS keychain + routers.json
   state.rs, error.rs
 ```
 
 Run the backend tests with `cd src-tauri && cargo test`.
+
+## Credits and license
+
+Licensed under the GNU GPL v3 (see `LICENSE`).
+
+Several features were designed after [VyManager](https://github.com/Community-VyProjects/VyManager) (GPLv3): the WireGuard Quick Setup flow and client config, the VyOS 1.5 DHCP option layout, and DNS forwarding paths. VyGi re-implements them in its own code and checks them against the vyos-1x interface definitions.

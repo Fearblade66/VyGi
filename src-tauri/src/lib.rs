@@ -8,6 +8,7 @@ mod state;
 mod tls;
 mod transactions;
 mod vyos_api;
+mod wireguard;
 
 use tauri::Manager;
 
@@ -43,7 +44,10 @@ pub fn run() {
             monitor::routes,
             monitor::wireguard_dump,
             monitor::dhcp_leases,
+            wireguard::wireguard_keypair,
+            wireguard::wireguard_psk,
             backup::export_config,
+            backup::save_text_file,
             backup::import_config,
             monitor::open_stream,
             monitor::open_terminal,

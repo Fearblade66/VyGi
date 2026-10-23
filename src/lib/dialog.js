@@ -69,7 +69,7 @@ export async function confirmBox(title, message, okLabel = "OK") {
  * `submit(values)` runs on OK; throw or return false to keep the dialog open.
  * Resolves to the values, or null on cancel.
  */
-export async function formDialog(title, fields, submit, { intro, okLabel = "OK" } = {}) {
+export async function formDialog(title, fields, submit, { intro, okLabel = "OK", onChange } = {}) {
   const inputs = {};
   const errBox = h("div.err-box", { hidden: true });
   const grid = h("div.form");
@@ -104,6 +104,13 @@ export async function formDialog(title, fields, submit, { intro, okLabel = "OK" 
     }
     return out;
   };
+  if (onChange) {
+    // onChange(fieldName, values, set) lets a form refill fields, e.g. when a select changes.
+    const set = (name, value) => {
+      if (inputs[name] && "value" in inputs[name]) inputs[name].value = value;
+    };
+    for (const f of fields) inputs[f.name].addEventListener("change", () => onChange(f.name, read(), set));
+  }
   let result = null;
   const r = await modal(title, h("div", intro ? h("div.warn-box", intro) : null, errBox, grid), [
     { label: "Cancel", value: "cancel" },

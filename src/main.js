@@ -14,7 +14,9 @@ import { openSyslog } from "./components/syslog.js";
 import { openPing, openTraceroute, openCapture } from "./components/tools.js";
 import { openFirewall } from "./components/firewall.js";
 import { openNat } from "./components/nat.js";
-import { openDhcpLeases } from "./components/dhcp.js";
+import { openDhcp, openDhcpLeases } from "./components/dhcp.js";
+import { openDns } from "./components/dns.js";
+import { openUsers } from "./components/users.js";
 import { openBackup } from "./components/backup.js";
 
 // Left menu. Sections without a dedicated window use the generic config editor.
@@ -24,9 +26,9 @@ const MENU = [
     label: "IP",
     children: [
       { label: "Routes", open: openRoutes },
+      { label: "DHCP Server", open: () => openDhcp() },
       { label: "DHCP Leases", open: openDhcpLeases },
-      { label: "DHCP Server", open: () => openConfigTree(["service", "dhcp-server"], "DHCP Server") },
-      { label: "DNS Forwarding", open: () => openConfigTree(["service", "dns", "forwarding"], "DNS Forwarding") },
+      { label: "DNS", open: openDns },
     ],
   },
   { label: "Firewall", open: openFirewall },
@@ -48,6 +50,7 @@ const MENU = [
     children: [
       { label: "Revisions / Rollback", open: openRevisions },
       { label: "Backup / Restore", open: openBackup },
+      { label: "Users", open: openUsers },
       { label: "System Settings", open: () => openConfigTree(["system"], "System") },
       { label: "Services", open: () => openConfigTree(["service"], "Services") },
       { label: "Full Configuration", open: () => openConfigTree([], "Configuration") },

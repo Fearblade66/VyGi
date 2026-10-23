@@ -63,6 +63,13 @@ pub async fn export_config(
     })
 }
 
+/// Writes text the UI produced (e.g. a WireGuard client config) to a file the user picked.
+#[tauri::command]
+pub fn save_text_file(file: PathBuf, contents: String) -> AppResult<()> {
+    std::fs::write(file, contents)?;
+    Ok(())
+}
+
 /// Replaces the running config with the contents of a config.boot file.
 #[tauri::command]
 pub async fn import_config(
