@@ -36,6 +36,7 @@ Switch with the **Dashboard / Clients / Windows** buttons in the toolbar. **+ Wi
 | NAT | Source NAT (masquerade) and Destination NAT (port forwards) as rule tables with guided forms. |
 | IP → DHCP Server | Set up a DHCP server on an interface (pool, gateway, DNS and lease are suggested for you), edit or remove it, see leases, and manage static mappings. **Make Static** turns a lease into a reservation. |
 | IP → DNS | The router's own DNS servers, DNS forwarding (the router answers DNS for your network) and static host names. |
+| IP → DNS Server (Technitium) | Link a [Technitium DNS Server](https://technitium.com/dns/) to the router (API token, or username/password once to create one). Then:<br>- **Stats**: queries, blocked %, clients, cache hits, failures, a queries/blocked graph and answer types, for the last hour, day, week or month.<br>- **Top clients, top domains, top blocked domains**: block a domain or allow a blocked one with one click.<br>- **Block / Allow lists**: your own always-blocked and never-blocked domains.<br>- **Blocking**: pause for 5 minutes or 1 hour, turn off or on, and flush the cache.<br>- **Query log**: every query, filtered by device, domain or blocked only. Needs Technitium's "Query Logs (Sqlite)" app.<br>- **Use for LAN**: makes the router's DHCP hand out Technitium as the DNS server, so it sees each device.<br>The Dashboard gets a DNS card, and Clients shows each device's DNS queries with a **DNS log** button. |
 | System → Users | Router login accounts: add or remove users, change passwords, add or remove SSH keys. Stops you from deleting the account you're logged in with. |
 | Check-up on connect | Every time you connect, VyGi:<br>1. **Backs up** the config to your computer if it changed since last time (last 30 versions kept per router).<br>2. Shows **what changed since your last visit**, as `set` lines, including changes made by others or from the CLI. Secrets are masked.<br>3. Runs a **health check**: uptime and recent reboots, load, memory, disk, interfaces that should be up but aren't, errors logged in the last 24 hours, and whether the running config differs from the saved boot config.<br>The window only pops up when there's something to see; otherwise there's a one-line summary in the status bar. Run it any time from System → Check-up. |
 | System → Backup / Restore | Save the config to a file on your computer (config.boot or `set` commands), or restore a config.boot backup live, protected by Safe Mode. The **History** tab lists the automatic snapshots, shows what changed in each one, and restores any of them. |
@@ -147,6 +148,7 @@ Testing on the real router found and fixed several things mocks didn't show: VyO
 - Clients only shows what the router can see (ARP, DHCP, WireGuard). Per-client traffic needs connection accounting, which VyOS leaves off, so Activity counts open connections instead.
 - Blocking a client drops its forwarded traffic by MAC address (IPv4 forward chain). Devices with private, changing MAC addresses can get around it.
 - Simple Queues limit IPv4 only, and match the device's IP address, so give it a fixed IP. The download shaper assumes a 1 Gbit/s LAN port as its total. Upload limiting drops packets above the limit (policing) instead of queueing them, so TCP uploads can look bursty. The queues were checked against VyOS's config validation in the test container, but that container's kernel can't run the actual traffic control, so the real speed limiting has not been measured yet.
+- Technitium: the query log was written to Technitium's API documentation but not tested, because the test setup couldn't download the query-log app. Everything else was tested against Technitium 15.6. Devices only show up by name in Technitium if they query it directly (use **Use for LAN**). If they go through the router's DNS forwarding, Technitium only sees the router.
 - Log, Torch, Packet Sniffer and DHCP Leases use `sudo` over SSH. That works by default for VyOS admin users.
 
 ## Project layout
@@ -166,11 +168,12 @@ src-tauri/src/                Rust backend
   transactions.rs             commit, Safe Mode confirm, save, revisions, rollback
   monitor.rs                  live stats, routes, WireGuard, log/ping/capture streams
   torch.rs                    Torch: per-flow rates from tcpdump
+  technitium.rs               Technitium DNS Server API client (allow-listed calls)
   sysinfo.rs                  resources, neighbors, LLDP, connections, IP scan, processes, images, DHCP leases
   backup.rs                   config export/import
   wireguard.rs                WireGuard key generation (local)
   checkup.rs                  connect check-up: snapshots, changes, health
-  security.rs                 OS keychain + routers.json
+  security.rs                 OS keychain + routers.json (Technitium links: dns-servers.json)
   state.rs                    per-window connection state
   error.rs
 e2e/                          end-to-end tests against a real VyOS router in Docker

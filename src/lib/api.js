@@ -13,6 +13,10 @@ export const api = {
   connect: (req) => invoke("connect", { req }),
   disconnect: () => invoke("disconnect"),
   newWindow: () => invoke("new_window"),
+  dnsServerLink: () => invoke("dns_server_link"),
+  dnsServerSetup: (req) => invoke("dns_server_setup", req),
+  dnsServerForget: () => invoke("dns_server_forget"),
+  dnsServer: (endpoint, params = {}) => invoke("dns_server_call", { endpoint, params }),
 
   txStatus: () => invoke("tx_status"),
   getConfig: (path) => invoke("get_config", { path }),

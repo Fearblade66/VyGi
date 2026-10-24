@@ -10,6 +10,7 @@ import { collectClients, BLOCK_GROUP } from "../lib/netdata.js";
 import { toArray, ipv4InCidr } from "../lib/vyos.js";
 import { openPing } from "./tools.js";
 import { editQueue } from "./queues.js";
+import { dnsSummary, dnsHitsByIp, openDnsServer } from "./technitium.js";
 
 const FILTERS = [
   ["all", "All", () => true],
@@ -56,6 +57,7 @@ export function unblockCommands(mac, cfg) {
 export function initClients() {
   const root = document.getElementById("clients");
   let clients = [];
+  let dnsHits = null; // ip -> DNS queries in the last hour, when Technitium is linked
   let filter = "all";
   let search = "";
   let selectedKey = null;
@@ -122,6 +124,7 @@ export function initClients() {
         ...row("Last handshake", c.lastSeen ? formatAge(c.lastSeen) : ""),
         ...row("Traffic", c.rx != null ? `↓ ${formatBytes(c.rx)} ↑ ${formatBytes(c.tx)}` : ""),
         ...row("Active connections", c.connections ? String(c.connections) : ""),
+        ...row("DNS queries (1 h)", dnsHits && c.ip ? (dnsHits.get(c.ip) ?? 0).toLocaleString() : ""),
         ...row("Neighbor state", c.state),
         ...row("Known from", c.source.join(", ")),
         ...row("MAC type", c.privateMac ? "private (randomized)" : c.mac ? "hardware" : "")),
@@ -132,6 +135,7 @@ export function initClients() {
         c.mac && c.kind !== "vpn" ? h("button", { style: { color: c.blocked ? "var(--ok)" : "var(--bad)" }, on: { click: () => toggleBlock(c) } }, c.blocked ? "Unblock" : "Block") : null,
         c.ip && c.kind !== "vpn" && !c.ip.includes(":") ? h("button", { title: "Limit this device's download/upload speed (Simple Queue)", on: { click: () => editQueue({ ip: c.ip, name: c.name }) } }, "Limit speed") : null,
         c.ip ? h("button", { on: { click: () => { showView("windows"); openPing(); setTimeout(() => { const i = document.querySelector('.mdi-win.active input'); if (i) i.value = c.ip; }, 0); } } }, "Ping") : null,
+        dnsHits && c.ip ? h("button", { title: "This device's DNS queries in Technitium", on: { click: () => { showView("windows"); openDnsServer({ client: c.ip }); } } }, "DNS log") : null,
         c.ip ? h("button", { on: { click: () => navigator.clipboard?.writeText(c.ip).then(() => setStatus(`Copied ${c.ip}`)).catch(() => setStatus(c.ip)) } }, "Copy IP") : null),
     );
   }
@@ -144,7 +148,9 @@ export function initClients() {
       return;
     }
     try {
-      ({ clients } = await collectClients());
+      let sum;
+      [{ clients }, sum] = await Promise.all([collectClients(), dnsSummary().catch(() => null)]);
+      dnsHits = sum && !sum.error ? dnsHitsByIp(sum) : null;
       summary.textContent = `${clients.filter((c) => c.online).length} online · updated ${new Date().toLocaleTimeString()}`;
       render();
     } catch (e) {

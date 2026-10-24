@@ -4,7 +4,7 @@ import { h } from "./dom.js";
 /**
  * series: [{ label, color, fill? }]
  * opts: { points: history length, format(value) -> label, min?, max? }
- * Returns { el, push(values[]), resize() }.
+ * Returns { el, push(values[]), reset(points?), resize() }.
  */
 export function liveChart(series, { points = 60, format = String, max = null, height = 160 } = {}) {
   const canvas = h("canvas", { style: { width: "100%", height: `${height}px`, display: "block" } });
@@ -106,6 +106,12 @@ export function liveChart(series, { points = 60, format = String, max = null, he
 
   return {
     el,
+    /** Clears the history, optionally with a new history length. */
+    reset(newPoints = points) {
+      points = newPoints;
+      data.forEach((d) => (d.length = 0));
+      draw();
+    },
     push(values) {
       values.forEach((v, i) => {
         data[i].push(v);

@@ -29,6 +29,7 @@ import { initDashboard } from "./components/dashboard.js";
 import { initClients } from "./components/clients.js";
 import { openBackup } from "./components/backup.js";
 import { openQueues } from "./components/queues.js";
+import { openDnsServer } from "./components/technitium.js";
 
 // Left menu. Sections without a dedicated window use the generic config editor.
 const MENU = [
@@ -43,6 +44,7 @@ const MENU = [
       { label: "DHCP Server", open: () => openDhcp() },
       { label: "DHCP Leases", open: openDhcpLeases },
       { label: "DNS", open: openDns },
+      { label: "DNS Server (Technitium)", open: openDnsServer },
       { label: "Services", open: openServices },
     ],
   },

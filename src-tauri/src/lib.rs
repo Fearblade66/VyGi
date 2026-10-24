@@ -7,6 +7,7 @@ mod security;
 mod ssh;
 mod state;
 mod sysinfo;
+mod technitium;
 mod tls;
 mod torch;
 mod transactions;
@@ -72,6 +73,10 @@ pub fn run() {
             wireguard::wireguard_keypair,
             wireguard::wireguard_psk,
             torch::open_torch,
+            technitium::dns_server_link,
+            technitium::dns_server_setup,
+            technitium::dns_server_forget,
+            technitium::dns_server_call,
             checkup::connect_checkup,
             checkup::history_list,
             checkup::history_diff,

@@ -36,6 +36,8 @@ pub struct TxState {
 pub struct AppState {
     pub profiles: ProfileStore,
     windows: StdMutex<HashMap<String, Arc<WindowState>>>,
+    /// Technitium tokens kept for this run only when the OS keychain is unavailable.
+    pub dns_tokens: StdMutex<HashMap<String, String>>,
 }
 
 impl AppState {
@@ -43,6 +45,7 @@ impl AppState {
         Self {
             profiles,
             windows: StdMutex::new(HashMap::new()),
+            dns_tokens: StdMutex::new(HashMap::new()),
         }
     }
 

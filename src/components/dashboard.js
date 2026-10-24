@@ -11,6 +11,7 @@ import { openInterfaces } from "./interfaces.js";
 import { openVpn } from "./vpn.js";
 import { openResources } from "./resources.js";
 import { openDhcp } from "./dhcp.js";
+import { openDnsServer, dnsSummary } from "./technitium.js";
 
 const PING_TARGET = "1.1.1.1";
 
@@ -41,13 +42,15 @@ export function initDashboard() {
     const top = card("span-6", "Most active clients", { label: "All clients", go: () => showView("clients") });
     const vpn = card("span-3", "VPN", { label: "Open", go: () => goWin(openVpn) });
     const alerts = card("span-3", "Alerts");
+    const dns = card("span-12", "DNS (Technitium, last hour)", { label: "Open", go: () => goWin(openDnsServer) });
+    dns.el.hidden = true;
     chart = liveChart([{ label: "Download", color: "#006fff" }, { label: "Upload", color: "#12a150" }], { points: 150, format: formatBits, height: 190 });
     traffic.body.append(chart.el);
     chart.el.style.background = "transparent";
     chart.el.style.border = "none";
     chart.el.style.padding = "0";
-    root.append(h("div.dash", head, internet.el, gateway.el, clients.el, traffic.el, networks.el, top.el, vpn.el, alerts.el));
-    return { head, internet: internet.body, gateway: gateway.body, clients: clients.body, networks: networks.body, top: top.body, vpn: vpn.body, alerts: alerts.body };
+    root.append(h("div.dash", head, internet.el, gateway.el, clients.el, traffic.el, networks.el, top.el, vpn.el, alerts.el, dns.el));
+    return { dnsCard: dns.el, dns: dns.body, head, internet: internet.body, gateway: gateway.body, clients: clients.body, networks: networks.body, top: top.body, vpn: vpn.body, alerts: alerts.body };
   }
 
   function goWin(open) {
@@ -251,10 +254,42 @@ export function initDashboard() {
         if (link && !(link.flags || []).includes("LOWER_UP") && link.operstate !== "UP" && link.operstate !== "UNKNOWN") list.push(["bad", `${name} is down.`]);
       }
     }
+    if (state.dns?.error) list.push(["bad", "The Technitium DNS server is unreachable."]);
     if (state.clients?.some((c) => c.blocked && c.online)) list.push(["warn", "A blocked client is still present on the network."]);
     clear(ui.alerts).append(list.length
       ? h("div", list.map(([lvl, t]) => h("div.alert-item", h(`span.pill.${lvl}`, lvl === "bad" ? "problem" : "notice"), h("span", t))))
       : h("div.empty", h("span.pill.ok", "all good"), " Nothing needs attention."));
+  }
+
+  async function pollDns() {
+    const sum = await dnsSummary().catch(() => null);
+    if (!ui) return;
+    state.dns = sum;
+    ui.dnsCard.hidden = !sum;
+    if (!sum) return;
+    if (sum.error) {
+      clear(ui.dns).append(h("div.empty", h("span.pill.bad", "unreachable"), ` ${sum.error}`));
+      renderAlerts();
+      return;
+    }
+    const st = sum.stats || {};
+    const names = new Map((state.clients || []).filter((c) => c.ip).map((c) => [c.ip, c.label]));
+    const list = (title, rows, label) => h("div", { style: { flex: "1", minWidth: "200px" } },
+      h("div.hint", title),
+      rows.length
+        ? h("div.list-rows", rows.slice(0, 5).map((r) => h("div", h("span.grow", label(r)), h("span.num", r.hits.toLocaleString()))))
+        : h("div.empty", "None"));
+    const blockedPct = st.totalQueries ? (st.totalBlocked / st.totalQueries) * 100 : NaN;
+    clear(ui.dns).append(h("div", { style: { display: "flex", gap: "24px", flexWrap: "wrap" } },
+      h("div", { style: { minWidth: "150px" } },
+        h("div.big", (st.totalQueries ?? 0).toLocaleString()),
+        h("div.hint", "queries"),
+        h("div", { style: { marginTop: "6px" } }, h("b", `${(st.totalBlocked ?? 0).toLocaleString()} blocked`), ` (${pct(blockedPct)})`),
+        h("div.hint", `${st.totalClients ?? 0} clients · ${pct(st.totalQueries ? (st.totalCached / st.totalQueries) * 100 : NaN)} from cache`)),
+      list("Most active clients", sum.allClients || [], (r) => names.get(r.name) || r.domain || r.name),
+      list("Top domains", sum.topDomains || [], (r) => r.name),
+      list("Top blocked", sum.topBlockedDomains || [], (r) => r.name)));
+    renderAlerts();
   }
 
   function start() {
@@ -271,7 +306,8 @@ export function initDashboard() {
     pollClients().then(pollTraffic);
     pollLoad();
     pollLatency();
-    timers = [setInterval(pollTraffic, 2000), setInterval(pollLoad, 3000), setInterval(pollClients, 10000), setInterval(pollLatency, 20000)];
+    pollDns();
+    timers = [setInterval(pollTraffic, 2000), setInterval(pollLoad, 3000), setInterval(pollClients, 10000), setInterval(pollLatency, 20000), setInterval(pollDns, 60000)];
   }
 
   function stop() {

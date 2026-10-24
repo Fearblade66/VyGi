@@ -88,6 +88,11 @@ impl ProfileStore {
         }
     }
 
+    /// The app config directory (where routers.json lives).
+    pub fn dir(&self) -> PathBuf {
+        self.path.parent().map(PathBuf::from).unwrap_or_default()
+    }
+
     pub fn load(&self) -> AppResult<Vec<RouterProfile>> {
         match std::fs::read_to_string(&self.path) {
             Ok(text) => Ok(serde_json::from_str(&text)?),

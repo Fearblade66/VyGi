@@ -21,7 +21,7 @@ try {
   }
   const windows = [
     ["Quick Set"], ["Interfaces"], ["Addresses", "IP"], ["Routes", "IP"], ["ARP / Neighbors", "IP"], ["DHCP Server", "IP"],
-    ["DHCP Leases", "IP"], ["DNS", "IP"], ["Services", "IP"], ["Filter Rules", "Firewall"], ["NAT", "Firewall"],
+    ["DHCP Leases", "IP"], ["DNS", "IP"], ["DNS Server (Technitium)", "IP"], ["Services", "IP"], ["Filter Rules", "Firewall"], ["NAT", "Firewall"],
     ["Address Lists", "Firewall"], ["Connections", "Firewall"], ["VPN"], ["Log"], ["Resources", "System"], ["Users", "System"],
     ["Images (Upgrade)", "System"], ["Revisions / Rollback", "System"], ["Backup / Restore", "System"], ["IP Scan", "Tools"],
     ["Profile", "Tools"], ["Torch", "Tools"], ["Packet Sniffer", "Tools"], ["Queues"], ["Routing Protocols"], ["New Terminal"],
