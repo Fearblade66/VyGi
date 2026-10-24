@@ -19,6 +19,7 @@ export function setConnected(info) {
   session.info = info;
   session.confirmDeadline = null;
   session.unsaved = false;
+  document.title = info ? `${info.hostname} (${info.profile?.host}) - VyGi` : "VyGi";
   listeners.forEach((fn) => fn(session));
   renderToolbar();
 }

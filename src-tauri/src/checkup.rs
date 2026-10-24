@@ -8,12 +8,12 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager};
 
 use crate::backup::running_boot;
 use crate::connection::path;
 use crate::error::{AppError, AppResult};
-use crate::state::{AppState, Connection};
+use crate::state::{Connection, Win};
 use crate::transactions::{commit, record_commit, status, TxStatus};
 
 /// Snapshots kept per router; older ones are deleted.
@@ -291,7 +291,7 @@ async fn take_snapshot(
 }
 
 #[tauri::command]
-pub async fn connect_checkup(app: AppHandle, state: State<'_, AppState>) -> AppResult<Checkup> {
+pub async fn connect_checkup(app: AppHandle, state: Win) -> AppResult<Checkup> {
     let conn = state.conn().await?;
     let mut problems = Vec::new();
 
@@ -334,7 +334,7 @@ pub async fn connect_checkup(app: AppHandle, state: State<'_, AppState>) -> AppR
 }
 
 #[tauri::command]
-pub async fn history_list(app: AppHandle, state: State<'_, AppState>) -> AppResult<Vec<Snapshot>> {
+pub async fn history_list(app: AppHandle, state: Win) -> AppResult<Vec<Snapshot>> {
     let conn = state.conn().await?;
     let dir = router_dir(&app, &conn.profile_id)?;
     let mut out: Vec<Snapshot> = snapshot_ids(&dir)?
@@ -352,11 +352,7 @@ pub async fn history_list(app: AppHandle, state: State<'_, AppState>) -> AppResu
 
 /// What changed between snapshot `id` and the one before it.
 #[tauri::command]
-pub async fn history_diff(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    id: u64,
-) -> AppResult<Changes> {
+pub async fn history_diff(app: AppHandle, state: Win, id: u64) -> AppResult<Changes> {
     let conn = state.conn().await?;
     let dir = router_dir(&app, &conn.profile_id)?;
     let ids = snapshot_ids(&dir)?;
@@ -384,7 +380,7 @@ pub async fn history_diff(
 #[tauri::command]
 pub async fn history_restore(
     app: AppHandle,
-    state: State<'_, AppState>,
+    state: Win,
     id: u64,
     confirm_minutes: u32,
 ) -> AppResult<TxStatus> {

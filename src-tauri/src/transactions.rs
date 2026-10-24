@@ -11,11 +11,10 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use serde_json::Value;
-use tauri::State;
 
 use crate::connection::path;
 use crate::error::{AppError, AppResult};
-use crate::state::{AppState, Connection};
+use crate::state::{Connection, Win, WindowState};
 use crate::vyos_api::ConfigCommand;
 
 /// Max commit-confirm window we allow from the UI.
@@ -30,7 +29,7 @@ pub struct TxStatus {
     message: String,
 }
 
-pub(crate) async fn status(state: &AppState, message: String) -> TxStatus {
+pub(crate) async fn status(state: &WindowState, message: String) -> TxStatus {
     let mut tx = state.tx.lock().await;
     let now = Instant::now();
     if matches!(tx.confirm_deadline, Some(d) if d <= now) {
@@ -61,7 +60,11 @@ pub(crate) const AUTO_CONFIRMED: &str = "Previous Safe Mode changes were confirm
 /// Runs one commit. VyOS refuses a new commit while a commit-confirm is
 /// pending ("Another confirm is pending"). Being able to send this request
 /// proves the pending change didn't cut us off, so confirm it first.
-pub(crate) async fn commit<'a, F>(state: &AppState, conn: &Connection, run: F) -> AppResult<String>
+pub(crate) async fn commit<'a, F>(
+    state: &WindowState,
+    conn: &Connection,
+    run: F,
+) -> AppResult<String>
 where
     F: Fn() -> CommitFuture<'a>,
 {
@@ -81,7 +84,7 @@ where
     }
 }
 
-pub(crate) async fn record_commit(state: &AppState, confirm_minutes: u32) {
+pub(crate) async fn record_commit(state: &WindowState, confirm_minutes: u32) {
     let mut tx = state.tx.lock().await;
     tx.unsaved = true;
     tx.confirm_deadline = if confirm_minutes > 0 {
@@ -92,12 +95,12 @@ pub(crate) async fn record_commit(state: &AppState, confirm_minutes: u32) {
 }
 
 #[tauri::command]
-pub async fn tx_status(state: State<'_, AppState>) -> AppResult<TxStatus> {
+pub async fn tx_status(state: Win) -> AppResult<TxStatus> {
     Ok(status(&state, String::new()).await)
 }
 
 #[tauri::command]
-pub async fn get_config(state: State<'_, AppState>, path: Vec<String>) -> AppResult<Value> {
+pub async fn get_config(state: Win, path: Vec<String>) -> AppResult<Value> {
     let conn = state.conn().await?;
     match conn.api.show_config(&path).await {
         Ok(v) => Ok(v),
@@ -111,14 +114,14 @@ pub async fn get_config(state: State<'_, AppState>, path: Vec<String>) -> AppRes
 
 /// Runs an operational `show ...` command through the API.
 #[tauri::command]
-pub async fn run_show(state: State<'_, AppState>, path: Vec<String>) -> AppResult<String> {
+pub async fn run_show(state: Win, path: Vec<String>) -> AppResult<String> {
     state.conn().await?.api.show(&path).await
 }
 
 /// Applies set/delete commands. `confirm_minutes > 0` = Safe Mode.
 #[tauri::command]
 pub async fn apply_changes(
-    state: State<'_, AppState>,
+    state: Win,
     commands: Vec<ConfigCommand>,
     confirm_minutes: u32,
 ) -> AppResult<TxStatus> {
@@ -145,7 +148,7 @@ pub async fn apply_changes(
 
 /// Keeps the pending Safe Mode commit.
 #[tauri::command]
-pub async fn confirm_commit(state: State<'_, AppState>) -> AppResult<TxStatus> {
+pub async fn confirm_commit(state: Win) -> AppResult<TxStatus> {
     let conn = state.conn().await?;
     let msg = conn.api.confirm().await?;
     state.tx.lock().await.confirm_deadline = None;
@@ -153,7 +156,7 @@ pub async fn confirm_commit(state: State<'_, AppState>) -> AppResult<TxStatus> {
 }
 
 #[tauri::command]
-pub async fn save_config(state: State<'_, AppState>) -> AppResult<TxStatus> {
+pub async fn save_config(state: Win) -> AppResult<TxStatus> {
     let conn = state.conn().await?;
     let msg = conn.api.save().await?;
     state.tx.lock().await.unsaved = false;
@@ -162,7 +165,7 @@ pub async fn save_config(state: State<'_, AppState>) -> AppResult<TxStatus> {
 
 /// Text of `show system commit` (the revision list).
 #[tauri::command]
-pub async fn list_revisions(state: State<'_, AppState>) -> AppResult<String> {
+pub async fn list_revisions(state: Win) -> AppResult<String> {
     state
         .conn()
         .await?
@@ -173,11 +176,7 @@ pub async fn list_revisions(state: State<'_, AppState>) -> AppResult<String> {
 
 /// Diff between revision `rev` and the one before it (or `rev2` if given).
 #[tauri::command]
-pub async fn revision_diff(
-    state: State<'_, AppState>,
-    rev: u32,
-    rev2: Option<u32>,
-) -> AppResult<String> {
+pub async fn revision_diff(state: Win, rev: u32, rev2: Option<u32>) -> AppResult<String> {
     let mut p = path(&["system", "commit", "diff"]);
     p.push(rev.to_string());
     if let Some(r2) = rev2 {
@@ -189,11 +188,7 @@ pub async fn revision_diff(
 
 /// Loads revision `rev` as the running config, without rebooting.
 #[tauri::command]
-pub async fn rollback_to(
-    state: State<'_, AppState>,
-    rev: u32,
-    confirm_minutes: u32,
-) -> AppResult<TxStatus> {
+pub async fn rollback_to(state: Win, rev: u32, confirm_minutes: u32) -> AppResult<TxStatus> {
     let minutes = check_minutes(confirm_minutes)?;
     let conn = state.conn().await?;
     let mut p = path(&["system", "commit", "file"]);
@@ -212,7 +207,7 @@ pub async fn rollback_to(
 
 /// Sets what the router does when Safe Mode times out ("reload" is the gentle one).
 #[tauri::command]
-pub async fn set_revert_action(state: State<'_, AppState>, action: String) -> AppResult<TxStatus> {
+pub async fn set_revert_action(state: Win, action: String) -> AppResult<TxStatus> {
     if action != "reload" && action != "reboot" {
         return Err(AppError::Invalid("action must be reload or reboot".into()));
     }

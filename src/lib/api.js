@@ -12,6 +12,7 @@ export const api = {
   forgetRouter: (id) => invoke("forget_router", { id }),
   connect: (req) => invoke("connect", { req }),
   disconnect: () => invoke("disconnect"),
+  newWindow: () => invoke("new_window"),
 
   txStatus: () => invoke("tx_status"),
   getConfig: (path) => invoke("get_config", { path }),

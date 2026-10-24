@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 use crate::error::{AppError, AppResult};
 use crate::security::{self, RouterProfile, Secrets};
 use crate::ssh::SshClient;
-use crate::state::{AppState, Connection, TxState};
+use crate::state::{AppState, Connection, TxState, Win};
 use crate::vyos_api::VyosApi;
 
 #[derive(Deserialize)]
@@ -65,8 +65,14 @@ fn non_empty(s: Option<String>) -> Option<String> {
 }
 
 #[tauri::command]
-pub async fn connect(state: State<'_, AppState>, req: ConnectRequest) -> AppResult<ConnectInfo> {
-    disconnect(state.clone()).await?;
+pub async fn connect(
+    state: State<'_, AppState>,
+    win: Win,
+    window: WebviewWindow,
+    req: ConnectRequest,
+) -> AppResult<ConnectInfo> {
+    win.disconnect().await;
+    let _ = window.set_title("VyGi");
     let mut profile = req.profile;
     if profile.host.trim().is_empty() {
         return Err(AppError::Invalid("router address is empty".into()));
@@ -160,15 +166,15 @@ pub async fn connect(state: State<'_, AppState>, req: ConnectRequest) -> AppResu
         None
     };
 
-    *state.tx.lock().await = TxState::default();
+    *win.tx.lock().await = TxState::default();
     let profile_id = profile.id();
-    state
-        .set_conn(Some(Arc::new(Connection {
-            profile_id: profile_id.clone(),
-            api,
-            ssh,
-        })))
-        .await;
+    let _ = window.set_title(&format!("{hostname} ({}) - VyGi", profile.host));
+    win.set_conn(Some(Arc::new(Connection {
+        profile_id: profile_id.clone(),
+        api,
+        ssh,
+    })))
+    .await;
     Ok(ConnectInfo {
         profile,
         profile_id,
@@ -180,11 +186,24 @@ pub async fn connect(state: State<'_, AppState>, req: ConnectRequest) -> AppResu
 }
 
 #[tauri::command]
-pub async fn disconnect(state: State<'_, AppState>) -> AppResult<()> {
-    state.close_sessions().await;
-    if let Some(old) = state.set_conn(None).await {
-        old.ssh.disconnect().await;
-    }
+pub async fn disconnect(win: Win, window: WebviewWindow) -> AppResult<()> {
+    win.disconnect().await;
+    let _ = window.set_title("VyGi");
+    Ok(())
+}
+
+/// Opens another app window with its own connection (one router per window).
+#[tauri::command]
+pub async fn new_window(app: AppHandle) -> AppResult<()> {
+    let n = (1..)
+        .find(|i| app.get_webview_window(&format!("router{i}")).is_none())
+        .unwrap_or(1);
+    WebviewWindowBuilder::new(&app, format!("router{n}"), WebviewUrl::default())
+        .title("VyGi")
+        .inner_size(1280.0, 800.0)
+        .min_inner_size(900.0, 600.0)
+        .build()
+        .map_err(|e| AppError::Invalid(format!("could not open a window: {e}")))?;
     Ok(())
 }
 

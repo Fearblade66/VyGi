@@ -3,6 +3,10 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
+use std::sync::Mutex as StdMutex;
+
+use tauri::ipc::{CommandArg, CommandItem, InvokeError};
+use tauri::{Manager, Runtime};
 use tokio::sync::{mpsc, Mutex};
 
 use crate::error::{AppError, AppResult};
@@ -27,23 +31,79 @@ pub struct TxState {
     pub unsaved: bool,
 }
 
+/// App-wide state: saved routers plus one [`WindowState`] per app window,
+/// so every window can be connected to a different router.
 pub struct AppState {
-    conn: Mutex<Option<Arc<Connection>>>,
     pub profiles: ProfileStore,
+    windows: StdMutex<HashMap<String, Arc<WindowState>>>,
+}
+
+impl AppState {
+    pub fn new(profiles: ProfileStore) -> Self {
+        Self {
+            profiles,
+            windows: StdMutex::new(HashMap::new()),
+        }
+    }
+
+    pub fn window(&self, label: &str) -> Arc<WindowState> {
+        let mut map = self.windows.lock().unwrap_or_else(|e| e.into_inner());
+        map.entry(label.to_string()).or_default().clone()
+    }
+
+    /// Forgets a closed window and hands back its state for cleanup.
+    pub fn remove_window(&self, label: &str) -> Option<Arc<WindowState>> {
+        let mut map = self.windows.lock().unwrap_or_else(|e| e.into_inner());
+        map.remove(label)
+    }
+}
+
+/// The connection and everything tied to it, for one app window.
+pub struct WindowState {
+    conn: Mutex<Option<Arc<Connection>>>,
     /// Open terminals and streams, by id.
     pub sessions: Mutex<HashMap<u32, mpsc::Sender<TermInput>>>,
     next_session: AtomicU32,
     pub tx: Mutex<TxState>,
 }
 
-impl AppState {
-    pub fn new(profiles: ProfileStore) -> Self {
+impl Default for WindowState {
+    fn default() -> Self {
         Self {
             conn: Mutex::new(None),
-            profiles,
             sessions: Mutex::new(HashMap::new()),
             next_session: AtomicU32::new(1),
             tx: Mutex::new(TxState::default()),
+        }
+    }
+}
+
+/// Command argument resolving to the calling window's [`WindowState`].
+pub struct Win(Arc<WindowState>);
+
+impl std::ops::Deref for Win {
+    type Target = WindowState;
+    fn deref(&self) -> &WindowState {
+        &self.0
+    }
+}
+
+impl<'de, R: Runtime> CommandArg<'de, R> for Win {
+    fn from_command(command: CommandItem<'de, R>) -> Result<Self, InvokeError> {
+        let webview = command.message.webview_ref();
+        let app = webview
+            .try_state::<AppState>()
+            .ok_or_else(|| InvokeError::from("app state not ready"))?;
+        Ok(Win(app.window(webview.window().label())))
+    }
+}
+
+impl WindowState {
+    /// Closes the connection and its terminals/streams.
+    pub async fn disconnect(&self) {
+        self.close_sessions().await;
+        if let Some(old) = self.set_conn(None).await {
+            old.ssh.disconnect().await;
         }
     }
 

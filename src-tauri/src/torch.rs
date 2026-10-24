@@ -10,12 +10,11 @@ use std::time::{Duration, Instant};
 use russh::ChannelMsg;
 use serde::Serialize;
 use tauri::ipc::Channel;
-use tauri::State;
 use tokio::sync::mpsc;
 
 use crate::error::{AppError, AppResult};
 use crate::ssh::{shell_quote, validate_name, TermInput};
-use crate::state::AppState;
+use crate::state::Win;
 
 /// Bytes of the Linux "cooked v2" capture header included in tcpdump's length.
 const SLL2_HEADER: u64 = 20;
@@ -198,7 +197,7 @@ fn snapshot(table: &mut HashMap<Key, Counter>, secs: f64) -> TorchEvent {
 
 #[tauri::command]
 pub async fn open_torch(
-    state: State<'_, AppState>,
+    state: Win,
     interface: String,
     filter: String,
     hide_port: Option<u16>,

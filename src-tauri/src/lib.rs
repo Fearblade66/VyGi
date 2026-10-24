@@ -27,12 +27,21 @@ pub fn run() {
             app.manage(AppState::new(ProfileStore::new(dir)));
             Ok(())
         })
+        .on_window_event(|window, event| {
+            // A closed window takes its router connection with it.
+            if let tauri::WindowEvent::Destroyed = event {
+                if let Some(ws) = window.state::<AppState>().remove_window(window.label()) {
+                    tauri::async_runtime::spawn(async move { ws.disconnect().await });
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             connection::list_routers,
             connection::has_saved_secrets,
             connection::forget_router,
             connection::connect,
             connection::disconnect,
+            connection::new_window,
             transactions::tx_status,
             transactions::get_config,
             transactions::run_show,

@@ -142,6 +142,7 @@ window.addEventListener("DOMContentLoaded", () => {
   showView("windows");
   renderMenu();
   document.getElementById("btn-connect").addEventListener("click", toggleConnect);
+  document.getElementById("btn-new-window").addEventListener("click", () => api.newWindow().catch((e) => setStatus(errorText(e), true)));
   document.getElementById("btn-terminal").addEventListener("click", () => openTerminal());
   showConnectDialog();
 });

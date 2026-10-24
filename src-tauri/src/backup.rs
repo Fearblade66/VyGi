@@ -3,11 +3,10 @@
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use tauri::State;
 
 use crate::connection::path;
 use crate::error::{AppError, AppResult};
-use crate::state::{AppState, Connection};
+use crate::state::{Connection, Win};
 use crate::transactions::{commit, record_commit, status, TxStatus};
 
 /// Refuse to load anything this big; real configs are a few hundred KB.
@@ -47,7 +46,7 @@ pub(crate) async fn running_boot(conn: &Connection) -> AppResult<String> {
 /// Writes the running config to `file` (a path the user picked in a save dialog).
 #[tauri::command]
 pub async fn export_config(
-    state: State<'_, AppState>,
+    state: Win,
     file: PathBuf,
     format: ExportFormat,
 ) -> AppResult<ExportResult> {
@@ -77,11 +76,7 @@ pub fn save_text_file(file: PathBuf, contents: String) -> AppResult<()> {
 
 /// Replaces the running config with the contents of a config.boot file.
 #[tauri::command]
-pub async fn import_config(
-    state: State<'_, AppState>,
-    file: PathBuf,
-    confirm_minutes: u32,
-) -> AppResult<TxStatus> {
+pub async fn import_config(state: Win, file: PathBuf, confirm_minutes: u32) -> AppResult<TxStatus> {
     if std::fs::metadata(&file)?.len() > MAX_IMPORT_BYTES {
         return Err(AppError::Invalid(
             "file is too large to be a VyOS config".into(),
