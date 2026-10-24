@@ -5,6 +5,7 @@ import { openWindow } from "../lib/mdi.js";
 import { refreshTx, session } from "../lib/session.js";
 import { flattenInterfaces, has } from "../lib/vyos.js";
 import { openBackup } from "./backup.js";
+import { showView } from "../lib/views.js";
 import { changesPre, fmtDate } from "../lib/changes.js";
 
 function fmtUptime(s) {
@@ -69,8 +70,10 @@ export async function runCheckup({ alwaysShow = false } = {}) {
   ].join(" · ");
   setStatus(`Check-up: ${summary}`, warnings.length > 0);
 
-  if (!alwaysShow && !warnings.length && !changed && !c.problems.length) return;
+  if (!alwaysShow && !warnings.length && !changed && !c.problems.length) return false;
+  showView("windows");
   showWindow(c, warnings, down);
+  return true;
 }
 
 function showWindow(c, warnings) {

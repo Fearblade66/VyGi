@@ -64,13 +64,17 @@ export function openDhcpLeases() {
   openDhcp("Leases");
 }
 
+let selectTab = null; // switches tabs of the open window, if any
+
 export function openDhcp(startTab = "Servers") {
   const win = openWindow({ key: "dhcp", title: "DHCP Server", width: 980, height: 440 });
-  if (!win.isNew) return;
+  if (!win.isNew) return selectTab?.(startTab);
+  win.onClose(() => (selectTab = null));
   let networks = {};
   const loaders = {};
   const t = tabs(["Servers", "Leases", "Static Mappings"], (name) => loaders[name]?.());
   win.body.append(t.el);
+  selectTab = t.select;
 
   async function loadConfig() {
     try {

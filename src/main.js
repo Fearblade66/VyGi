@@ -11,29 +11,49 @@ import { openConfigTree } from "./components/config_tree.js";
 import { openRevisions } from "./components/system.js";
 import { openTerminal } from "./components/terminal.js";
 import { openSyslog } from "./components/syslog.js";
-import { openPing, openTraceroute, openCapture } from "./components/tools.js";
+import { openPing, openTraceroute, openCapture, openIpScan, openProfile } from "./components/tools.js";
+import { openResources, openIdentityClock, powerAction, openImages } from "./components/resources.js";
+import { openAddresses } from "./components/addresses.js";
+import { openNeighbors } from "./components/neighbors.js";
+import { openServices } from "./components/services.js";
+import { openAddressLists, openConnections } from "./components/fwextra.js";
+import { openQuickSet } from "./components/quickset.js";
 import { openFirewall } from "./components/firewall.js";
 import { openNat } from "./components/nat.js";
 import { openDhcp, openDhcpLeases } from "./components/dhcp.js";
 import { openDns } from "./components/dns.js";
 import { openUsers } from "./components/users.js";
 import { runCheckup } from "./components/checkup.js";
+import { initViews, showView } from "./lib/views.js";
+import { initDashboard } from "./components/dashboard.js";
+import { initClients } from "./components/clients.js";
 import { openBackup } from "./components/backup.js";
 
 // Left menu. Sections without a dedicated window use the generic config editor.
 const MENU = [
+  { label: "Quick Set", open: openQuickSet },
   { label: "Interfaces", open: openInterfaces },
   {
     label: "IP",
     children: [
+      { label: "Addresses", open: openAddresses },
       { label: "Routes", open: openRoutes },
+      { label: "ARP / Neighbors", open: openNeighbors },
       { label: "DHCP Server", open: () => openDhcp() },
       { label: "DHCP Leases", open: openDhcpLeases },
       { label: "DNS", open: openDns },
+      { label: "Services", open: openServices },
     ],
   },
-  { label: "Firewall", open: openFirewall },
-  { label: "NAT", open: openNat },
+  {
+    label: "Firewall",
+    children: [
+      { label: "Filter Rules", open: openFirewall },
+      { label: "NAT", open: openNat },
+      { label: "Address Lists", open: openAddressLists },
+      { label: "Connections", open: openConnections },
+    ],
+  },
   { label: "VPN", open: openVpn },
   { label: "Routing Protocols", open: () => openConfigTree(["protocols"], "Protocols") },
   { label: "VRF", open: () => openConfigTree(["vrf"], "VRF") },
@@ -43,19 +63,26 @@ const MENU = [
       { label: "Ping", open: openPing },
       { label: "Traceroute", open: openTraceroute },
       { label: "Packet Capture (Torch)", open: () => openCapture() },
+      { label: "IP Scan", open: openIpScan },
+      { label: "Profile", open: openProfile },
     ],
   },
   { label: "Log", open: openSyslog },
   {
     label: "System",
     children: [
-      { label: "Revisions / Rollback", open: openRevisions },
-      { label: "Check-up", open: () => runCheckup({ alwaysShow: true }) },
-      { label: "Backup / Restore", open: () => openBackup() },
+      { label: "Resources", open: openResources },
+      { label: "Identity & Clock", open: openIdentityClock },
       { label: "Users", open: openUsers },
+      { label: "Images (Upgrade)", open: openImages },
+      { label: "Revisions / Rollback", open: openRevisions },
+      { label: "Backup / Restore", open: () => openBackup() },
+      { label: "Check-up", open: () => runCheckup({ alwaysShow: true }) },
       { label: "System Settings", open: () => openConfigTree(["system"], "System") },
-      { label: "Services", open: () => openConfigTree(["service"], "Services") },
+      { label: "Services (config)", open: () => openConfigTree(["service"], "Services") },
       { label: "Full Configuration", open: () => openConfigTree([], "Configuration") },
+      { label: "Reboot", open: () => powerAction("reboot") },
+      { label: "Shut Down", open: () => powerAction("poweroff") },
     ],
   },
   { label: "New Terminal", open: openTerminal },
@@ -65,6 +92,7 @@ function renderMenu() {
   const nav = clear(document.getElementById("menu"));
   const guard = (fn) => () => {
     if (!isConnected()) return setStatus("Connect to a router first.", true);
+    showView("windows");
     try {
       const r = fn();
       if (r && r.catch) r.catch((e) => setStatus(errorText(e), true));
@@ -89,6 +117,7 @@ function renderMenu() {
 
 async function toggleConnect() {
   if (isConnected()) {
+    showView("windows");
     closeAllWindows();
     try {
       await api.disconnect();
@@ -104,6 +133,10 @@ async function toggleConnect() {
 
 window.addEventListener("DOMContentLoaded", () => {
   initToolbar();
+  initViews();
+  initDashboard();
+  initClients();
+  showView("windows");
   renderMenu();
   document.getElementById("btn-connect").addEventListener("click", toggleConnect);
   document.getElementById("btn-terminal").addEventListener("click", () => openTerminal());

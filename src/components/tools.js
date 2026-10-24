@@ -1,7 +1,10 @@
-// Tools: Ping, Traceroute and Packet Capture ("Torch"). All stream over SSH.
+// Tools: Ping, Traceroute, Packet Capture ("Torch"), IP Scan and Profile. All run over SSH.
 import { api, errorText } from "../lib/api.js";
 import { h, setStatus } from "../lib/dom.js";
 import { openWindow } from "../lib/mdi.js";
+import { makeTable, filterBox } from "../lib/table.js";
+import { isPrivateMac } from "./neighbors.js";
+import { parseIpv4Cidr, toArray } from "../lib/vyos.js";
 
 const MAX_OUTPUT_CHARS = 400_000;
 
@@ -111,4 +114,89 @@ export function openCapture(iface = "") {
     const input = win.body.querySelector("input");
     if (input) input.value = iface;
   }
+}
+
+// ---------------- IP Scan ----------------
+
+/** Finds which addresses in a subnet answer ping (Winbox Tools > IP Scan). */
+export async function openIpScan() {
+  const win = openWindow({ key: "ipscan", title: "IP Scan", width: 760, height: 400 });
+  if (!win.isNew) return;
+  const net = h("input", { type: "text", style: { width: "160px" }, placeholder: "192.168.1.0/24" });
+  const btn = h("button", { style: { fontWeight: "bold" } }, "Scan");
+  const note = h("span.hint");
+  const table = makeTable(
+    [
+      { key: "ip", label: "Address", width: "130px" },
+      { key: "mac", label: "MAC Address", width: "150px" },
+      { key: "name", label: "Name", width: "160px" },
+      { key: "iface", label: "Interface", width: "90px" },
+      { key: "note", label: "" },
+    ],
+    { rowKey: (r) => r.ip },
+  );
+  win.body.append(h("div.win-toolbar", h("span", "Network:"), net, btn, note, h("span.grow"), filterBox(table)), table.wrap, table.count);
+
+  // Suggest the first LAN-looking network on the router.
+  api.getConfig(["interfaces"]).then((cfg) => {
+    for (const members of Object.values(cfg || {})) {
+      for (const c of Object.values(members || {})) {
+        for (const a of toArray(c?.address)) {
+          const p = parseIpv4Cidr(a);
+          if (p && p.bits >= 22 && /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(p.ip) && !net.value) net.value = p.network;
+        }
+      }
+    }
+  }).catch(() => {});
+
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    note.textContent = "Scanning… (up to a minute for a /24)";
+    try {
+      const [res, leases] = await Promise.all([api.ipScan(net.value), api.dhcpLeases(4).catch(() => [])]);
+      const names = new Map((leases || []).map((l) => [l.ip, l.hostname]));
+      const neigh = new Map((res.neighbors || []).filter((n) => n.lladdr).map((n) => [n.dst, n]));
+      const num = (ip) => ip.split(".").reduce((a, b) => a * 256 + Number(b), 0);
+      table.setRows(res.alive.sort((a, b) => num(a) - num(b)).map((ip) => {
+        const n = neigh.get(ip);
+        return { ip, mac: n?.lladdr || "", iface: n?.dev || "", name: names.get(ip) || "", note: n?.lladdr && isPrivateMac(n.lladdr) ? "private MAC" : n ? "" : "router itself / no ARP" };
+      }));
+      note.textContent = `${res.alive.length} of ${res.scanned} addresses answered ping (devices that block ping won't show).`;
+    } catch (e) {
+      note.textContent = "";
+      setStatus(errorText(e), true);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+// ---------------- Profile (processes) ----------------
+export function openProfile() {
+  const win = openWindow({ key: "profile", title: "Profile (processes)", width: 720, height: 420 });
+  if (!win.isNew) return;
+  const table = makeTable(
+    [
+      { key: "command", label: "Process", width: "200px" },
+      { key: "cpuText", label: "CPU", width: "70px", className: "num" },
+      { key: "memText", label: "Memory", width: "70px", className: "num" },
+      { key: "rssText", label: "RSS", width: "90px", className: "num" },
+      { key: "user", label: "User", width: "80px" },
+      { key: "pid", label: "PID", width: "70px", className: "num" },
+      { key: "elapsed", label: "Running for" },
+    ],
+    { rowKey: (r) => r.pid },
+  );
+  win.body.append(h("div.win-toolbar", h("span.hint", "Busiest processes, refreshed every 3 s."), h("span.grow"), filterBox(table)), table.wrap, table.count);
+  const load = async () => {
+    try {
+      const list = await api.processes();
+      table.setRows(list.map((p) => ({ ...p, cpuText: `${p.cpu.toFixed(1)}%`, memText: `${p.mem.toFixed(1)}%`, rssText: `${(p.rssKb / 1024).toFixed(1)} MiB` })));
+    } catch (e) {
+      setStatus(errorText(e), true);
+    }
+  };
+  load();
+  const timer = setInterval(load, 3000);
+  win.onClose(() => clearInterval(timer));
 }

@@ -120,9 +120,9 @@ export function openVpn() {
       ["show vpn ike sa", ["vpn", "ike", "sa"]],
     ]),
     OpenVPN: textPage(t.pages.OpenVPN, [
-      ["show openvpn server", ["openvpn", "server"]],
-      ["show openvpn client", ["openvpn", "client"]],
-      ["show openvpn site-to-site", ["openvpn", "site-to-site"]],
+      ["show interfaces openvpn server", ["interfaces", "openvpn", "server"]],
+      ["show interfaces openvpn client", ["interfaces", "openvpn", "client"]],
+      ["show interfaces openvpn site-to-site", ["interfaces", "openvpn", "site-to-site"]],
     ]),
   };
 

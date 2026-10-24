@@ -5,6 +5,8 @@
 //! - Rollback   -> load an older revision from `show system commit file N`.
 //! - "Save"     -> VyOS commits are live but lost on reboot until saved.
 
+use std::future::Future;
+use std::pin::Pin;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
@@ -13,7 +15,7 @@ use tauri::State;
 
 use crate::connection::path;
 use crate::error::{AppError, AppResult};
-use crate::state::AppState;
+use crate::state::{AppState, Connection};
 use crate::vyos_api::ConfigCommand;
 
 /// Max commit-confirm window we allow from the UI.
@@ -50,6 +52,33 @@ fn check_minutes(m: u32) -> AppResult<u32> {
         )));
     }
     Ok(m)
+}
+
+pub(crate) type CommitFuture<'a> = Pin<Box<dyn Future<Output = AppResult<String>> + Send + 'a>>;
+
+pub(crate) const AUTO_CONFIRMED: &str = "Previous Safe Mode changes were confirmed automatically.";
+
+/// Runs one commit. VyOS refuses a new commit while a commit-confirm is
+/// pending ("Another confirm is pending"). Being able to send this request
+/// proves the pending change didn't cut us off, so confirm it first.
+pub(crate) async fn commit<'a, F>(state: &AppState, conn: &Connection, run: F) -> AppResult<String>
+where
+    F: Fn() -> CommitFuture<'a>,
+{
+    let pending = matches!(state.tx.lock().await.confirm_deadline, Some(d) if d > Instant::now());
+    if pending {
+        conn.api.confirm().await?;
+        state.tx.lock().await.confirm_deadline = None;
+        return Ok(format!("{AUTO_CONFIRMED}\n{}", run().await?));
+    }
+    match run().await {
+        // Pending from another tool, or our timer state was lost.
+        Err(AppError::Api(m)) if m.contains("confirm is pending") => {
+            conn.api.confirm().await?;
+            Ok(format!("{AUTO_CONFIRMED}\n{}", run().await?))
+        }
+        other => other,
+    }
 }
 
 pub(crate) async fn record_commit(state: &AppState, confirm_minutes: u32) {
@@ -106,7 +135,10 @@ pub async fn apply_changes(
     }
     let minutes = check_minutes(confirm_minutes)?;
     let conn = state.conn().await?;
-    let msg = conn.api.configure(&commands, minutes).await?;
+    let msg = commit(&state, &conn, || {
+        Box::pin(conn.api.configure(&commands, minutes))
+    })
+    .await?;
     record_commit(&state, minutes).await;
     Ok(status(&state, msg).await)
 }
@@ -170,7 +202,10 @@ pub async fn rollback_to(
     if config_text.trim().is_empty() {
         return Err(AppError::Api(format!("revision {rev} is empty or missing")));
     }
-    let msg = conn.api.load_config_text(&config_text, minutes).await?;
+    let msg = commit(&state, &conn, || {
+        Box::pin(conn.api.load_config_text(&config_text, minutes))
+    })
+    .await?;
     record_commit(&state, minutes).await;
     Ok(status(&state, msg).await)
 }
@@ -187,7 +222,8 @@ pub async fn set_revert_action(state: State<'_, AppState>, action: String) -> Ap
         path: path(&["system", "config-management", "commit-confirm", "action"]),
         value: Some(action),
     };
-    let msg = conn.api.configure(&[cmd], 0).await?;
+    let cmds = [cmd];
+    let msg = commit(&state, &conn, || Box::pin(conn.api.configure(&cmds, 0))).await?;
     record_commit(&state, 0).await;
     Ok(status(&state, msg).await)
 }

@@ -14,11 +14,12 @@ const NAME_RE = /^[A-Za-z0-9._-]{1,64}$/;
 
 /** Gathers what the wizards need to suggest sensible defaults. */
 async function snapshot() {
-  const [ifaces, fwInput, natSrc, dns] = await Promise.all([
+  const [ifaces, fwInput, natSrc, dns, stats] = await Promise.all([
     api.getConfig(["interfaces"]).catch(() => ({})),
     api.getConfig(["firewall", "ipv4", "input", "filter"]).catch(() => ({})),
     api.getConfig(["nat", "source"]).catch(() => ({})),
     api.getConfig(["service", "dns", "forwarding"]).catch(() => ({})),
+    api.interfaceStats().catch(() => ({ links: [] })),
   ]);
   const wg = ifaces.wireguard || {};
   // LAN subnets = private IPv4 networks on non-WireGuard interfaces (for split tunnels).
@@ -39,7 +40,11 @@ async function snapshot() {
     wg,
     lans: [...new Set(lans)],
     wan: masq?.["outbound-interface"]?.name || dhcpWan || "eth0",
-    allIfaces: Object.values(ifaces).flatMap((m) => Object.keys(m || {})),
+    // Ports known to the config or present in the kernel (new ports may not be in the config yet).
+    allIfaces: [...new Set([
+      ...Object.values(ifaces).flatMap((m) => Object.keys(m || {})),
+      ...(stats.links || []).map((l) => l.ifname).filter((n) => /^(eth|br|bond|pppoe)\d/.test(n)),
+    ])],
     inputDrops: fwInput["default-action"] === "drop",
     inputRules: Object.keys(fwInput.rule || {}).map(Number),
     inputCatchAll: catchAllRule(fwInput.rule),
@@ -201,6 +206,7 @@ export async function quickSetup(onDone) {
     if (parseIpv4Cidr(`${cc.ip}/${sc.bits}`).network !== sc.network) throw new Error("Device address must be inside the VPN subnet");
     if (cc.ip === sc.ip) throw new Error("Device address must differ from the router's VPN address");
 
+    if (v.nat && !v.wan) throw new Error("Pick the WAN interface for internet access (or untick NAT)");
     const [srv, cli] = await Promise.all([api.wireguardKeypair(), api.wireguardKeypair()]);
     const psk = v.psk ? await api.wireguardPsk() : null;
     const base = ["interfaces", "wireguard", iface];

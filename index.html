@@ -24,13 +24,27 @@
         <button id="btn-save" class="tb-btn" disabled title="Write running config to the boot config">Save</button>
         <span class="tb-sep"></span>
         <button id="btn-terminal" class="tb-btn" disabled>New Terminal</button>
+        <span class="tb-sep"></span>
+        <span class="view-switch" id="view-switch">
+          <button data-view="dashboard">Dashboard</button>
+          <button data-view="clients">Clients</button>
+          <button data-view="windows">Windows</button>
+        </span>
         <span class="tb-spacer"></span>
+        <select id="theme" title="Look">
+          <option value="classic">Classic</option>
+          <option value="modern-auto">Modern (auto)</option>
+          <option value="modern-light">Modern (light)</option>
+          <option value="modern-dark">Modern (dark)</option>
+        </select>
         <span id="conn-label">Not connected</span>
       </header>
       <div id="body">
         <div id="brand"><span>VyGi</span></div>
         <nav id="menu"></nav>
-        <main id="workspace"></main>
+        <section id="dashboard" class="view" hidden></section>
+        <section id="clients" class="view" hidden></section>
+        <main id="workspace" class="view"></main>
       </div>
       <footer id="statusbar"><span id="status-text">Ready</span></footer>
     </div>

@@ -9,10 +9,25 @@ It talks to the router in two ways:
 
 Targets current VyOS (1.5 / rolling). The API calls were checked against `vyos-1x/src/services/api/rest/routers.py`.
 
+## Two ways to work
+
+- **Dashboard and Clients** (UniFi-style). The **Dashboard** shows internet status and latency, a live WAN traffic graph, CPU and memory, clients online, networks with DHCP pool use, the most active clients, VPN devices and alerts. **Clients** lists every device the router knows about (from ARP, DHCP, fixed IPs, local DNS names and WireGuard). Click a device for details and to **Rename** it, give it a **Fixed IP**, **Block** it from the internet, or **Ping** it.
+- **Windows** (Winbox-style): every feature as a draggable window, opened from the menu on the left.
+
+Switch with the **Dashboard / Clients / Windows** buttons in the toolbar. The **look** menu next to them picks **Classic** (Winbox gray) or **Modern** (light, dark, or following your OS).
+
 ## What it does
 
 | Area | What you get |
 |---|---|
+| Quick Set | Winbox-style one-page home router setup: internet port (DHCP, static or PPPoE), LAN port(s) (several make a bridge), router address, DHCP server, DNS for devices, NAT, and an optional basic firewall. You see the exact commands before anything is applied. |
+| IP → Addresses | Every address on every interface, including ones from DHCP. Add and remove static addresses. |
+| IP → ARP / Neighbors | The ARP/NDP table (with static ARP entries), and devices found by **LLDP** (switches, access points, other routers). One click turns LLDP on. |
+| IP → Services | SSH, HTTPS API, DNS, DHCP, NTP, LLDP, SNMP, mDNS repeater and more, with on/off, ports and details. You can't switch off the access VyGi itself needs. |
+| Firewall → Address Lists, Connections | Address/network/port/MAC groups as editable lists, and the live connection-tracking table with the busiest hosts. |
+| System → Resources, Identity & Clock, Images, Reboot / Shut Down | Live CPU and memory graphs, uptime, temperatures and storage. Router name, domain, time zone and NTP servers. Install, set as default and delete VyOS images (VyOS's equivalent of Winbox Packages). Reboot and shut down, with a warning about unsaved or unconfirmed changes. |
+| Interfaces → Traffic | A live Rx/Tx graph for one interface. |
+| Tools → IP Scan, Profile | Find which addresses in a subnet answer, with MAC addresses and DHCP names. See the router's busiest processes. |
 | Interfaces | Live table with flags, type, comment, IPs, MAC, MTU, Tx/Rx rates and a traffic sparkline. You can add VLAN, bridge or dummy interfaces, remove, enable and disable them, and double-click a row to edit it. |
 | IP → Routes | The kernel routing table per VRF, for IPv4 or IPv6. You can add and remove static routes. |
 | VPN → WireGuard | **Quick Setup** creates a WireGuard server and your first device in one step, optionally opening the firewall port, adding NAT for internet access and DNS for clients. **+ Device** adds more phones and laptops. Each device gets a config file and a **QR code** for the WireGuard app. Keys are generated on your computer, so a device's private key never touches the router. Also shows live peers (handshake age, traffic). |
@@ -25,11 +40,11 @@ Targets current VyOS (1.5 / rolling). The API calls were checked against `vyos-1
 | Check-up on connect | Every time you connect, VyGi:<br>1. **Backs up** the config to your computer if it changed since last time (last 30 versions kept per router).<br>2. Shows **what changed since your last visit**, as `set` lines, including changes made by others or from the CLI. Secrets are masked.<br>3. Runs a **health check**: uptime and recent reboots, load, memory, disk, interfaces that should be up but aren't, errors logged in the last 24 hours, and whether the running config differs from the saved boot config.<br>The window only pops up when there's something to see; otherwise there's a one-line summary in the status bar. Run it any time from System → Check-up. |
 | System → Backup / Restore | Save the config to a file on your computer (config.boot or `set` commands), or restore a config.boot backup live, protected by Safe Mode. The **History** tab lists the automatic snapshots, shows what changed in each one, and restores any of them. |
 | Protocols, VRF, System, Services | A config tree editor for that section: browse it, set values, delete nodes, and view it as `set` commands. |
-| Tools | Ping, Traceroute, and Packet Capture ("Torch", using tcpdump). |
+| Tools | Ping, Traceroute, Packet Capture ("Torch", using tcpdump), IP Scan and Profile. |
 | Log | Live system journal with severity and text filters. |
 | System → Revisions | Commit history, a colored diff of each commit, and rollback to any revision **without rebooting**. |
 | New Terminal | A full SSH terminal (xterm.js). |
-| Safe Mode | Every change is applied with VyOS `commit-confirm`. If you don't press **Confirm** in time, the router reverts it, so a change that cuts you off undoes itself. |
+| Safe Mode | Every change is applied with VyOS `commit-confirm`. If you don't press **Confirm** in time, the router reverts it, so a change that cuts you off undoes itself. VyOS allows only one pending confirm at a time, so when you make another change while one is pending, VyGi confirms the earlier one first (you're evidently still connected) and starts a new timer. |
 | Save | Commits are live but are lost on reboot until you press **Save**. The button turns red while changes are unsaved. |
 
 ### Security
@@ -105,6 +120,21 @@ The original plan had a few problems:
 - **AES-GCM on top of the keychain**: dropped. The OS keychain already encrypts its contents.
 - **`russh-keys`**: merged into `russh` upstream.
 
+## Testing against a real VyOS router
+
+`e2e/` contains everything to test VyGi against a real VyOS router running in Docker, built from the official rolling ISO:
+
+```
+e2e/vyos-image/build-image.sh     # download the ISO, build the vyos:test image
+e2e/vyos-image/run-router.sh      # start it with 4 ports and a LAN client
+npx tauri build --debug --no-bundle
+cd e2e && node smoke.mjs ../src-tauri/target/debug/vygi .
+```
+
+`smoke.mjs` drives the real app through `tauri-driver` (WebDriver; needs `webkit2gtk-driver`, `cargo install tauri-driver`, and a display or `Xvfb`). It connects, opens the Dashboard, Clients and every window, and fails on any error. Docker containers have no kernel modules and often no IPv6, so WireGuard interfaces, time zones, and firewall changes combined with NAT can't be applied there. Everything else can.
+
+Testing on the real router found and fixed several things mocks didn't show: VyOS wraps list and value nodes in their own name in `/retrieve`, only one commit-confirm can be pending, the DHCP lease JSON output crashes on this VyOS build (VyGi falls back to the table), and the correct OpenVPN status command.
+
 ## Limitations
 
 - Packet Capture shows raw tcpdump lines. It is not Winbox Torch's per-flow rate table.
@@ -113,6 +143,9 @@ The original plan had a few problems:
 - The forms target VyOS 1.5 config paths (e.g. DHCP `subnet-id` and `option …`). VyOS 1.4 is not supported by those forms.
 - Backup restore only accepts config.boot-format files, not `set` command exports.
 - You can be connected to one router at a time.
+- Clients only shows what the router can see (ARP, DHCP, WireGuard). Per-client traffic needs connection accounting, which VyOS leaves off, so Activity counts open connections instead.
+- Blocking a client drops its forwarded traffic by MAC address (IPv4 forward chain). Devices with private, changing MAC addresses can get around it.
+- There is no Queues/QoS window yet (VyOS's traffic-shaping model is quite different from Winbox's simple queues).
 - Log, Packet Capture and DHCP Leases use `sudo` over SSH. That works by default for VyOS admin users.
 
 ## Project layout
@@ -120,8 +153,9 @@ The original plan had a few problems:
 ```
 index.html, src/              UI (plain JavaScript + Vite)
   main.js                     menu and app startup
-  lib/                        windows (mdi.js), tables, dialogs, session/Safe Mode,
-                              rules.js (shared firewall/NAT rule editor)
+  lib/                        windows (mdi.js), tables, dialogs, charts, session/Safe Mode,
+                              rules.js (shared firewall/NAT rule editor),
+                              netdata.js (client list), views.js (views and themes)
   components/                 one file per window
 src-tauri/src/                Rust backend
   vyos_api.rs                 HTTPS API client
@@ -129,12 +163,14 @@ src-tauri/src/                Rust backend
   ssh.rs                      SSH terminal / commands / streams, host-key pinning
   connection.rs               connect/disconnect, saved routers
   transactions.rs             commit, Safe Mode confirm, save, revisions, rollback
-  monitor.rs                  live stats, routes, WireGuard, DHCP leases, log/ping/capture streams
+  monitor.rs                  live stats, routes, WireGuard, log/ping/capture streams
+  sysinfo.rs                  resources, neighbors, LLDP, connections, IP scan, processes, images, DHCP leases
   backup.rs                   config export/import
   wireguard.rs                WireGuard key generation (local)
   checkup.rs                  connect check-up: snapshots, changes, health
   security.rs                 OS keychain + routers.json
   state.rs, error.rs
+e2e/                          end-to-end tests against a real VyOS router in Docker
 ```
 
 Run the backend tests with `cd src-tauri && cargo test`.
@@ -142,5 +178,7 @@ Run the backend tests with `cd src-tauri && cargo test`.
 ## Credits and license
 
 Licensed under the GNU GPL v3 (see `LICENSE`).
+
+The Dashboard and Clients views take their layout ideas from Ubiquiti's UniFi Network app; Quick Set, IP Services, Address Lists, IP Scan and Profile follow MikroTik Winbox. No code or assets come from either.
 
 Several features were designed after [VyManager](https://github.com/Community-VyProjects/VyManager) (GPLv3): the WireGuard Quick Setup flow and client config, the VyOS 1.5 DHCP option layout, and DNS forwarding paths. VyGi re-implements them in its own code and checks them against the vyos-1x interface definitions.

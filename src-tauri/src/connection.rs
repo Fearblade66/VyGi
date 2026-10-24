@@ -37,6 +37,8 @@ pub struct ConnectInfo {
     version: String,
     /// What the router does when a commit-confirm times out: "reboot" or "reload".
     revert_action: String,
+    /// Set when "remember" was requested but the OS keychain refused.
+    keychain_error: Option<String>,
 }
 
 #[tauri::command]
@@ -120,10 +122,8 @@ pub async fn connect(state: State<'_, AppState>, req: ConnectRequest) -> AppResu
             text.lines()
                 .find(|l| l.trim_start().starts_with("Version:"))
                 .map(|l| {
-                    l.trim_start()
-                        .trim_start_matches("Version:")
-                        .trim()
-                        .to_string()
+                    let v = l.trim_start().trim_start_matches("Version:").trim();
+                    v.strip_prefix("VyOS ").unwrap_or(v).to_string()
                 })
         })
         .unwrap_or_else(|| "unknown".into());
@@ -145,15 +145,20 @@ pub async fn connect(state: State<'_, AppState>, req: ConnectRequest) -> AppResu
         profile.name = hostname.clone();
     }
     state.profiles.upsert(&profile)?;
-    if req.remember {
+    // A missing OS keychain (e.g. Linux without a keyring service) must not block connecting.
+    let keychain_error = if req.remember {
         security::store_secrets(
             &profile,
             &Secrets {
                 api_key,
                 ssh_password,
             },
-        )?;
-    }
+        )
+        .err()
+        .map(|e| e.to_string())
+    } else {
+        None
+    };
 
     *state.tx.lock().await = TxState::default();
     let profile_id = profile.id();
@@ -170,6 +175,7 @@ pub async fn connect(state: State<'_, AppState>, req: ConnectRequest) -> AppResu
         hostname,
         version,
         revert_action,
+        keychain_error,
     })
 }
 

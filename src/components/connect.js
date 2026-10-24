@@ -4,6 +4,7 @@ import { h, clear, setStatus } from "../lib/dom.js";
 import { modal, confirmBox, alertBox } from "../lib/dialog.js";
 import { setConnected, refreshTx } from "../lib/session.js";
 import { runCheckup } from "./checkup.js";
+import { showView, savedView } from "../lib/views.js";
 
 export async function showConnectDialog() {
   const routers = await api.listRouters().catch(() => []);
@@ -111,7 +112,7 @@ export async function showConnectDialog() {
       try {
         connected = await api.connect(req());
         setConnected(connected);
-        setStatus(`Connected to ${connected.hostname}.`);
+        setStatus(connected.keychainError ? `Connected to ${connected.hostname}, but the password could not be saved: ${connected.keychainError}` : `Connected to ${connected.hostname}.`, !!connected.keychainError);
         return true;
       } catch (e) {
         const accepted = await handleTrust(e, trust);
@@ -126,7 +127,8 @@ export async function showConnectDialog() {
   });
   if (!connected) return;
   if (connected.revertAction !== "reload") await warnRevertAction();
-  await runCheckup();
+  const shown = await runCheckup();
+  if (!shown) showView(savedView());
 }
 
 /** Asks the user about an unknown or changed fingerprint. Returns true if accepted. */

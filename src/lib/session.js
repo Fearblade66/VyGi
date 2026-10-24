@@ -46,9 +46,16 @@ function applyTx(tx) {
 export async function applyChanges(commands, what = "Changes") {
   const minutes = safeMinutes();
   setStatus(`Applying: ${what}…`);
-  const tx = await api.applyChanges(commands, minutes);
+  let tx;
+  try {
+    tx = await api.applyChanges(commands, minutes);
+  } catch (e) {
+    setStatus(`${what} failed: ${errorText(e).split("\n")[0]}`, true);
+    throw e;
+  }
   applyTx(tx);
-  setStatus(minutes ? `${what} applied. Press Confirm within ${minutes} min or the router reverts them.` : `${what} applied.`);
+  const auto = /confirmed automatically/.test(tx.message || "") ? "Previous Safe Mode changes kept. " : "";
+  setStatus(auto + (minutes ? `${what} applied. Press Confirm within ${minutes} min or the router reverts them.` : `${what} applied.`));
   listeners.forEach((fn) => fn(session));
   return tx;
 }
@@ -87,7 +94,8 @@ export function renderToolbar() {
   document.getElementById("btn-terminal").disabled = !connected;
   btnSave.disabled = !connected;
   btnSave.classList.toggle("badge-unsaved", connected && session.unsaved);
-  btnSave.textContent = connected && session.unsaved ? "Save (unsaved changes)" : "Save";
+  btnSave.textContent = connected && session.unsaved ? "Save ●" : "Save";
+  btnSave.title = connected && session.unsaved ? "Unsaved changes: write the running config to the boot config" : "Write running config to the boot config";
 
   const left = session.confirmDeadline ? session.confirmDeadline - Date.now() : 0;
   if (connected && left > 0) {

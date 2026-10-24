@@ -6,6 +6,7 @@ mod monitor;
 mod security;
 mod ssh;
 mod state;
+mod sysinfo;
 mod tls;
 mod transactions;
 mod vyos_api;
@@ -44,7 +45,20 @@ pub fn run() {
             monitor::interface_stats,
             monitor::routes,
             monitor::wireguard_dump,
-            monitor::dhcp_leases,
+            sysinfo::dhcp_leases,
+            sysinfo::system_load,
+            sysinfo::system_info,
+            sysinfo::neighbors,
+            sysinfo::lldp_neighbors,
+            sysinfo::connections,
+            sysinfo::ping_latency,
+            sysinfo::ip_scan,
+            sysinfo::processes,
+            sysinfo::image_list,
+            sysinfo::image_add,
+            sysinfo::image_set_default,
+            sysinfo::image_delete,
+            sysinfo::power,
             wireguard::wireguard_keypair,
             wireguard::wireguard_psk,
             checkup::connect_checkup,

@@ -14,7 +14,7 @@ use crate::backup::running_boot;
 use crate::connection::path;
 use crate::error::{AppError, AppResult};
 use crate::state::{AppState, Connection};
-use crate::transactions::{record_commit, status, TxStatus};
+use crate::transactions::{commit, record_commit, status, TxStatus};
 
 /// Snapshots kept per router; older ones are deleted.
 const KEEP_SNAPSHOTS: usize = 30;
@@ -394,7 +394,10 @@ pub async fn history_restore(
         AppError::Invalid("this snapshot has no config.boot copy to restore".into())
     })?;
     let minutes = confirm_minutes.min(60);
-    let msg = conn.api.load_config_text(&text, minutes).await?;
+    let msg = commit(&state, &conn, || {
+        Box::pin(conn.api.load_config_text(&text, minutes))
+    })
+    .await?;
     record_commit(&state, minutes).await;
     Ok(status(&state, msg).await)
 }

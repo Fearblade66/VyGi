@@ -8,7 +8,7 @@ use tauri::State;
 use crate::connection::path;
 use crate::error::{AppError, AppResult};
 use crate::state::{AppState, Connection};
-use crate::transactions::{record_commit, status, TxStatus};
+use crate::transactions::{commit, record_commit, status, TxStatus};
 
 /// Refuse to load anything this big; real configs are a few hundred KB.
 const MAX_IMPORT_BYTES: u64 = 10 * 1024 * 1024;
@@ -91,7 +91,10 @@ pub async fn import_config(
     check_boot_format(&text)?;
     let conn = state.conn().await?;
     let minutes = confirm_minutes.min(60);
-    let msg = conn.api.load_config_text(&text, minutes).await?;
+    let msg = commit(&state, &conn, || {
+        Box::pin(conn.api.load_config_text(&text, minutes))
+    })
+    .await?;
     record_commit(&state, minutes).await;
     Ok(status(&state, msg).await)
 }

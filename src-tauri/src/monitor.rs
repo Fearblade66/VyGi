@@ -48,26 +48,6 @@ pub async fn routes(
     Ok(serde_json::from_str(&out)?)
 }
 
-/// DHCP server leases as JSON, from the VyOS op-mode script's `--raw` output.
-#[tauri::command]
-pub async fn dhcp_leases(state: State<'_, AppState>, family: u8) -> AppResult<Value> {
-    let fam = match family {
-        4 => "inet",
-        6 => "inet6",
-        _ => return Err(AppError::Invalid("family must be 4 or 6".into())),
-    };
-    let cmd = format!(
-        "sudo -n /usr/libexec/vyos/op_mode/dhcp.py show_server_leases --family {fam} --raw"
-    );
-    let out = state.conn().await?.ssh.exec_ok(&cmd).await?;
-    let trimmed = out.trim();
-    if trimmed.is_empty() {
-        return Ok(Value::Array(Vec::new()));
-    }
-    serde_json::from_str(trimmed)
-        .map_err(|_| AppError::Api(trimmed.lines().next().unwrap_or_default().to_string()))
-}
-
 /// `wg show all dump`: tab-separated interface and peer lines.
 #[tauri::command]
 pub async fn wireguard_dump(state: State<'_, AppState>) -> AppResult<String> {
