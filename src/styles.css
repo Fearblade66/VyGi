@@ -370,3 +370,4 @@ pre.out {
 #toolbar .tb-spacer { flex: 1 1 auto; }
 #conn-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .alert-item .pill { flex: none; align-self: flex-start; }
+table.grid tr.dim td { opacity: 0.45; }

@@ -57,6 +57,11 @@ export const api = {
     ch.onmessage = onEvent;
     return invoke("open_stream", { kind, onData: ch });
   },
+  async openTorch(iface, filter, hidePort, onEvent) {
+    const ch = new Channel();
+    ch.onmessage = onEvent;
+    return invoke("open_torch", { interface: iface, filter, hidePort, onData: ch });
+  },
   async openTerminal(cols, rows, onEvent) {
     const ch = new Channel();
     ch.onmessage = onEvent;

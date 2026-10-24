@@ -1,10 +1,11 @@
-// Tools: Ping, Traceroute, Packet Capture ("Torch"), IP Scan and Profile. All run over SSH.
+// Tools: Ping, Traceroute, Torch, Packet Sniffer, IP Scan and Profile. All run over SSH.
 import { api, errorText } from "../lib/api.js";
-import { h, setStatus } from "../lib/dom.js";
+import { h, setStatus, formatBits } from "../lib/dom.js";
 import { openWindow } from "../lib/mdi.js";
 import { makeTable, filterBox } from "../lib/table.js";
 import { isPrivateMac } from "./neighbors.js";
-import { parseIpv4Cidr, toArray } from "../lib/vyos.js";
+import { parseIpv4Cidr, toArray, flattenInterfaces } from "../lib/vyos.js";
+import { session } from "../lib/session.js";
 
 const MAX_OUTPUT_CHARS = 400_000;
 
@@ -102,7 +103,7 @@ export function openCapture(iface = "") {
   const filter = h("input", { type: "text", placeholder: "tcpdump filter, e.g. port 53 or host 192.0.2.5", style: { width: "300px" } });
   const win = streamWindow({
     key: `capture`,
-    title: "Packet Capture (Torch)",
+    title: "Packet Sniffer",
     width: 900,
     inputs: { "Interface:": ifEl, "Filter:": filter },
     buildKind: () => {
@@ -114,6 +115,104 @@ export function openCapture(iface = "") {
     const input = win.body.querySelector("input");
     if (input) input.value = iface;
   }
+}
+
+// ---------------- Torch ----------------
+
+/** Rows stay visible this long after their last packet (Winbox keeps idle flows briefly too). */
+const TORCH_KEEP_MS = 5000;
+
+/**
+ * Winbox-style Torch: live Tx/Rx rate per conversation on one interface.
+ * Tx = leaving the router through the interface, Rx = arriving on it.
+ */
+export function openTorch(iface = "") {
+  const existing = openWindow({ key: "torch", title: "Torch", width: 920, height: 460 });
+  if (!existing.isNew) {
+    if (iface) existing.body.dispatchEvent(new CustomEvent("torch-iface", { detail: iface }));
+    return;
+  }
+  const win = existing;
+  const ifSel = h("select", { style: { width: "110px" } }, iface ? h("option", { value: iface }, iface) : null);
+  const filter = h("input", { type: "text", placeholder: "optional filter, e.g. host 192.168.1.20 or port 443", style: { width: "280px" } });
+  const hideOwn = h("input", { type: "checkbox", checked: true });
+  const btn = h("button", { style: { fontWeight: "bold" } }, "Start");
+  const totals = h("span.hint");
+  const table = makeTable(
+    [
+      { key: "proto", label: "Proto", width: "60px" },
+      { key: "src", label: "Src.", width: "170px" },
+      { key: "sport", label: "Src. Port", width: "70px", className: "num" },
+      { key: "dst", label: "Dst.", width: "170px" },
+      { key: "dport", label: "Dst. Port", width: "70px", className: "num" },
+      { key: "txText", label: "Tx Rate", width: "90px", className: "num" },
+      { key: "rxText", label: "Rx Rate", width: "90px", className: "num" },
+      { key: "pps", label: "Tx/Rx Packets", className: "num" },
+    ],
+    { rowKey: (r) => r.key, rowClass: (r) => (r.idle ? "dim" : "") },
+  );
+  win.body.append(
+    h("div.win-toolbar", h("span", "Interface:"), ifSel, h("span", "Filter:"), filter, h("label", hideOwn, " hide VyGi's SSH"), btn, h("span.grow"), filterBox(table)),
+    table.wrap,
+    h("div.row-count", totals),
+  );
+
+  api.getConfig(["interfaces"]).then((cfg) => {
+    const names = [...flattenInterfaces(cfg).keys()].filter((n) => n !== "lo").sort();
+    const cur = ifSel.value;
+    ifSel.textContent = "";
+    for (const n of new Set([...(cur ? [cur] : []), ...names])) ifSel.append(h("option", { value: n }, n));
+    ifSel.value = cur || names[0] || "";
+  }).catch(() => {});
+
+  let id = null;
+  const rows = new Map(); // key -> row, kept a few seconds after going idle
+  const stop = async () => {
+    if (id != null) await api.closeSession(id).catch(() => {});
+    id = null;
+    btn.textContent = "Start";
+  };
+  const onEvent = (msg) => {
+    if (msg.event === "closed") {
+      id = null;
+      btn.textContent = "Start";
+      if (msg.message) setStatus(`Torch: ${msg.message}`, true);
+      return;
+    }
+    const now = Date.now();
+    for (const r of rows.values()) Object.assign(r, { txBps: 0, rxBps: 0, txPps: 0, rxPps: 0, idle: true });
+    for (const f of msg.flows) {
+      const key = [f.proto, f.src, f.sport, f.dst, f.dport].join("|");
+      rows.set(key, { ...f, key, seen: now, idle: false });
+    }
+    for (const [k, r] of rows) if (now - r.seen > TORCH_KEEP_MS) rows.delete(k);
+    const list = [...rows.values()].sort((a, b) => (a.idle - b.idle) || (b.txBps + b.rxBps) - (a.txBps + a.rxBps));
+    table.setRows(list.map((r) => ({ ...r, txText: r.txBps ? formatBits(r.txBps) : "", rxText: r.rxBps ? formatBits(r.rxBps) : "", pps: r.idle ? "" : `${r.txPps} / ${r.rxPps}` })));
+    totals.textContent = `Total — Tx: ${formatBits(msg.txBps)}  Rx: ${formatBits(msg.rxBps)} · ${msg.flows.length} active`;
+  };
+  const start = async () => {
+    if (!ifSel.value) return setStatus("Pick an interface", true);
+    rows.clear();
+    table.setRows([]);
+    btn.textContent = "Stop";
+    try {
+      const port = hideOwn.checked ? Number(session.info?.profile?.sshPort) || 22 : null;
+      id = await api.openTorch(ifSel.value, filter.value, port, onEvent);
+    } catch (e) {
+      btn.textContent = "Start";
+      setStatus(errorText(e), true);
+    }
+  };
+  btn.addEventListener("click", () => (id != null ? stop() : start()));
+  win.body.addEventListener("torch-iface", async (e) => {
+    if (![...ifSel.options].some((o) => o.value === e.detail)) ifSel.append(h("option", { value: e.detail }, e.detail));
+    ifSel.value = e.detail;
+    if (id != null) {
+      await stop();
+      start();
+    }
+  });
+  win.onClose(stop);
 }
 
 // ---------------- IP Scan ----------------

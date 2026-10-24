@@ -6,7 +6,7 @@ import { makeTable, filterBox } from "../lib/table.js";
 import { formDialog, confirmBox, alertBox } from "../lib/dialog.js";
 import { applyChanges, session } from "../lib/session.js";
 import { flattenInterfaces, toArray, has, diffMulti, diffSingle, validNodeName } from "../lib/vyos.js";
-import { openCapture } from "./tools.js";
+import { openTorch } from "./tools.js";
 import { openTraffic } from "./traffic.js";
 
 const POLL_MS = 2000;
@@ -51,7 +51,7 @@ export function openInterfaces() {
     h("button", { title: "Reload config", on: { click: () => loadConfig() } }, "⟳"),
     h("button", { title: "Edit", on: { click: needSel(editInterface) } }, "Edit"),
     h("button", { title: "Live traffic graph", on: { click: needSel((r) => openTraffic(r.name)) } }, "Traffic"),
-    h("button", { title: "Packet capture on this interface", on: { click: needSel((r) => openCapture(r.name)) } }, "Torch"),
+    h("button", { title: "Live traffic per connection on this interface", on: { click: needSel((r) => openTorch(r.name)) } }, "Torch"),
     h("span.grow"),
     filterBox(table),
   );

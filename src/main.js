@@ -11,7 +11,7 @@ import { openConfigTree } from "./components/config_tree.js";
 import { openRevisions } from "./components/system.js";
 import { openTerminal } from "./components/terminal.js";
 import { openSyslog } from "./components/syslog.js";
-import { openPing, openTraceroute, openCapture, openIpScan, openProfile } from "./components/tools.js";
+import { openPing, openTraceroute, openCapture, openTorch, openIpScan, openProfile } from "./components/tools.js";
 import { openResources, openIdentityClock, powerAction, openImages } from "./components/resources.js";
 import { openAddresses } from "./components/addresses.js";
 import { openNeighbors } from "./components/neighbors.js";
@@ -62,7 +62,8 @@ const MENU = [
     children: [
       { label: "Ping", open: openPing },
       { label: "Traceroute", open: openTraceroute },
-      { label: "Packet Capture (Torch)", open: () => openCapture() },
+      { label: "Torch", open: () => openTorch() },
+      { label: "Packet Sniffer", open: () => openCapture() },
       { label: "IP Scan", open: openIpScan },
       { label: "Profile", open: openProfile },
     ],

@@ -205,6 +205,13 @@ impl SshClient {
         channel.exec(true, command).await?;
         Ok(spawn_pump(channel, on_data))
     }
+
+    /// Starts a command and returns its channel, for callers that process the output themselves.
+    pub async fn exec_channel(&self, command: &str) -> AppResult<russh::Channel<client::Msg>> {
+        let channel = self.handle.channel_open_session().await?;
+        channel.exec(true, command).await?;
+        Ok(channel)
+    }
 }
 
 /// One task owns the SSH channel: it forwards output to the UI and input to the router.

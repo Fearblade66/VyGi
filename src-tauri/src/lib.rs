@@ -8,6 +8,7 @@ mod ssh;
 mod state;
 mod sysinfo;
 mod tls;
+mod torch;
 mod transactions;
 mod vyos_api;
 mod wireguard;
@@ -61,6 +62,7 @@ pub fn run() {
             sysinfo::power,
             wireguard::wireguard_keypair,
             wireguard::wireguard_psk,
+            torch::open_torch,
             checkup::connect_checkup,
             checkup::history_list,
             checkup::history_diff,
