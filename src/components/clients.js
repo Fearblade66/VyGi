@@ -9,6 +9,7 @@ import { applyChanges, isConnected } from "../lib/session.js";
 import { collectClients, BLOCK_GROUP } from "../lib/netdata.js";
 import { toArray, ipv4InCidr } from "../lib/vyos.js";
 import { openPing } from "./tools.js";
+import { editQueue } from "./queues.js";
 
 const FILTERS = [
   ["all", "All", () => true],
@@ -129,6 +130,7 @@ export function initClients() {
         c.ip ? h("button", { on: { click: () => rename(c) } }, "Rename") : null,
         c.mac && c.ip && c.kind !== "vpn" && !c.fixedIp ? h("button", { on: { click: () => fixIp(c) } }, "Fix IP") : null,
         c.mac && c.kind !== "vpn" ? h("button", { style: { color: c.blocked ? "var(--ok)" : "var(--bad)" }, on: { click: () => toggleBlock(c) } }, c.blocked ? "Unblock" : "Block") : null,
+        c.ip && c.kind !== "vpn" && !c.ip.includes(":") ? h("button", { title: "Limit this device's download/upload speed (Simple Queue)", on: { click: () => editQueue({ ip: c.ip, name: c.name }) } }, "Limit speed") : null,
         c.ip ? h("button", { on: { click: () => { showView("windows"); openPing(); setTimeout(() => { const i = document.querySelector('.mdi-win.active input'); if (i) i.value = c.ip; }, 0); } } }, "Ping") : null,
         c.ip ? h("button", { on: { click: () => navigator.clipboard?.writeText(c.ip).then(() => setStatus(`Copied ${c.ip}`)).catch(() => setStatus(c.ip)) } }, "Copy IP") : null),
     );

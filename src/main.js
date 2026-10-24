@@ -28,6 +28,7 @@ import { initViews, showView } from "./lib/views.js";
 import { initDashboard } from "./components/dashboard.js";
 import { initClients } from "./components/clients.js";
 import { openBackup } from "./components/backup.js";
+import { openQueues } from "./components/queues.js";
 
 // Left menu. Sections without a dedicated window use the generic config editor.
 const MENU = [
@@ -54,6 +55,7 @@ const MENU = [
       { label: "Connections", open: openConnections },
     ],
   },
+  { label: "Queues", open: openQueues },
   { label: "VPN", open: openVpn },
   { label: "Routing Protocols", open: () => openConfigTree(["protocols"], "Protocols") },
   { label: "VRF", open: () => openConfigTree(["vrf"], "VRF") },
