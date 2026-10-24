@@ -11,10 +11,10 @@ Targets current VyOS (1.5 / rolling). The API calls were checked against `vyos-1
 
 ## Two ways to work
 
-- **Dashboard and Clients** (UniFi-style). The **Dashboard** shows internet status and latency, a live WAN traffic graph, CPU and memory, clients online, networks with DHCP pool use, the most active clients, VPN devices and alerts. **Clients** lists every device the router knows about (from ARP, DHCP, fixed IPs, local DNS names and WireGuard). Click a device for details and to **Rename** it, give it a **Fixed IP**, **Block** it from the internet, or **Ping** it.
+- **Dashboard and Clients** (UniFi-style). The **Dashboard** shows internet status and latency, a live WAN traffic graph, CPU and memory, clients online, networks with DHCP pool use, the most active clients, VPN devices and alerts. **Clients** lists every device the router knows about (from ARP, DHCP, fixed IPs, local DNS names and WireGuard). Click a device for details and to **Rename** it, give it a **Fixed IP**, **Limit speed**, **Block** it from the internet, or **Ping** it.
 - **Windows** (Winbox-style): every feature as a draggable window, opened from the menu on the left.
 
-Switch with the **Dashboard / Clients / Windows** buttons in the toolbar. The **look** menu next to them picks **Classic** (Winbox gray) or **Modern** (light, dark, or following your OS).
+Switch with the **Dashboard / Clients / Windows** buttons in the toolbar. **+ Window** opens another app window, so you can manage several routers at once (like several Winbox sessions). Each window has its own connection, Safe Mode timer and terminals, and closing a window disconnects its router. The **look** menu next to them picks **Classic** (Winbox gray) or **Modern** (light, dark, or following your OS).
 
 ## What it does
 
@@ -40,7 +40,9 @@ Switch with the **Dashboard / Clients / Windows** buttons in the toolbar. The **
 | Check-up on connect | Every time you connect, VyGi:<br>1. **Backs up** the config to your computer if it changed since last time (last 30 versions kept per router).<br>2. Shows **what changed since your last visit**, as `set` lines, including changes made by others or from the CLI. Secrets are masked.<br>3. Runs a **health check**: uptime and recent reboots, load, memory, disk, interfaces that should be up but aren't, errors logged in the last 24 hours, and whether the running config differs from the saved boot config.<br>The window only pops up when there's something to see; otherwise there's a one-line summary in the status bar. Run it any time from System → Check-up. |
 | System → Backup / Restore | Save the config to a file on your computer (config.boot or `set` commands), or restore a config.boot backup live, protected by Safe Mode. The **History** tab lists the automatic snapshots, shows what changed in each one, and restores any of them. |
 | Protocols, VRF, System, Services | A config tree editor for that section: browse it, set values, delete nodes, and view it as `set` commands. |
-| Tools | Ping, Traceroute, Packet Capture ("Torch", using tcpdump), IP Scan and Profile. |
+| Tools → Torch | Like Winbox Torch: live Tx/Rx rate and packets per second for every conversation on an interface, with totals. Optional tcpdump-style filter; VyGi's own SSH traffic is hidden by default. Also opens from **Interfaces → Torch**. |
+| Queues | Like Winbox Simple Queues: a max download and/or upload speed per device (by IPv4 address). Download is shaped on the LAN port (HTB shaper `VYGI-DOWN-<port>`), upload is policed as it arrives (limiter `VYGI-UP-<port>`). VyGi won't touch a port that already has another QoS policy. |
+| Tools | Ping, Traceroute, Packet Sniffer (raw tcpdump), IP Scan and Profile. |
 | Log | Live system journal with severity and text filters. |
 | System → Revisions | Commit history, a colored diff of each commit, and rollback to any revision **without rebooting**. |
 | New Terminal | A full SSH terminal (xterm.js). |
@@ -137,16 +139,15 @@ Testing on the real router found and fixed several things mocks didn't show: VyO
 
 ## Limitations
 
-- Packet Capture shows raw tcpdump lines. It is not Winbox Torch's per-flow rate table.
+- Torch rates come from tcpdump with a 96-byte snapshot. On a very busy link (hundreds of Mbit/s) tcpdump itself costs CPU on the router and may drop packets, so rates read low.
 - Firewall and NAT forms cover the common fields (addresses, ports, interfaces, state, groups). Other options (rate limits, TCP flags, etc.) are kept when you edit a rule but are only editable in the config tree.
 - Routing protocols, IPsec/OpenVPN setup and most system settings use the generic config tree editor, not purpose-built forms.
 - The forms target VyOS 1.5 config paths (e.g. DHCP `subnet-id` and `option …`). VyOS 1.4 is not supported by those forms.
 - Backup restore only accepts config.boot-format files, not `set` command exports.
-- You can be connected to one router at a time.
 - Clients only shows what the router can see (ARP, DHCP, WireGuard). Per-client traffic needs connection accounting, which VyOS leaves off, so Activity counts open connections instead.
 - Blocking a client drops its forwarded traffic by MAC address (IPv4 forward chain). Devices with private, changing MAC addresses can get around it.
-- There is no Queues/QoS window yet (VyOS's traffic-shaping model is quite different from Winbox's simple queues).
-- Log, Packet Capture and DHCP Leases use `sudo` over SSH. That works by default for VyOS admin users.
+- Simple Queues limit IPv4 only, and match the device's IP address, so give it a fixed IP. The download shaper assumes a 1 Gbit/s LAN port as its total. Upload limiting drops packets above the limit (policing) instead of queueing them, so TCP uploads can look bursty. The queues were checked against VyOS's config validation in the test container, but that container's kernel can't run the actual traffic control, so the real speed limiting has not been measured yet.
+- Log, Torch, Packet Sniffer and DHCP Leases use `sudo` over SSH. That works by default for VyOS admin users.
 
 ## Project layout
 
@@ -164,12 +165,14 @@ src-tauri/src/                Rust backend
   connection.rs               connect/disconnect, saved routers
   transactions.rs             commit, Safe Mode confirm, save, revisions, rollback
   monitor.rs                  live stats, routes, WireGuard, log/ping/capture streams
+  torch.rs                    Torch: per-flow rates from tcpdump
   sysinfo.rs                  resources, neighbors, LLDP, connections, IP scan, processes, images, DHCP leases
   backup.rs                   config export/import
   wireguard.rs                WireGuard key generation (local)
   checkup.rs                  connect check-up: snapshots, changes, health
   security.rs                 OS keychain + routers.json
-  state.rs, error.rs
+  state.rs                    per-window connection state
+  error.rs
 e2e/                          end-to-end tests against a real VyOS router in Docker
 ```
 

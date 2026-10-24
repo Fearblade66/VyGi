@@ -24,7 +24,7 @@ try {
     ["DHCP Leases", "IP"], ["DNS", "IP"], ["Services", "IP"], ["Filter Rules", "Firewall"], ["NAT", "Firewall"],
     ["Address Lists", "Firewall"], ["Connections", "Firewall"], ["VPN"], ["Log"], ["Resources", "System"], ["Users", "System"],
     ["Images (Upgrade)", "System"], ["Revisions / Rollback", "System"], ["Backup / Restore", "System"], ["IP Scan", "Tools"],
-    ["Profile", "Tools"], ["Routing Protocols"], ["New Terminal"],
+    ["Profile", "Tools"], ["Torch", "Tools"], ["Packet Sniffer", "Tools"], ["Queues"], ["Routing Protocols"], ["New Terminal"],
   ];
   for (const [label, parent] of windows) {
     await js(`document.getElementById('status-text').textContent=''; document.getElementById('statusbar').classList.remove('error'); menu(arguments[0], arguments[1]); return true;`, label, parent || null);
