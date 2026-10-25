@@ -69,8 +69,10 @@ export async function confirmBox(title, message, okLabel = "OK") {
  * `submit(values)` runs on OK; throw or return false to keep the dialog open.
  * Resolves to the values, or null on cancel.
  */
-export async function formDialog(title, fields, submit, { intro, okLabel = "OK", onChange } = {}) {
+export async function formDialog(title, fields, submit, { intro, okLabel = "OK", onChange, initChange = false } = {}) {
   const inputs = {};
+  const parts = {}; // field -> its grid elements (for show/hide)
+  const hints = {};
   const errBox = h("div.err-box", { hidden: true });
   const grid = h("div.form");
   for (const f of fields) {
@@ -88,12 +90,15 @@ export async function formDialog(title, fields, submit, { intro, okLabel = "OK",
       input = h("input", { type: f.type || "text", value: f.value ?? "", placeholder: f.placeholder || "" });
     }
     inputs[f.name] = input;
-    if (f.type === "checkbox") {
-      grid.append(h("span"), h("label", { style: { textAlign: "left" } }, input, " ", f.label));
-    } else {
-      grid.append(h("label", f.label), input);
+    const els = f.type === "checkbox"
+      ? [h("span"), h("label", { style: { textAlign: "left" } }, input, " ", f.label)]
+      : [h("label", f.label), input];
+    if (f.hint !== undefined) {
+      hints[f.name] = h("span.hint", f.hint);
+      els.push(h("span"), hints[f.name]);
     }
-    if (f.hint) grid.append(h("span"), h("span.hint", f.hint));
+    parts[f.name] = els;
+    grid.append(...els);
   }
   const read = () => {
     const out = {};
@@ -109,7 +114,20 @@ export async function formDialog(title, fields, submit, { intro, okLabel = "OK",
     const set = (name, value) => {
       if (inputs[name] && "value" in inputs[name]) inputs[name].value = value;
     };
+    // set.show(name, bool) hides a field; set.hint(name, text) rewrites its hint.
+    set.show = (name, on) => {
+      (parts[name] || []).forEach((el) => (el.hidden = !on));
+      if (hints[name] && !hints[name].textContent) hints[name].hidden = hints[name].previousSibling.hidden = true;
+    };
+    set.hint = (name, text) => {
+      if (hints[name]) {
+        hints[name].textContent = text;
+        hints[name].hidden = !text;
+        hints[name].previousSibling.hidden = !text;
+      }
+    };
     for (const f of fields) inputs[f.name].addEventListener("change", () => onChange(f.name, read(), set));
+    if (initChange) onChange(null, read(), set);
   }
   let result = null;
   const r = await modal(title, h("div", intro ? h("div.warn-box", intro) : null, errBox, grid), [

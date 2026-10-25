@@ -275,6 +275,33 @@ pub async fn lldp_neighbors(state: Win) -> AppResult<Value> {
         .unwrap_or(Value::Null))
 }
 
+/// Dynamic DNS update status per host name (null when not configured).
+#[tauri::command]
+pub async fn ddns_status(state: Win) -> AppResult<Value> {
+    let conn = state.conn().await?;
+    Ok(op_raw(&conn.ssh, "dns.py", "show_dynamic_status")
+        .await?
+        .unwrap_or(Value::Null))
+}
+
+/// Forces Dynamic DNS to update now (clears ddclient's cache and restarts it).
+#[tauri::command]
+pub async fn ddns_update_now(state: Win) -> AppResult<String> {
+    let conn = state.conn().await?;
+    let out = conn
+        .ssh
+        .exec(
+            &format!("sudo -n {OP_MODE}/dns.py reset_dynamic 2>&1"),
+            Duration::from_secs(60),
+        )
+        .await?;
+    let text = out.stdout.trim().to_string();
+    if out.exit_code.is_some_and(|c| c != 0) {
+        return Err(AppError::Ssh(first_line(&text).to_string()));
+    }
+    Ok(text)
+}
+
 // ---------------------------------------------------------------- connections
 
 #[derive(Serialize, Debug, PartialEq)]
