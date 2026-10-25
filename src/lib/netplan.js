@@ -82,6 +82,7 @@ export function readNetworks(cfg, wan) {
         vlan,
         parent,
         type: n.type,
+        ports: n.type === "bridge" ? Object.keys(n.cfg?.member?.interface || {}).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })) : [],
         path: n.path,
         dhcp,
         dnsMode: dhcp && dhcp.dns.length === 1 && dhcp.dns[0] === p.ip ? "router" : dhcp?.dns.length ? "custom" : "router",
@@ -127,6 +128,12 @@ export function suggestPool(routerCidr) {
   return { start: numIp(mid), stop: numIp(last) };
 }
 
+/** First unused bridge name (br0, br1, …). */
+function nextBridge(cfg) {
+  const used = new Set(Object.keys(cfg?.interfaces?.bridge || {}));
+  for (let i = 0; ; i++) if (!used.has(`br${i}`)) return `br${i}`;
+}
+
 class Numbers {
   constructor(rules) {
     this.used = new Set(Object.keys(rules || {}).map(Number));
@@ -150,7 +157,7 @@ const dhcpName = (name) => name.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+
 
 /**
  * Commands to create (existing = null) or update a network.
- * spec: { name, mode: "vlan"|"port", parent, vlan, port, cidr, dhcp, poolStart, poolStop,
+ * spec: { name, mode: "vlan"|"port", parent, vlan, port | ports (several = a bridge), cidr, dhcp, poolStart, poolStop,
  *         dnsMode: "router"|"custom", dnsServers, internet, isolate }
  * env: { wan, mgmtHost } (mgmtHost = the address VyGi is connected to).
  */
@@ -171,6 +178,19 @@ export function networkCommands(cfg, spec, env, existing = null) {
     ifPath = existing.path;
     gw = parseIpv4Cidr(existing.cidr);
     if ((existing.name || "") !== name) set([...ifPath, "description"], name);
+    // a bridged network can gain or lose ports
+    if (existing.type === "bridge" && Array.isArray(spec.ports)) {
+      const want = [...new Set(spec.ports)];
+      if (!want.length) throw new Error("A network needs at least one port");
+      const types = cfg?.interfaces || {};
+      for (const port of want) {
+        if (existing.ports.includes(port)) continue;
+        if (toArray(types.ethernet?.[port]?.address).length) throw new Error(`${port} already has an address`);
+        if (Object.entries(types.bridge || {}).some(([b, c]) => b !== iface && c?.member?.interface?.[port])) throw new Error(`${port} is part of another bridge`);
+        set([...ifPath, "member", "interface", port]);
+      }
+      for (const port of existing.ports) if (!want.includes(port)) del([...ifPath, "member", "interface", port]);
+    }
   } else {
     gw = parseIpv4Cidr(String(spec.cidr || "").trim());
     if (!gw || gw.bits < 16 || gw.bits > 30) throw new Error("Gateway: an address with prefix, e.g. 192.168.20.1/24 (/16 to /30)");
@@ -188,11 +208,22 @@ export function networkCommands(cfg, spec, env, existing = null) {
       iface = `${spec.parent}.${vlan}`;
       ifPath = ["interfaces", type, spec.parent, "vif", String(vlan)];
     } else {
-      if (!/^eth\d+$/.test(spec.port || "")) throw new Error("Choose a free port");
-      if (toArray(types.ethernet?.[spec.port]?.address).length) throw new Error(`${spec.port} already has an address`);
-      if (Object.values(types.bridge || {}).some((b) => b?.member?.interface?.[spec.port])) throw new Error(`${spec.port} is part of a bridge`);
-      iface = spec.port;
-      ifPath = ["interfaces", "ethernet", spec.port];
+      // one port, or several bridged together (they act like one switch)
+      const ports = [...new Set(spec.ports?.length ? spec.ports : spec.port ? [spec.port] : [])];
+      if (!ports.length) throw new Error("Choose a free port");
+      for (const port of ports) {
+        if (!/^eth\d+$/.test(port)) throw new Error("Choose a free port");
+        if (toArray(types.ethernet?.[port]?.address).length) throw new Error(`${port} already has an address`);
+        if (Object.values(types.bridge || {}).some((b) => b?.member?.interface?.[port])) throw new Error(`${port} is part of a bridge`);
+      }
+      if (ports.length === 1) {
+        iface = ports[0];
+        ifPath = ["interfaces", "ethernet", iface];
+      } else {
+        iface = nextBridge(cfg);
+        ifPath = ["interfaces", "bridge", iface];
+        for (const port of ports) set([...ifPath, "member", "interface", port]);
+      }
     }
     set([...ifPath, "address"], `${gw.ip}/${gw.bits}`);
     set([...ifPath, "description"], name);

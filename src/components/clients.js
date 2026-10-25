@@ -66,6 +66,14 @@ function activity(c) {
   return c.connections ? `${c.connections} conn.` : "";
 }
 
+let focusRequest = null; // { key, text } from the search bar, applied on the next load
+
+/** Opens Clients filtered to one device, with its details (used by the search bar). */
+export function openClient(key, text) {
+  focusRequest = { key, text };
+  showView("clients");
+}
+
 export function initClients() {
   const root = document.getElementById("clients");
   let clients = [];
@@ -196,6 +204,13 @@ export function initClients() {
       if (traffic.accounting && !traffic.ready) setTimeout(() => !root.hidden && load(), 3000); // second sample for rates
       dnsHits = sum && !sum.error ? dnsHitsByIp(sum) : null;
       summary.textContent = `${clients.filter((c) => c.online).length} online · updated ${new Date().toLocaleTimeString()}`;
+      if (focusRequest) {
+        searchEl.value = focusRequest.text;
+        search = focusRequest.text.toLowerCase();
+        if (clients.some((c) => c.key === focusRequest.key)) selectedKey = focusRequest.key;
+        focusRequest = null;
+        renderSide();
+      }
       render();
     } catch (e) {
       summary.textContent = errorText(e);

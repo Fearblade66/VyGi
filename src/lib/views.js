@@ -27,6 +27,11 @@ function store(key, value) {
   return value;
 }
 
+/** [{ name, title }] of the sidebar pages (for the search bar). */
+export function pageList() {
+  return Object.entries(VIEWS).map(([name, v]) => ({ name, title: v.title }));
+}
+
 export function registerView(name, handlers) {
   listeners.set(name, handlers);
 }

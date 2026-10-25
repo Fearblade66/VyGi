@@ -116,3 +116,21 @@ test("IPv6: isolation and no-internet get matching rules, and delete removes the
   const net = readNetworks(withV6, "eth0")[1];
   assert.ok(lines(deleteNetworkCommands(withV6, net, env)).includes("delete firewall ipv6 forward filter rule 7"));
 });
+
+test("several ports make a bridge; a bridged network can change ports", () => {
+  const c = structuredClone(cfg);
+  c.interfaces.ethernet.eth3 = {};
+  const l = lines(networkCommands(c, { ...guest, mode: "port", ports: ["eth2", "eth3"], isolate: false }, env));
+  assert.ok(l.includes("set interfaces bridge br0 member interface eth2"));
+  assert.ok(l.includes("set interfaces bridge br0 member interface eth3"));
+  assert.ok(l.includes("set interfaces bridge br0 address 192.168.30.1/24"));
+  assert.ok(l.some((x) => x.includes("inbound-interface name br0")));
+  c.interfaces.bridge = { br0: { address: "192.168.30.1/24", description: "Office", member: { interface: { eth2: {}, eth3: {} } } } };
+  const net = readNetworks(c, "eth0").find((n) => n.iface === "br0");
+  assert.deepEqual(net.ports, ["eth2", "eth3"]);
+  const e = lines(networkCommands(c, { ...guest, name: "Office", ports: ["eth3"], isolate: false }, env, net));
+  assert.ok(e.includes("delete interfaces bridge br0 member interface eth2"));
+  assert.ok(!e.some((x) => x.includes("set interfaces bridge br0 member")));
+  assert.throws(() => networkCommands(c, { ...guest, name: "Office", ports: [] }, env, net), /at least one port/);
+  assert.throws(() => networkCommands(c, { ...guest, cidr: "192.168.40.1/24", mode: "port", ports: ["eth1", "eth3"] }, env), /already has an address/);
+});

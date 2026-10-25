@@ -88,7 +88,7 @@ export function initNetworks() {
     }
     const mgmt = session.info?.profile?.host && ipv4InCidr(session.info.profile.host, n.network);
     const badges = [
-      n.vlan ? h("span.badge", `VLAN ${n.vlan}`) : h("span.badge", n.iface),
+      n.vlan ? h("span.badge", `VLAN ${n.vlan}`) : h("span.badge", n.ports?.length ? `${n.iface}: ${n.ports.join(", ")}` : n.iface),
       n.isolated ? h("span.badge.warn", icon("lock", 12), "Isolated") : null,
       !n.internet ? h("span.badge.bad", icon("ban", 12), "No internet") : null,
       mgmt ? h("span.badge.info", "VyGi connects here") : null,
@@ -121,12 +121,13 @@ export function initNetworks() {
       { name: "name", label: "Name", value: n?.name || "Guest", placeholder: "e.g. Guest, IoT, Kids" },
       ...(n ? [] : [
         { name: "preset", label: "Purpose", type: "select", value: "guest", options: Object.entries(PRESETS).map(([value, p]) => ({ value, label: p.label })), hint: "" },
-        { name: "mode", label: "Network on", type: "select", value: "vlan", options: [{ value: "vlan", label: "a VLAN (needs a VLAN-capable switch or access point)" }, { value: "port", label: "its own port" }] },
+        { name: "mode", label: "Network on", type: "select", value: "vlan", options: [{ value: "vlan", label: "a VLAN (needs a VLAN-capable switch or access point)" }, { value: "port", label: "its own port(s)" }] },
         { name: "parent", label: "VLAN on port", type: "select", value: lanParent, options: parents },
         { name: "vlan", label: "VLAN ID", value: vlan0, placeholder: "2–4094" },
-        { name: "port", label: "Port", type: "select", value: ports[0] || "", options: ports.length ? ports : [{ value: "", label: "no free port" }] },
+        { name: "ports", label: "Ports", type: "multicheck", value: ports.slice(0, 1), options: ports, hint: ports.length ? "Tick several to join them into one network (a bridge): they then work like one switch." : "No free ports: every port already has an address or is in a bridge." },
         { name: "cidr", label: "Gateway / subnet", value: cidr0, hint: "The router's address on this network, with the size (/24 = 254 devices)." },
       ]),
+      ...(n?.type === "bridge" ? [{ name: "ports", label: "Ports", type: "multicheck", value: n.ports, options: [...n.ports, ...ports].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })), hint: "The ports in this network (a bridge). Devices plugged into any of them are on this network." }] : []),
       { name: "dhcp", label: "Hand out addresses (DHCP)", type: "checkbox", value: n ? !!n.dhcp : true },
       { name: "poolStart", label: "Pool from", value: pool0.start },
       { name: "poolStop", label: "Pool to", value: pool0.stop },
@@ -176,7 +177,7 @@ export function initNetworks() {
         if (!n) {
           set.show("parent", v.mode === "vlan");
           set.show("vlan", v.mode === "vlan");
-          set.show("port", v.mode === "port");
+          set.show("ports", v.mode === "port");
           set.hint("preset", { guest: "Guests get internet but can't reach your devices or the router's settings.", iot: "Devices can talk to each other and get DHCP/DNS, nothing else. Good for cameras and smart plugs that shouldn't phone home.", standard: "Like your main network: full access." }[v.preset] || "");
         }
         set.show("poolStart", v.dhcp);
