@@ -269,15 +269,7 @@ impl Watcher {
     }
 
     async fn connect(&self, ws: &Arc<WindowState>, id: &str) -> AppResult<String> {
-        let profile = self.app.profiles.find(id)?;
-        let req = serde_json::from_value(json!({ "profile": profile, "remember": false }))?;
-        match connection::connect(St(self.app.clone()), Win(ws.clone()), req).await {
-            Ok(info) => Ok(serde_json::to_value(&info)?["hostname"].as_str().unwrap_or(id).to_string()),
-            Err(e @ (AppError::UntrustedCert { .. } | AppError::UntrustedHostKey { .. })) => Err(AppError::Invalid(format!(
-                "{e}. Connect to this router from VyGi once (and trust it) so the server can watch it."
-            ))),
-            Err(e) => Err(e),
-        }
+        connect_saved(&self.app, ws, id).await
     }
 
     async fn router_task(
@@ -366,6 +358,29 @@ impl Watcher {
             }
         }
         lock(&status).running = false;
+    }
+}
+
+/// Connects `ws` to a saved router with its saved password and key (and the
+/// fingerprints trusted earlier). Returns the router's host name.
+pub async fn connect_saved(
+    app: &Arc<AppState>,
+    ws: &Arc<WindowState>,
+    id: &str,
+) -> AppResult<String> {
+    let profile = app.profiles.find(id)?;
+    let req = serde_json::from_value(json!({ "profile": profile, "remember": false }))?;
+    match connection::connect(St(app.clone()), Win(ws.clone()), req).await {
+        Ok(info) => Ok(serde_json::to_value(&info)?["hostname"]
+            .as_str()
+            .unwrap_or(id)
+            .to_string()),
+        Err(e @ (AppError::UntrustedCert { .. } | AppError::UntrustedHostKey { .. })) => {
+            Err(AppError::Invalid(format!(
+            "{e}. Connect to this router from VyGi once (and trust it) so the server can use it."
+        )))
+        }
+        Err(e) => Err(e),
     }
 }
 

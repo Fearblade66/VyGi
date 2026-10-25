@@ -580,3 +580,7 @@ button.danger { color: var(--bad); }
 .log-line .m { white-space: pre-wrap; word-break: break-word; }
 .log-line.p0 .m, .log-line.p1 .m, .log-line.p2 .m, .log-line.p3 .m { color: var(--bad); }
 .log-line.p4 .m { color: color-mix(in srgb, var(--warn) 80%, var(--text)); }
+.copy-wrap { display: flex; gap: 6px; align-items: flex-start; margin: 4px 0 8px; }
+.copy-box { flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; resize: none; }
+.token-list table { width: 100%; }
+.token-list td, .token-list th { padding: 5px 6px; }

@@ -35,6 +35,8 @@ import { initAlerts } from "./components/alerts.js";
 import { initHistory } from "./components/history_view.js";
 import { initSearch } from "./components/search.js";
 import { initInsights } from "./components/insights.js";
+import { openApiAccess } from "./components/apiaccess.js";
+import { openClaudeReport } from "./components/report.js";
 import { initDashboard } from "./components/dashboard.js";
 import { initClients } from "./components/clients.js";
 import { openBackup } from "./components/backup.js";
@@ -95,6 +97,7 @@ const MENU = [
       { label: "Revisions / Rollback", open: openRevisions },
       { label: "Backup / Restore", open: () => openBackup() },
       { label: "Check-up", open: () => runCheckup({ alwaysShow: true }) },
+      { label: "Report for Claude", open: () => openClaudeReport() },
       { label: "System Settings", open: () => openConfigTree(["system"], "System") },
       { label: "Services (config)", open: () => openConfigTree(["service"], "Services") },
       { label: "Full Configuration", open: () => openConfigTree([], "Configuration") },
@@ -175,6 +178,10 @@ async function webLoginDialog() {
 function initWebAccount() {
   document.getElementById("web-account").hidden = false;
   for (const el of document.querySelectorAll(".web-only")) el.hidden = false;
+  document.getElementById("web-api").addEventListener("click", (e) => {
+    e.preventDefault();
+    openApiAccess();
+  });
   document.getElementById("web-logout").addEventListener("click", (e) => {
     e.preventDefault();
     webLogout();

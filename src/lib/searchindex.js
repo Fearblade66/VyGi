@@ -32,6 +32,7 @@ export const SYNONYMS = [
   [["cpu", "memory", "temperature", "disk", "uptime"], ["t:Resources"]],
   [["route", "routing", "gateway", "bgp", "ospf"], ["t:Routes", "t:Routing Protocols"]],
   [["setup", "wizard", "quick", "start"], ["t:Quick Set"]],
+  [["claude", "ai", "report", "support", "help", "diagnose"], ["t:Report for Claude"]],
 ];
 
 /** 0 = no match; higher is better. Word starts and exact matches win. */

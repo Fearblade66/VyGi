@@ -13,6 +13,8 @@ mod alerts;
 mod auth;
 mod dispatch;
 mod history;
+mod mcp;
+mod tokens;
 pub mod watch;
 
 use std::collections::HashMap;
@@ -45,6 +47,9 @@ const TAB_IDLE: Duration = Duration::from_secs(10 * 60);
 pub struct Server {
     app: Arc<AppState>,
     auth: Auth,
+    tokens: tokens::Tokens,
+    /// for the certificate download (Claude's MCP client must trust it)
+    cert_path: Option<PathBuf>,
     watch: Arc<watch::Watcher>,
     /// window label -> last request
     tabs: StdMutex<HashMap<String, Instant>>,
@@ -111,6 +116,8 @@ pub async fn run(cfg: Config) -> Result<(), String> {
     let server = Arc::new(Server {
         app,
         auth,
+        tokens: tokens::Tokens::load(&cfg.data),
+        cert_path: cfg.tls.then(|| cfg.data.join("tls").join("cert.pem")),
         watch,
         tabs: StdMutex::new(HashMap::new()),
     });
@@ -150,6 +157,10 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         .route("/api/bye", post(bye))
         .route("/api/invoke/{cmd}", post(invoke))
         .route("/api/stream", get(stream))
+        .route("/api/tokens", get(tokens_list).post(token_create))
+        .route("/api/tokens/{id}/revoke", post(token_revoke))
+        .route("/api/cert", get(cert))
+        .route("/mcp", post(mcp_post).get(mcp_get).delete(mcp_get))
         .fallback_service(ServeDir::new(&cfg.web).fallback(ServeFile::new(index)))
         .layer(axum::middleware::map_response(security_headers))
         .with_state(server);
@@ -185,14 +196,32 @@ fn tls_config(cfg: &Config) -> Result<axum_server::tls_rustls::RustlsConfig, Str
 
     let dir = cfg.data.join("tls");
     let (cert_path, key_path) = (dir.join("cert.pem"), dir.join("key.pem"));
-    if !cert_path.exists() || !key_path.exists() {
+    // A certificate VyGi made itself is remade when VYGI_HOSTNAMES changes
+    // (a marker file says which names it has); your own is never touched.
+    let mut names = vec![
+        "vygi".to_string(),
+        "localhost".to_string(),
+        "127.0.0.1".to_string(),
+    ];
+    names.extend(cfg.hostnames.iter().cloned());
+    let marker = dir.join("made-by-vygi-for.txt");
+    let made_for = std::fs::read_to_string(&marker).ok();
+    let missing = !cert_path.exists() || !key_path.exists();
+    let outdated = made_for
+        .as_deref()
+        .is_some_and(|m| m.trim() != names.join(","));
+    if missing || outdated {
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let mut names = vec!["vygi".to_string(), "localhost".to_string()];
-        names.extend(cfg.hostnames.iter().cloned());
-        let cert = rcgen::generate_simple_self_signed(names).map_err(|e| e.to_string())?;
+        // names that are IP addresses become IP entries in the certificate
+        let cert = rcgen::generate_simple_self_signed(names.clone()).map_err(|e| e.to_string())?;
         std::fs::write(&cert_path, cert.cert.pem()).map_err(|e| e.to_string())?;
         auth::write_private(&key_path, cert.key_pair.serialize_pem().as_bytes())?;
-        println!("Made a self-signed certificate in {}", dir.display());
+        std::fs::write(&marker, names.join(",")).map_err(|e| e.to_string())?;
+        println!(
+            "Made a self-signed certificate for {} in {}",
+            names.join(", "),
+            dir.display()
+        );
     }
     let certs = CertificateDer::pem_file_iter(&cert_path)
         .and_then(|i| i.collect::<Result<Vec<_>, _>>())
@@ -435,4 +464,117 @@ async fn run_stream(app: Arc<AppState>, win: Arc<WindowState>, socket: WebSocket
         }
     }
     let _ = crate::monitor::close_session(crate::state::Win(win), id).await;
+}
+
+// ---------------------------------------------------------------- API tokens and MCP
+
+/// Token management is for a logged-in browser tab only.
+fn ui_session(s: &Server, headers: &HeaderMap) -> bool {
+    s.auth.session(headers).is_some()
+        && tab_id(headers.get("x-vygi-tab").and_then(|v| v.to_str().ok())).is_some()
+}
+
+async fn tokens_list(State(s): State<Arc<Server>>, headers: HeaderMap) -> Response {
+    if !ui_session(&s, &headers) {
+        return plain_error(StatusCode::UNAUTHORIZED, "Log in first");
+    }
+    Json(s.tokens.list()).into_response()
+}
+
+#[derive(Deserialize)]
+struct TokenReq {
+    name: String,
+    scope: tokens::Scope,
+}
+
+async fn token_create(
+    State(s): State<Arc<Server>>,
+    headers: HeaderMap,
+    Json(req): Json<TokenReq>,
+) -> Response {
+    if !ui_session(&s, &headers) {
+        return plain_error(StatusCode::UNAUTHORIZED, "Log in first");
+    }
+    match s.tokens.create(&req.name, req.scope, watch::now_ms()) {
+        Ok((info, secret)) => Json(json!({ "token": info, "secret": secret })).into_response(),
+        Err(e) => plain_error(StatusCode::BAD_REQUEST, &e),
+    }
+}
+
+async fn token_revoke(
+    State(s): State<Arc<Server>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if !ui_session(&s, &headers) {
+        return plain_error(StatusCode::UNAUTHORIZED, "Log in first");
+    }
+    // close the token's router connections too
+    let prefix = format!("api:{id}:");
+    let labels: Vec<String> = s
+        .tabs
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .keys()
+        .filter(|k| k.starts_with(&prefix))
+        .cloned()
+        .collect();
+    for l in labels {
+        s.tabs.lock().unwrap_or_else(|e| e.into_inner()).remove(&l);
+        if let Some(ws) = s.app.remove_window(&l) {
+            ws.disconnect().await;
+        }
+    }
+    match s.tokens.revoke(&id) {
+        Ok(true) => Json(json!({ "ok": true })).into_response(),
+        Ok(false) => plain_error(StatusCode::NOT_FOUND, "No such token"),
+        Err(e) => plain_error(StatusCode::INTERNAL_SERVER_ERROR, &e),
+    }
+}
+
+/// The server's (public) certificate, so MCP clients can be told to trust it.
+async fn cert(State(s): State<Arc<Server>>) -> Response {
+    match s.cert_path.as_ref().and_then(|p| std::fs::read(p).ok()) {
+        Some(pem) => (
+            [
+                (header::CONTENT_TYPE, "application/x-pem-file"),
+                (
+                    header::CONTENT_DISPOSITION,
+                    "attachment; filename=\"vygi-cert.pem\"",
+                ),
+            ],
+            pem,
+        )
+            .into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+async fn mcp_get() -> Response {
+    // no server-to-client stream: everything is request/response
+    (StatusCode::METHOD_NOT_ALLOWED, [(header::ALLOW, "POST")]).into_response()
+}
+
+async fn mcp_post(State(s): State<Arc<Server>>, headers: HeaderMap, body: Bytes) -> Response {
+    // browsers must not be able to drive this from another site (DNS rebinding)
+    if headers.contains_key(header::ORIGIN) && !same_origin(&headers) {
+        return plain_error(StatusCode::FORBIDDEN, "cross-site request refused");
+    }
+    let bearer = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(str::trim);
+    let Some(token) = bearer.and_then(|t| s.tokens.check(t, watch::now_ms())) else {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await; // slows down guessing
+        return (StatusCode::UNAUTHORIZED, [(header::WWW_AUTHENTICATE, "Bearer")], Json(json!({ "error": "Use an API token made in VyGi (Authorization: Bearer vygi_...)" }))).into_response();
+    };
+    let msg: Value = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(e) => return Json(json!({ "jsonrpc": "2.0", "id": null, "error": { "code": -32700, "message": format!("Parse error: {e}") } })).into_response(),
+    };
+    match mcp::handle(&s, &token, msg).await {
+        Some(reply) => Json(reply).into_response(),
+        None => StatusCode::ACCEPTED.into_response(),
+    }
 }

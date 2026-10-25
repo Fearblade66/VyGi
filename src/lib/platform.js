@@ -173,3 +173,15 @@ if (!isDesktop && typeof window !== "undefined") {
   // Closing the tab disconnects right away.
   window.addEventListener("pagehide", () => navigator.sendBeacon(`/api/bye?tab=${TAB}`));
 }
+
+// ---- web only: API tokens (for Claude / MCP and scripts)
+
+async function tokenFetch(path, opts = {}) {
+  const r = await fetch(path, { credentials: "same-origin", ...opts, headers: { "content-type": "application/json", "x-vygi-tab": TAB, ...(opts.headers || {}) } });
+  const body = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(body?.message || `HTTP ${r.status}`);
+  return body;
+}
+export const webTokens = () => tokenFetch("/api/tokens");
+export const webTokenCreate = (name, scope) => tokenFetch("/api/tokens", { method: "POST", body: JSON.stringify({ name, scope }) });
+export const webTokenRevoke = (id) => tokenFetch(`/api/tokens/${encodeURIComponent(id)}/revoke`, { method: "POST" });
