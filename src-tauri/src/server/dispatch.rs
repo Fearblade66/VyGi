@@ -12,6 +12,7 @@ use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::mpsc::UnboundedSender;
 
+use super::watch::{now_ms, Notify, RouterWatch, WatchHost, Watcher};
 use crate::error::{AppError, AppResult};
 use crate::state::{AppState, Out, St, Win, WindowState};
 use crate::{
@@ -30,10 +31,14 @@ fn json<T: Serialize>(r: AppResult<T>) -> AppResult<Value> {
 
 pub async fn call(
     app: &Arc<AppState>,
+    watcher: &Arc<Watcher>,
     win: Arc<WindowState>,
     cmd: &str,
     a: Value,
 ) -> AppResult<Value> {
+    if let Some(rest) = cmd.strip_prefix("watch_") {
+        return watch_call(watcher, &win, rest, &a).await;
+    }
     let st = || St(app.clone());
     let w = || Win(win.clone());
     match cmd {
@@ -171,5 +176,76 @@ pub async fn open_stream(
             .await
         }
         _ => Err(AppError::Invalid(format!("unknown stream `{cmd}`"))),
+    }
+}
+
+/// 24/7 watching and its recordings, for the router this tab is connected to.
+async fn watch_call(
+    w: &Arc<Watcher>,
+    win: &Arc<WindowState>,
+    cmd: &str,
+    a: &Value,
+) -> AppResult<Value> {
+    let conn = win.conn().await?;
+    let id = conn.profile_id.clone();
+    const DAY: u64 = 86_400_000;
+    let now = now_ms();
+    match cmd {
+        // settings and status
+        "get" => Ok(serde_json::json!({
+            "router": w.router(&id),
+            "status": w.status(&id),
+            "notify": w.notify_settings(),
+        })),
+        "set" => {
+            let old = w.router(&id);
+            let rw = RouterWatch {
+                enabled: arg::<Option<bool>>(a, "enabled")?.unwrap_or(old.enabled),
+                kinds: arg::<Option<_>>(a, "kinds")?.unwrap_or(old.kinds),
+                hosts: arg::<Option<Vec<WatchHost>>>(a, "hosts")?.unwrap_or(old.hosts),
+                name: arg::<Option<String>>(a, "name")?.unwrap_or(old.name),
+            };
+            json(w.set_router(&id, rw))
+        }
+        "notify_set" => json(w.set_notify(arg::<Notify>(a, "notify")?)),
+        "notify_test" => {
+            let test = super::alerts::Alert {
+                kind: "test".into(),
+                text: "Test from VyGi: notifications work.".into(),
+                level: "info".into(),
+                at: now,
+            };
+            json(w.notify(&w.router(&id).name, &[test]).await)
+        }
+        // recordings
+        "alerts" => json(Ok(w.store(&id).alerts(
+            arg::<Option<u64>>(a, "since")?.unwrap_or(0),
+            arg::<Option<usize>>(a, "limit")?.unwrap_or(200).min(2000),
+        ))),
+        "traffic" => {
+            let hours = arg::<Option<u64>>(a, "hours")?
+                .unwrap_or(24)
+                .clamp(1, 24 * 400);
+            json(Ok(w.store(&id).wan(now - hours * 3_600_000, now, 400)))
+        }
+        "devices" => {
+            let days = arg::<Option<u64>>(a, "days")?.unwrap_or(1).clamp(1, 400);
+            let list = w.store(&id).devices(now - (days - 1) * DAY, now, 100);
+            json(Ok(list.into_iter().map(|(key, t)| serde_json::json!({ "key": key, "ip": t.ip, "name": t.name, "down": t.down, "up": t.up })).collect::<Vec<_>>()))
+        }
+        "logs" => {
+            let days = arg::<Option<u64>>(a, "days")?.unwrap_or(1).clamp(1, 400);
+            let q: String = arg::<Option<String>>(a, "query")?.unwrap_or_default();
+            let max_p = arg::<Option<u8>>(a, "maxPriority")?.unwrap_or(7);
+            let limit = arg::<Option<usize>>(a, "limit")?.unwrap_or(500).min(5000);
+            json(Ok(w.store(&id).logs(
+                &q,
+                now - days * DAY,
+                now,
+                max_p,
+                limit,
+            )))
+        }
+        _ => Err(AppError::Invalid(format!("unknown command `watch_{cmd}`"))),
     }
 }

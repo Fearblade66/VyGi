@@ -141,7 +141,20 @@ Then open `https://<that machine>:8443`, accept the certificate warning once (Vy
 - **Data:** everything lives in the `/data` volume: saved routers, their passwords and API keys (in a file readable only by the container's user; there is no OS keychain on a server), Technitium links, config backups, GeoIP data, site icons, the TLS certificate and the web password hash.
 - **Each browser tab** has its own router connection, like the desktop app's windows. A tab that has been closed (or silent for 10 minutes) is disconnected.
 - **Security:** whoever can log in to VyGi controls your routers. Use a long password, keep port 8443 inside your home network (reach it from outside through the WireGuard VPN, not a port forward), and keep the data volume private. Logins are limited to 10 wrong passwords per 5 minutes. Sessions last 30 days and end when the server restarts.
-- **Differences from the desktop app:** backups download to the browser and restore from an upload; alerts and notifications only run while a VyGi tab is open (the server doesn't watch the router on its own yet).
+- **Differences from the desktop app:** backups download to the browser and restore from an upload.
+
+### 24/7 watching (web version)
+
+In the alerts bell, switch on **Watch this router 24/7 on the VyGi server**. From then on the server keeps its own connection to that router (reconnecting by itself, also after a restart) and, every minute:
+
+- runs the alert checks (internet down/back, new devices, Dynamic DNS, router restarts, VPN devices, watched hosts) even when no VyGi tab is open, and sends them to your phone;
+- records internet traffic, data used per device (needs traffic counting on the router: Clients → Turn on traffic counting), and the router's system log (followed continuously, so nothing is missed after a reconnect).
+
+**Insights** (sidebar) shows what was recorded: internet traffic for the last 24 hours, 7 or 30 days, data per device, and the system log with search and a level filter. History is kept for 30 days (`VYGI_KEEP_DAYS` to change), in the data volume under `history/`.
+
+**Phone notifications:** in the bell, **Phone notifications**. The simplest is [ntfy](https://ntfy.sh): install the free app, subscribe to a topic with a hard-to-guess name (anyone who knows it can read it), and paste its URL (e.g. `https://ntfy.sh/vygi-6f3a9c2e`); or use your own ntfy server, with an access token for protected topics. A webhook URL works too: Discord and Slack webhooks get a message, anything else (Home Assistant, n8n…) gets JSON `{title, text, level, kind, at}`. **Save and test** sends a test message.
+
+The server needs the router's password and API key saved (tick **Remember** when connecting) and the router trusted once from VyGi.
 
 ## 3. Use it
 
@@ -218,7 +231,8 @@ index.html, src/              UI (plain JavaScript + Vite)
                               flowrates.js, sites.js, ddns.js (pure logic, tested with npm test)
   components/                 one file per window
 src-tauri/src/                Rust backend (the desktop app, or with --features server the web server)
-  server/                     web server: login, HTTPS, /api/invoke, WebSocket streams
+  server/                     web server: login, HTTPS, /api/invoke, WebSocket streams,
+                              24/7 watching (watch.rs, alerts.rs) and its recordings (history.rs)
   vyos_api.rs                 HTTPS API client
   tls.rs                      certificate pinning
   ssh.rs                      SSH terminal / commands / streams, host-key pinning

@@ -1,8 +1,10 @@
 // Alerts while VyGi is open: checks the router every minute (also when
 // minimized) and reports changes as a pop-up, a desktop notification when
 // VyGi isn't in front, and in the bell list in the top bar.
-import { notify } from "../lib/platform.js";
-import { api } from "../lib/api.js";
+import { notify, isDesktop } from "../lib/platform.js";
+import { formDialog } from "../lib/dialog.js";
+import { showView } from "../lib/views.js";
+import { api, errorText } from "../lib/api.js";
 import { h, clear, toast } from "../lib/dom.js";
 import { icon } from "../lib/icons.js";
 import { session, onSessionChange } from "../lib/session.js";
@@ -93,6 +95,33 @@ export function initAlerts() {
   let names = new Map(); // wireguard public key -> peer name
 
   const routerData = () => load(routerKey(), { state: {}, log: [], unread: 0 });
+  // Web version: the VyGi server may watch this router 24/7; then its alerts
+  // and settings are used instead of checking from this tab.
+  let server = null; // { router: {enabled, kinds, hosts}, status, notify } or null (desktop / unknown)
+  const serverMode = () => !!server?.router?.enabled;
+
+  async function loadServer() {
+    server = isDesktop ? null : await api.watchGet().catch(() => null);
+  }
+
+  /** New alerts from the server since the last look: shown like local ones. */
+  async function pullServer() {
+    const d = routerData();
+    const since = d.serverSeen || Date.now() - 60_000;
+    const list = await api.watchAlerts(since);
+    if (!list.length) return;
+    d.serverSeen = Math.max(...list.map((a) => a.at));
+    d.log = [...list, ...(d.log || [])].slice(0, LOG_MAX);
+    d.unread = (d.unread || 0) + list.length;
+    store(routerKey(), d);
+    updateBadge();
+    const host = session.info?.hostname;
+    for (const a of [...list].reverse()) {
+      toast(a.text, { error: a.level === "bad", warn: a.level === "warn" });
+      if (document.hidden || !document.hasFocus()) notifyDesktop(`VyGi: ${host}`, a.text);
+    }
+    if (panel) renderPanel();
+  }
 
   function updateBadge() {
     const d = session.info ? routerData() : { unread: 0 };
@@ -106,6 +135,7 @@ export function initAlerts() {
     running = true;
     const router = session.info.profileId;
     try {
+      if (serverMode()) return await pullServer();
       const on = enabled();
       if (on.vpn) {
         const wg = await api.getConfig(["interfaces", "wireguard"]).catch(() => ({}));
@@ -138,7 +168,7 @@ export function initAlerts() {
 
   function renderPanel() {
     const d = routerData();
-    const on = enabled();
+    const on = serverMode() ? { ...DEFAULT_ON, ...server.router.kinds } : enabled();
     const list = (d.log || []).length
       ? h("div.alert-list", d.log.map((a) => h(`div.alert-item.${a.level || "info"}`,
           h("span.alert-dot"),
@@ -146,22 +176,26 @@ export function initAlerts() {
       : h("div.hint", { style: { padding: "10px 0" } }, "Nothing yet. VyGi checks the router every minute while it's open.");
     const kinds = h("div.alert-kinds", Object.entries(KINDS).map(([k, label]) => {
       const cb = h("input", { type: "checkbox", checked: !!on[k] });
-      cb.addEventListener("change", () => store(kindsKey, { ...load(kindsKey, {}), [k]: cb.checked }));
+      cb.addEventListener("change", () => {
+        store(kindsKey, { ...load(kindsKey, {}), [k]: cb.checked });
+        if (serverMode()) saveServer({ kinds: { ...server.router.kinds, [k]: cb.checked } });
+      });
       return h("label", cb, " ", label);
     }));
     clear(panel).append(
       h("div.alert-head", h("b", "Alerts"), h("span.grow"),
         d.log?.length ? h("button", { on: { click: () => { store(routerKey(), { ...routerData(), log: [], unread: 0 }); renderPanel(); updateBadge(); } } }, "Clear") : null),
       list,
-      h("div.alert-foot", h("div.hint", "Alert me about:"), kinds, watchEditor(),
-        h("div.hint", "Alerts only work while VyGi is open (it can be minimized).")));
+      h("div.alert-foot", serverBox(), h("div.hint", "Alert me about:"), kinds, watchEditor(),
+        serverMode() ? null : h("div.hint", isDesktop ? "Alerts only work while VyGi is open (it can be minimized)." : "Alerts only work while a VyGi tab is open, unless the server watches this router 24/7.")));
   }
 
   // Netwatch-style: hosts the router pings every minute (a NAS, a camera, a server outside).
   function watchEditor() {
-    const list = load(watchKey(), []);
+    const list = serverMode() ? server.router.hosts || [] : load(watchKey(), []);
     const save = (l) => {
       store(watchKey(), l);
+      if (serverMode()) saveServer({ hosts: l });
       renderPanel();
     };
     const host = h("input", { placeholder: "address, e.g. 192.168.1.5" });
@@ -178,6 +212,61 @@ export function initAlerts() {
       h("div.watch-row", host, name, h("button", { on: { click: add } }, "Add")));
   }
 
+  async function saveServer(patch) {
+    try {
+      await api.watchSet(patch);
+      await loadServer();
+    } catch (e) {
+      toast(`Couldn't change the server's watching: ${errorText(e)}`, { error: true });
+    }
+    if (panel) renderPanel();
+  }
+
+  /** Web version: 24/7 watching on the server, and phone notifications. */
+  function serverBox() {
+    if (isDesktop || !server) return null;
+    const on = serverMode();
+    const st = server.status || {};
+    const sw = h("input", { type: "checkbox", checked: on });
+    sw.addEventListener("change", async () => {
+      // switching on takes this tab's choices along
+      await saveServer(sw.checked ? { enabled: true, kinds: load(kindsKey, {}), hosts: load(watchKey(), []), name: session.info?.hostname || "" } : { enabled: false });
+      store(routerKey(), { ...routerData(), serverSeen: Date.now() }); // only alerts from now on pop up
+    });
+    const state = !on ? "Off: alerts only while a VyGi tab is open."
+      : st.error ? `Problem: ${st.error}`
+      : st.connected ? `Watching. Last check ${st.lastCheck ? new Date(st.lastCheck).toLocaleTimeString() : "soon"}.`
+      : "Starting…";
+    const n = server.notify || {};
+    const phone = n.ntfyUrl || n.webhookUrl ? "Phone notifications on" : "Phone notifications off";
+    return h("div.server-box",
+      h("label.switch", sw, " ", h("b", "Watch this router 24/7 on the VyGi server")),
+      h("div.hint", state, on ? " Traffic, data per device and the system log are recorded (see Insights)." : ""),
+      h("div", h("a", { href: "#", on: { click: (e) => { e.preventDefault(); notifySettings(); } } }, phone), " · ", h("a", { href: "#", on: { click: (e) => { e.preventDefault(); togglePanel(false); showView("insights"); } } }, "Insights")));
+  }
+
+  async function notifySettings() {
+    const n = server?.notify || {};
+    await formDialog("Phone notifications", [
+      { name: "ntfyUrl", label: "ntfy topic URL", value: n.ntfyUrl || "", placeholder: "https://ntfy.sh/vygi-6f3a9c2e", hint: "Install the free ntfy app, subscribe to a hard-to-guess topic (anyone who knows it can read it), and paste its URL here. Or use your own ntfy server." },
+      { name: "ntfyToken", label: "ntfy access token", type: "password", value: n.ntfyToken || "", placeholder: "optional", hint: "Only for protected topics." },
+      { name: "webhookUrl", label: "Webhook URL", value: n.webhookUrl || "", placeholder: "optional: Discord, Slack, Home Assistant…", hint: "Discord and Slack webhooks get a message; anything else gets JSON {title, text, level, kind, at}." },
+    ], async (v) => {
+      await api.watchNotifySet({ ntfyUrl: v.ntfyUrl.trim(), ntfyToken: v.ntfyToken.trim(), webhookUrl: v.webhookUrl.trim() });
+      await loadServer();
+      if (v.ntfyUrl.trim() || v.webhookUrl.trim()) {
+        try {
+          await api.watchNotifyTest();
+          toast("Sent a test notification.");
+        } catch (e) {
+          throw new Error(`Saved, but the test failed: ${errorText(e)}`);
+        }
+      }
+      return true;
+    }, { okLabel: "Save and test", intro: "The VyGi server sends alerts here, also when no VyGi tab is open (only for routers it watches 24/7)." });
+    if (panel) renderPanel();
+  }
+
   function togglePanel(open = !panel) {
     if (!open) {
       panel?.remove();
@@ -187,6 +276,7 @@ export function initAlerts() {
     panel = h("div#alert-panel");
     document.getElementById("app").append(panel);
     renderPanel();
+    if (!isDesktop) loadServer().then(() => panel && renderPanel());
     store(routerKey(), { ...routerData(), unread: 0 });
     updateBadge();
   }
@@ -210,10 +300,14 @@ export function initAlerts() {
     clearInterval(timer);
     timer = null;
     togglePanel(false);
+    server = null;
     if (!router) return;
-    // first check soon after connecting, then every minute (also while minimized)
-    setTimeout(check, 5000);
-    timer = setInterval(check, INTERVAL);
+    // first check soon after connecting, then every minute (also while minimized);
+    // with the server watching, its alerts are fetched every 30 s instead
+    loadServer().finally(() => {
+      setTimeout(check, 5000);
+      timer = setInterval(check, serverMode() ? 30_000 : INTERVAL);
+    });
   });
   updateBadge();
 }

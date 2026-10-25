@@ -60,6 +60,10 @@ pub enum StreamKind {
     Syslog {
         lines: u32,
     },
+    /// The journal from a saved position on (the server's 24/7 log recording).
+    Journal {
+        cursor: Option<String>,
+    },
     /// Packet capture, Winbox "Torch"-like.
     Capture {
         interface: String,
@@ -82,6 +86,13 @@ fn stream_command(kind: &StreamKind) -> AppResult<String> {
                 lines.min(&5000)
             )
         }
+        StreamKind::Journal { cursor } => match cursor {
+            Some(c) => format!(
+                "sudo -n journalctl -f -o json --no-pager --after-cursor {}",
+                shell_quote(c)
+            ),
+            None => "sudo -n journalctl -f -o json --no-pager -n 200".into(),
+        },
         StreamKind::Capture { interface, filter } => {
             let iface = validate_name(interface)?;
             let mut cmd = format!("sudo -n tcpdump -l -n -nn -i {iface} -c 20000");

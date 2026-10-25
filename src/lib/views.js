@@ -12,6 +12,7 @@ const VIEWS = {
   ports: { title: "Port Forwarding", icon: "forward", el: "ports" },
   vpn: { title: "VPN", icon: "vpn", el: "vpnpage" },
   history: { title: "History", icon: "clock", el: "history" },
+  insights: { title: "Insights", icon: "dashboard", el: "insights" },
   windows: { title: "Advanced", icon: "advanced", el: "workspace" },
 };
 const listeners = new Map(); // view -> { show(), hide() }

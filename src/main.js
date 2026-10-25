@@ -34,6 +34,7 @@ import { initVpnPage } from "./components/vpn_view.js";
 import { initAlerts } from "./components/alerts.js";
 import { initHistory } from "./components/history_view.js";
 import { initSearch } from "./components/search.js";
+import { initInsights } from "./components/insights.js";
 import { initDashboard } from "./components/dashboard.js";
 import { initClients } from "./components/clients.js";
 import { openBackup } from "./components/backup.js";
@@ -173,6 +174,7 @@ async function webLoginDialog() {
 
 function initWebAccount() {
   document.getElementById("web-account").hidden = false;
+  for (const el of document.querySelectorAll(".web-only")) el.hidden = false;
   document.getElementById("web-logout").addEventListener("click", (e) => {
     e.preventDefault();
     webLogout();
@@ -204,6 +206,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initVpnPage();
   initAlerts();
   initHistory();
+  initInsights();
   initSearch(MENU.flatMap((m) => (m.children ? m.children.map((c) => ({ label: c.label, parent: m.label, open: c.open })) : [{ label: m.label, parent: null, open: m.open }])));
   showView("dashboard", { remember: false }); // the welcome screen until a router is connected
   renderMenu();

@@ -9,8 +9,11 @@
 //! Each browser tab sends its own id (`x-vygi-tab`), so every tab has its own
 //! router connection, like the desktop app's windows.
 
+mod alerts;
 mod auth;
 mod dispatch;
+mod history;
+pub mod watch;
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -42,6 +45,7 @@ const TAB_IDLE: Duration = Duration::from_secs(10 * 60);
 pub struct Server {
     app: Arc<AppState>,
     auth: Auth,
+    watch: Arc<watch::Watcher>,
     /// window label -> last request
     tabs: StdMutex<HashMap<String, Instant>>,
 }
@@ -52,6 +56,8 @@ pub struct Config {
     pub listen: SocketAddr,
     pub tls: bool,
     pub password: Option<String>,
+    /// How many days of history (traffic, logs) the 24/7 watching keeps.
+    pub keep_days: u64,
     pub hostnames: Vec<String>,
 }
 
@@ -73,6 +79,10 @@ impl Config {
             listen,
             tls,
             password: var("VYGI_PASSWORD"),
+            keep_days: var("VYGI_KEEP_DAYS")
+                .and_then(|v| v.parse().ok())
+                .filter(|d| *d > 0)
+                .unwrap_or(30),
             hostnames: var("VYGI_HOSTNAMES")
                 .map(|v| {
                     v.split(',')
@@ -96,9 +106,12 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         dirs,
     ));
     let auth = Auth::load(&cfg.data, cfg.password.as_deref(), cfg.tls)?;
+    let watch = watch::Watcher::new(app.clone(), &cfg.data, cfg.keep_days);
+    watch.start_all();
     let server = Arc::new(Server {
         app,
         auth,
+        watch,
         tabs: StdMutex::new(HashMap::new()),
     });
 
@@ -339,7 +352,7 @@ async fn invoke(
         }
     };
     let (_, win) = s.window(&session, tab);
-    match dispatch::call(&s.app, win, &cmd, args).await {
+    match dispatch::call(&s.app, &s.watch, win, &cmd, args).await {
         Ok(v) => Json(v).into_response(),
         Err(e) => api_error(StatusCode::BAD_REQUEST, &e),
     }

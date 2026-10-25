@@ -553,3 +553,30 @@ button.danger { color: var(--bad); }
 @media (max-width: 760px) { #search { width: 110px; } }
 #web-account { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
 #web-account a { color: var(--accent, #2b6cb0); text-decoration: none; cursor: pointer; }
+/* alerts: server watching */
+.server-box { display: flex; flex-direction: column; gap: 4px; padding-bottom: 8px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.server-box a, .log-bar a { color: var(--accent, #2b6cb0); text-decoration: none; }
+/* insights */
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.seg button { border: none; border-radius: 0; background: transparent; padding: 5px 12px; }
+.seg button.on { background: var(--select); font-weight: 600; }
+.insight-chart { width: 100%; height: 220px; display: block; }
+.insight-chart .grid { stroke: var(--border); stroke-width: 1; }
+.insight-chart .axis { fill: var(--muted); font-size: 11px; }
+.insight-chart polyline { fill: none; stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.insight-chart polyline.down { stroke: #006fff; }
+.insight-chart polyline.up { stroke: #12a150; }
+.legend { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.legend .sw.down { background: #006fff; } .legend .sw.up { background: #12a150; }
+.insight-devices { width: 100%; }
+.insight-devices td, .insight-devices th { padding: 6px 8px; }
+.log-bar { display: flex; gap: 8px; margin-bottom: 8px; }
+.log-bar input { flex: 1; min-width: 0; }
+.log-lines { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; max-height: 420px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+.log-line { display: grid; grid-template-columns: 150px 110px 1fr; gap: 8px; padding: 3px 8px; border-top: 1px solid var(--border); }
+.log-line:first-child { border-top: none; }
+.log-line .t, .log-line .id { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.log-line .m { white-space: pre-wrap; word-break: break-word; }
+.log-line.p0 .m, .log-line.p1 .m, .log-line.p2 .m, .log-line.p3 .m { color: var(--bad); }
+.log-line.p4 .m { color: color-mix(in srgb, var(--warn) 80%, var(--text)); }

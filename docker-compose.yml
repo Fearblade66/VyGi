@@ -16,6 +16,7 @@ services:
       # VYGI_PASSWORD: "choose-a-long-password"   # at least 10 characters
       # VYGI_HOSTNAMES: "vygi.lan,192.168.1.10"   # names for the self-signed certificate
       # VYGI_TLS: "off"                            # only behind your own HTTPS reverse proxy
+      # VYGI_KEEP_DAYS: "30"                       # days of traffic / log history to keep
 
 volumes:
   vygi-data:
