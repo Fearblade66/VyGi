@@ -20,6 +20,9 @@ Targets current VyOS (1.5 / rolling). The API calls were checked against `vyos-1
   - **Traffic Rules:** block the internet, or specific sites, for chosen devices or networks, always or on a schedule (e.g. the kids' tablet, Sun–Thu 22:00–07:00). Every rule has an on/off switch and shows whether it is blocking right now.
   - **Port Forwarding:** let the internet reach one device (game server, NAS, camera). Pick the device, a preset or ports (outside and inside can differ, ranges work), and optionally limit who may connect. VyGi adds the matching firewall rule when the forward chain drops by default, offers to reserve the device's address in DHCP, and warns when the router can't be reached from the internet (carrier-grade NAT, or a modem in front of it). Forwards made elsewhere are listed too; edit those in Advanced.
   - **VPN:** WireGuard servers with their devices: connected or last seen, data used, and where each connects from (country). **Set up VPN** creates the server and shows a QR code for the first device; **Add device** adds more. Devices can be paused or removed. The public address defaults to your Dynamic DNS name, or the router's internet address. VyGi never keeps a device's private key, so a lost config can't be shown again: remove the device and add it again.
+  - **History:** every change made with VyGi in plain words ("New rule Kids bedtime", "Pause forward Minecraft"), newest first, each with **Undo**. Undo puts the router back to how it was before that change (through Safe Mode) and lists any later changes that get undone with it. Changes made outside VyGi are listed separately. The list is kept on this computer.
+- **Security** (Dashboard, shown when something needs fixing): the default "vyos" password, the router being reachable from the internet, DNS answering anyone, UPnP, and Safe Mode rebooting instead of reloading. Each comes with a plain explanation and a one-click fix. The internet fix blocks new connections arriving on the internet port (rule 9900, after your own allow rules, plus an exception for DHCPv6 from your provider); VyGi won't offer it when it is itself connected through that port.
+- **Save changes automatically** (bottom of the sidebar, on by default): saves to the boot config right after a change, or after **Confirm** in Safe Mode, so nothing is lost on a restart.
 - **Alerts** (bell in the top bar): while VyGi is open, even minimized, it checks the router every minute and tells you when the internet goes down or comes back, a new device joins, a Dynamic DNS update fails, the router restarted, or (off by default) a VPN device connects. Alerts show as pop-ups, as desktop notifications when VyGi isn't in front, and in the bell's list. Choose which ones you want in that list.
 - **Advanced** (Winbox-style): every feature as a draggable window, opened from the tool list in the sidebar.
 
@@ -88,6 +91,8 @@ exit
 ```
 
 To make a random key on Linux or macOS, run `openssl rand -hex 32`.
+
+**Or let VyGi do it:** turn on SSH (`set service ssh`), then in VyGi enter the router's address, login and password and leave the API key empty. VyGi logs in over SSH, runs the commands above with a new random key, saves them and remembers the key.
 
 If you skip the `commit-confirm action reload` line, the app warns you when you connect and offers to set it.
 
@@ -181,7 +186,8 @@ index.html, src/              UI (plain JavaScript + Vite)
                               rules.js (shared firewall/NAT rule editor),
                               netdata.js (client list), views.js (pages and themes),
                               icons.js, netplan.js (Networks), trafficrules.js (Traffic Rules),
-                              portfwd.js (Port Forwarding), alerts.js, wan.js,
+                              portfwd.js (Port Forwarding), alerts.js, wan.js, secure.js (security check),
+                              history.js (change history),
                               flowrates.js, sites.js, ddns.js (pure logic, tested with npm test)
   components/                 one file per window
 src-tauri/src/                Rust backend

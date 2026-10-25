@@ -31,6 +31,7 @@ import { initRules } from "./components/rules_view.js";
 import { initPortForwards } from "./components/portfwd_view.js";
 import { initVpnPage } from "./components/vpn_view.js";
 import { initAlerts } from "./components/alerts.js";
+import { initHistory } from "./components/history_view.js";
 import { initDashboard } from "./components/dashboard.js";
 import { initClients } from "./components/clients.js";
 import { openBackup } from "./components/backup.js";
@@ -163,6 +164,7 @@ window.addEventListener("DOMContentLoaded", () => {
   initPortForwards();
   initVpnPage();
   initAlerts();
+  initHistory();
   showView("dashboard", { remember: false }); // the welcome screen until a router is connected
   renderMenu();
   document.getElementById("btn-connect").addEventListener("click", toggleConnect);

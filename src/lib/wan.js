@@ -26,7 +26,7 @@ export function wanProblem(ip) {
   return null;
 }
 
-/** { wan, wanIp, ddns, endpoint } from the router; endpoint = best address for clients to use. */
+/** { wan, wanIp, wanCidr, ddns, endpoint } from the router; endpoint = best address for clients to use. */
 export async function wanInfo() {
   const [routes, stats, dynamic] = await Promise.all([
     api.routes(4, "default").catch(() => []),
@@ -35,7 +35,8 @@ export async function wanInfo() {
   ]);
   const def = routes.find((r) => r.dst === "default");
   const wan = def?.dev || (def?.nexthops || [])[0]?.dev || "";
-  const wanIp = (stats.addrs || []).find((a) => a.ifname === wan)?.addr_info?.find((x) => x.family === "inet")?.local || "";
+  const addr = (stats.addrs || []).find((a) => a.ifname === wan)?.addr_info?.find((x) => x.family === "inet");
+  const wanIp = addr?.local || "";
   const ddns = ddnsName(dynamic);
-  return { wan, wanIp, ddns, endpoint: ddns || (wanIp && !wanProblem(wanIp) ? wanIp : "") };
+  return { wan, wanIp, wanCidr: addr ? `${addr.local}/${addr.prefixlen}` : "", ddns, endpoint: ddns || (wanIp && !wanProblem(wanIp) ? wanIp : "") };
 }

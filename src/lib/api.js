@@ -13,6 +13,7 @@ export const api = {
   connect: (req) => invoke("connect", { req }),
   disconnect: () => invoke("disconnect"),
   newWindow: () => invoke("new_window"),
+  changeLoginPassword: (newPassword) => invoke("change_login_password", { newPassword }),
   ddnsStatus: () => invoke("ddns_status"),
   routerTime: () => invoke("router_time"),
   ddnsUpdateNow: () => invoke("ddns_update_now"),

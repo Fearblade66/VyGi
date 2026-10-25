@@ -16,10 +16,12 @@ export async function showConnectDialog() {
     sshPort: h("input", { type: "number", value: 22, min: 1, max: 65535 }),
     sshUser: h("input", { type: "text", value: "vyos" }),
     sshPassword: h("input", { type: "password" }),
-    apiKey: h("input", { type: "password" }),
+    apiKey: h("input", { type: "password", placeholder: "leave empty: VyGi sets it up" }),
     remember: h("input", { type: "checkbox", checked: true }),
   };
   const savedHint = h("span.hint");
+  let savedFor = null; // "user@host" whose password and key are saved
+  let preparedKey = null; // key VyGi generated to set up the API over SSH
   const errBox = h("div.err-box", { hidden: true });
 
   const list = h("div.saved-list");
@@ -32,6 +34,7 @@ export async function showConnectDialog() {
     f.sshPassword.value = "";
     f.apiKey.value = "";
     const has = await api.hasSavedSecrets(`${p.sshUser}@${p.host}`).catch(() => false);
+    savedFor = has ? `${p.sshUser}@${p.host}` : null;
     f.sshPassword.placeholder = f.apiKey.placeholder = has ? "•••••••• (saved)" : "";
     savedHint.textContent = has ? "Password and API key are saved on this computer. Just press Connect, or type new ones to replace them." : "";
   };
@@ -83,7 +86,7 @@ export async function showConnectDialog() {
       h("span"), h("label", { style: { textAlign: "left" } }, f.remember, " Remember password and API key on this computer"),
     ),
     h("div.hint", { style: { marginTop: "8px" } },
-      "Router needs: `set service https api keys id vygi key <KEY>` and `set service https api rest`, plus SSH enabled (`set service ssh`)."),
+      "The router needs SSH turned on (`set service ssh`). Leave the API key empty and VyGi turns on the API for you."),
   );
 
   const trust = { tls: null, ssh: null };
@@ -93,6 +96,25 @@ export async function showConnectDialog() {
     { label: "Connect", value: "connect", primary: true },
   ], async () => {
     errBox.hidden = true;
+    // No API key and none saved: offer to turn the API on over SSH.
+    const id = `${f.sshUser.value.trim() || "vyos"}@${f.host.value.trim()}`;
+    let prepare = false;
+    if (!f.apiKey.value.trim() && savedFor !== id) {
+      if (!f.sshPassword.value) {
+        errBox.textContent = "Enter the router's login password.";
+        errBox.hidden = false;
+        return false;
+      }
+      if (!preparedKey) {
+        const ok = await confirmBox("Set up the router for VyGi",
+          "No API key entered. VyGi can log in over SSH and turn on the router's API for you, with a new random key that it remembers.\n\nIt runs these commands on the router and saves them:\n  set service https api keys id vygi key <new key>\n  set service https api rest\n  set system config-management commit-confirm action reload",
+          "Set it up");
+        if (!ok) return false;
+        const bytes = crypto.getRandomValues(new Uint8Array(24));
+        preparedKey = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+      }
+      prepare = true;
+    }
     const req = () => ({
       profile: {
         name: f.name.value.trim(),
@@ -101,9 +123,10 @@ export async function showConnectDialog() {
         sshPort: Number(f.sshPort.value) || 22,
         sshUser: f.sshUser.value.trim() || "vyos",
       },
-      apiKey: f.apiKey.value,
+      apiKey: prepare ? preparedKey : f.apiKey.value,
+      prepareApi: prepare,
       sshPassword: f.sshPassword.value,
-      remember: f.remember.checked,
+      remember: f.remember.checked || prepare, // a generated key must be kept
       trustTls: trust.tls,
       trustSsh: trust.ssh,
     });

@@ -2,6 +2,7 @@
 import { api, errorText } from "./api.js";
 import { setStatus, toast } from "./dom.js";
 import { confirmBox } from "./dialog.js";
+import { addEntry, updateEntry, settlePending, parseRevisions } from "./history.js";
 
 const listeners = new Set();
 export const session = {
@@ -26,6 +27,11 @@ export function setConnected(info) {
 
 export function isConnected() {
   return !!session.info;
+}
+
+/** "Save changes automatically" (on by default): saves after Confirm, or right after applying without Safe Mode. */
+export function autoSave() {
+  return document.getElementById("auto-save")?.checked ?? false;
 }
 
 function safeMinutes() {
@@ -55,10 +61,24 @@ export async function applyChanges(commands, what = "Changes") {
     throw e;
   }
   applyTx(tx);
+  if (/confirmed automatically/.test(tx.message || "") && session.info) settlePending(session.info.profileId, "kept");
+  remember(what, minutes);
   const auto = /confirmed automatically/.test(tx.message || "") ? "Previous Safe Mode changes kept. " : "";
-  setStatus(auto + (minutes ? `${what} applied. Press Confirm within ${minutes} min or the router reverts them.` : `${what} applied.`));
+  if (!minutes && autoSave()) await quietSave();
+  setStatus(auto + (minutes ? `${what} applied. Press Confirm within ${minutes} min or the router reverts them.` : `${what} applied${autoSave() && !session.unsaved ? " and saved" : ""}.`));
   listeners.forEach((fn) => fn(session));
   return tx;
+}
+
+/** Adds the change to this router's history, with the revision it made (for Undo). */
+function remember(what, minutes) {
+  const router = session.info?.profileId;
+  if (!router) return;
+  const e = addEntry(router, { what, pending: minutes > 0 });
+  api.listRevisions().then((t) => {
+    const top = parseRevisions(t)[0];
+    if (top) updateEntry(router, e.id, { stamp: top.stamp });
+  }).catch(() => {});
 }
 
 /** Updates the toolbar from a TxStatus returned by a command. */
@@ -85,9 +105,12 @@ async function withForeignPending(run) {
   }
 }
 
-export async function rollbackTo(rev) {
-  const tx = await withForeignPending(() => api.rollbackTo(rev, safeMinutes()));
+export async function rollbackTo(rev, what = `roll back to revision ${rev}`) {
+  const minutes = safeMinutes();
+  const tx = await withForeignPending(() => api.rollbackTo(rev, minutes));
   applyTx(tx);
+  remember(what, minutes);
+  if (!minutes && autoSave()) await quietSave();
   listeners.forEach((fn) => fn(session));
 }
 
@@ -127,6 +150,7 @@ export function renderToolbar() {
     btnConfirm.hidden = true;
     if (session.confirmDeadline && left <= 0) {
       session.confirmDeadline = null;
+      if (session.info) settlePending(session.info.profileId, "reverted");
       setStatus("Safe Mode timer expired: the router reverted the unconfirmed changes.", true);
       listeners.forEach((fn) => fn(session));
     }
@@ -152,16 +176,45 @@ export function initToolbar() {
   document.getElementById("btn-confirm").addEventListener("click", async () => {
     try {
       applyTx(await api.confirmCommit());
-      setStatus("Changes confirmed and kept.", false, { silent: true });
-      // Confirm keeps a change running; only Save keeps it after a reboot.
-      toast("Changes kept. They'll be lost if the router restarts, until you Save.", { action: { label: "Save now", fn: saveNow } });
+      if (session.info) settlePending(session.info.profileId, "kept");
+      if (autoSave() && (await quietSave())) {
+        setStatus("Changes confirmed and saved.");
+      } else {
+        setStatus("Changes confirmed and kept.", false, { silent: true });
+        // Confirm keeps a change running; only Save keeps it after a reboot.
+        toast("Changes kept. They'll be lost if the router restarts, until you Save.", { action: { label: "Save now", fn: saveNow } });
+      }
     } catch (e) {
       setStatus(errorText(e), true);
     }
   });
   document.getElementById("btn-save").addEventListener("click", saveNow);
+  const auto = document.getElementById("auto-save");
+  try {
+    auto.checked = localStorage.getItem("vygi.autosave") !== "0";
+  } catch {
+    auto.checked = true;
+  }
+  auto.addEventListener("change", () => {
+    try {
+      localStorage.setItem("vygi.autosave", auto.checked ? "1" : "0");
+    } catch {
+      /* stays for this session */
+    }
+  });
   setInterval(renderToolbar, 1000);
   renderToolbar();
+}
+
+/** Saves without asking; false (with a message) if it failed. */
+async function quietSave() {
+  try {
+    applyTx(await api.saveConfig());
+    return true;
+  } catch (e) {
+    setStatus(`Applied, but saving failed: ${errorText(e)}`, true);
+    return false;
+  }
 }
 
 /** Writes the running config to the boot config (asks first if a Safe Mode change is unconfirmed). */

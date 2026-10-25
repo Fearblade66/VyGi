@@ -92,7 +92,7 @@ where
 }
 
 /// Whether a commit-confirm is waiting on the router (VyOS runs it as a systemd timer).
-async fn confirm_pending(conn: &Connection) -> bool {
+pub(crate) async fn confirm_pending(conn: &Connection) -> bool {
     conn.ssh
         .exec(
             "systemctl is-active commit-confirm.timer",
@@ -257,7 +257,8 @@ pub async fn rollback_to(state: Win, rev: u32, confirm_minutes: u32) -> AppResul
     let conn = state.conn().await?;
     let mut p = path(&["system", "commit", "file"]);
     p.push(rev.to_string());
-    let config_text = conn.api.show(&p).await?;
+    // Warnings the router prints (e.g. "sudo: unable to resolve host") would make it unloadable.
+    let config_text = crate::backup::strip_noise(&conn.api.show(&p).await?);
     if config_text.trim().is_empty() {
         return Err(AppError::Api(format!("revision {rev} is empty or missing")));
     }

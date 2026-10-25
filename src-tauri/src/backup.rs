@@ -45,7 +45,7 @@ pub(crate) async fn running_boot(conn: &Connection) -> AppResult<String> {
 
 /// Drops warnings some systems print before the config (e.g. sudo/hostname,
 /// perl locale), which would make the text unloadable.
-fn strip_noise(text: &str) -> String {
+pub(crate) fn strip_noise(text: &str) -> String {
     let noise = |l: &str| {
         let t = l.trim_start();
         t.starts_with("sudo: ")

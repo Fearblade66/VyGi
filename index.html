@@ -26,11 +26,13 @@
           <button data-view="rules">Traffic Rules</button>
           <button data-view="ports">Port Forwarding</button>
           <button data-view="vpn">VPN</button>
+          <button data-view="history">History</button>
           <button data-view="windows">Advanced</button>
         </nav>
         <div class="nav-label" id="menu-label">Advanced tools</div>
         <nav id="menu"></nav>
         <div id="sidebar-foot">
+          <label class="switch autosave" title="Write changes to the boot config as soon as they're applied (after Confirm in Safe Mode), so they survive a restart"><input type="checkbox" id="auto-save" /><span class="switch-ui"></span> Save changes automatically</label>
           <select id="theme" title="Look">
             <option value="modern-auto">Modern (follow system)</option>
             <option value="modern-light">Modern light</option>
@@ -64,6 +66,7 @@
           <section id="rules" class="view" hidden></section>
           <section id="ports" class="view" hidden></section>
           <section id="vpnpage" class="view" hidden></section>
+          <section id="history" class="view" hidden></section>
           <main id="workspace" class="view"></main>
         </div>
         <footer id="statusbar"><span id="status-text">Ready</span></footer>

@@ -46,6 +46,7 @@ pub fn run() {
             connection::connect,
             connection::disconnect,
             connection::new_window,
+            connection::change_login_password,
             transactions::tx_status,
             transactions::get_config,
             transactions::run_show,
