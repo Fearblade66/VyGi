@@ -38,9 +38,33 @@ pub(crate) async fn running_boot(conn: &Connection) -> AppResult<String> {
         .show(&path(&["system", "commit", "file", "0"]))
         .await
     {
-        Ok(t) if !t.trim().is_empty() => Ok(t),
-        _ => conn.api.show_config_raw().await,
+        Ok(t) if !t.trim().is_empty() => Ok(strip_noise(&t)),
+        _ => conn.api.show_config_raw().await.map(|t| strip_noise(&t)),
     }
+}
+
+/// Drops warnings some systems print before the config (e.g. sudo/hostname,
+/// perl locale), which would make the text unloadable.
+fn strip_noise(text: &str) -> String {
+    let noise = |l: &str| {
+        let t = l.trim_start();
+        t.starts_with("sudo: ")
+            || t.starts_with("perl: warning")
+            || t.starts_with("LANGUAGE =")
+            || t.starts_with("LC_ALL =")
+            || t.starts_with("LC_CTYPE =")
+            || t.starts_with("LANG =")
+            || t.starts_with("are supported and installed")
+    };
+    let mut out: String = text
+        .lines()
+        .filter(|l| !noise(l))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if text.ends_with('\n') {
+        out.push('\n');
+    }
+    out
 }
 
 /// Writes the running config to `file` (a path the user picked in a save dialog).
@@ -116,6 +140,13 @@ fn check_boot_format(text: &str) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn strips_system_noise() {
+        let t = "sudo: unable to resolve host vyos: System error\nfirewall {\n}\n// Release version: 1\n";
+        assert_eq!(strip_noise(t), "firewall {\n}\n// Release version: 1\n");
+        assert_eq!(strip_noise("a {\n}"), "a {\n}");
+    }
 
     #[test]
     fn detects_formats() {

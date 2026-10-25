@@ -138,12 +138,57 @@ pub async fn apply_changes(
     }
     let minutes = check_minutes(confirm_minutes)?;
     let conn = state.conn().await?;
-    let msg = commit(&state, &conn, || {
+    // VyOS commits section by section: when one part fails, the parts before
+    // it stay applied. Keep the last committed config (VyOS's own archive copy,
+    // clean config.boot text) so a failure can be undone.
+    // A failed commit doesn't reach the archive, so changes are detected on
+    // the live config and undone from the archive copy.
+    let before = match (
+        conn.api.show_config(&[]).await,
+        crate::backup::running_boot(&conn).await,
+    ) {
+        (Ok(live), Ok(text)) => Some((live, text)),
+        _ => None,
+    };
+    let result = commit(&state, &conn, || {
         Box::pin(conn.api.configure(&commands, minutes))
     })
-    .await?;
+    .await;
+    let msg = match result {
+        Ok(msg) => msg,
+        Err(e) => return Err(undo_partial(&state, &conn, before, e).await),
+    };
     record_commit(&state, minutes).await;
     Ok(status(&state, msg).await)
+}
+
+/// After a failed commit: if the running config changed anyway (partially
+/// applied), put back the config from before. Returns the error to report.
+async fn undo_partial(
+    state: &WindowState,
+    conn: &Connection,
+    before: Option<(Value, String)>,
+    err: AppError,
+) -> AppError {
+    let Some((live, text)) = before.filter(|(_, t)| !t.trim().is_empty()) else {
+        return err;
+    };
+    match conn.api.show_config(&[]).await {
+        Ok(now) if now != live => {}
+        _ => return err,
+    }
+    let undone = commit(state, conn, || {
+        Box::pin(conn.api.load_config_text(&text, 0))
+    })
+    .await;
+    match undone {
+        Ok(_) => AppError::Api(format!(
+            "{err}\n\nThe router had applied part of this change before the error. VyGi put the configuration back the way it was."
+        )),
+        Err(e2) => AppError::Api(format!(
+            "{err}\n\nThe router applied part of this change and VyGi could not undo it ({e2}). Check System > Revisions / Rollback."
+        )),
+    }
 }
 
 /// Keeps the pending Safe Mode commit.
