@@ -32,7 +32,8 @@ export async function showConnectDialog() {
     f.sshPassword.value = "";
     f.apiKey.value = "";
     const has = await api.hasSavedSecrets(`${p.sshUser}@${p.host}`).catch(() => false);
-    savedHint.textContent = has ? "Password and API key are saved in the OS keychain. Leave empty to use them." : "";
+    f.sshPassword.placeholder = f.apiKey.placeholder = has ? "•••••••• (saved)" : "";
+    savedHint.textContent = has ? "Password and API key are saved on this computer. Just press Connect, or type new ones to replace them." : "";
   };
   const renderList = () => {
     clear(list);
@@ -79,7 +80,7 @@ export async function showConnectDialog() {
       h("span"), savedHint,
       h("label", "HTTPS Port"), f.apiPort,
       h("label", "SSH Port"), f.sshPort,
-      h("span"), h("label", { style: { textAlign: "left" } }, f.remember, " Remember password and key (OS keychain)"),
+      h("span"), h("label", { style: { textAlign: "left" } }, f.remember, " Remember password and API key on this computer"),
     ),
     h("div.hint", { style: { marginTop: "8px" } },
       "Router needs: `set service https api keys id vygi key <KEY>` and `set service https api rest`, plus SSH enabled (`set service ssh`)."),
@@ -112,7 +113,8 @@ export async function showConnectDialog() {
       try {
         connected = await api.connect(req());
         setConnected(connected);
-        setStatus(connected.keychainError ? `Connected to ${connected.hostname}, but the password could not be saved: ${connected.keychainError}` : `Connected to ${connected.hostname}.`, !!connected.keychainError);
+        const e = connected.keychainError;
+        setStatus(e ? `Connected to ${connected.hostname}. Password and API key: ${e}.` : `Connected to ${connected.hostname}.`, !!e && !/saved in a file/.test(e));
         return true;
       } catch (e) {
         const accepted = await handleTrust(e, trust);

@@ -37,7 +37,8 @@ pub struct ConnectInfo {
     version: String,
     /// What the router does when a commit-confirm times out: "reboot" or "reload".
     revert_action: String,
-    /// Set when "remember" was requested but the OS keychain refused.
+    /// Set when "remember" was requested but the OS keychain refused (says
+    /// whether the file fallback was used).
     keychain_error: Option<String>,
 }
 
@@ -49,13 +50,13 @@ pub fn list_routers(state: State<'_, AppState>) -> AppResult<Vec<RouterProfile>>
 #[tauri::command]
 pub fn has_saved_secrets(state: State<'_, AppState>, id: String) -> AppResult<bool> {
     let profile = state.profiles.find(&id)?;
-    Ok(security::load_secrets(&profile)?.is_some())
+    Ok(security::load_secrets(&state.profiles.dir(), &profile)?.is_some())
 }
 
 #[tauri::command]
 pub fn forget_router(state: State<'_, AppState>, id: String) -> AppResult<()> {
     if let Some(profile) = state.profiles.remove(&id)? {
-        security::delete_secrets(&profile)?;
+        security::delete_secrets(&state.profiles.dir(), &profile)?;
     }
     Ok(())
 }
@@ -94,7 +95,7 @@ pub async fn connect(
         non_empty(req.ssh_password.clone()),
     ) {
         (Some(_), Some(_)) => None,
-        _ => security::load_secrets(&profile).unwrap_or(None),
+        _ => security::load_secrets(&state.profiles.dir(), &profile).unwrap_or(None),
     };
     let api_key = non_empty(req.api_key)
         .or_else(|| stored.as_ref().map(|s| s.api_key.clone()))
@@ -152,16 +153,19 @@ pub async fn connect(
     }
     state.profiles.upsert(&profile)?;
     // A missing OS keychain (e.g. Linux without a keyring service) must not block connecting.
+    // Not saving must not block connecting; the UI says what happened.
     let keychain_error = if req.remember {
-        security::store_secrets(
-            &profile,
-            &Secrets {
-                api_key,
-                ssh_password,
-            },
-        )
-        .err()
-        .map(|e| e.to_string())
+        let secrets = Secrets {
+            api_key,
+            ssh_password,
+        };
+        match security::store_secrets(&state.profiles.dir(), &profile, &secrets) {
+            Ok(None) => None,
+            Ok(Some(reason)) => Some(format!(
+                "the OS keychain didn't work ({reason}), so they were saved in a file only your user can read"
+            )),
+            Err(e) => Some(format!("they could not be saved: {e}")),
+        }
     } else {
         None
     };

@@ -65,7 +65,7 @@ The sidebar shows the connected router, with a button to open **another window f
 
 - **HTTPS certificate pinning.** VyOS uses a self-signed certificate. On the first connection the app shows its SHA-256 fingerprint and asks you to trust it. If the certificate changes later, you get a loud warning. TLS verification is never switched off.
 - **SSH host key pinning** works the same way.
-- **Secrets stay in the OS keychain.** The API key and SSH password go to the Windows Credential Manager, macOS Keychain or GNOME Keyring/KWallet. `routers.json` holds only host, ports, user and fingerprints.
+- **Secrets go to the OS keychain.** The API key and SSH password go to the Windows Credential Manager, macOS Keychain or GNOME Keyring/KWallet. If the keychain doesn't work (e.g. Linux without a keyring service), they go to `secrets.json` in VyGi's config folder instead, readable only by your user account but not encrypted, and VyGi tells you so when you connect. `routers.json` holds only host, ports, user and fingerprints.
 - **Local backups contain secrets** (WireGuard keys, password hashes, API keys), just like any VyOS config backup. On macOS and Linux they are created readable only by your user account. Keep the computer secure.
 - **No shell injection from the UI.** Interface and VRF names are validated, and capture filters and ping targets are shell-quoted.
 
@@ -199,7 +199,7 @@ src-tauri/src/                Rust backend
   backup.rs                   config export/import
   wireguard.rs                WireGuard key generation (local)
   checkup.rs                  connect check-up: snapshots, changes, health
-  security.rs                 OS keychain + routers.json (Technitium links: dns-servers.json)
+  security.rs                 OS keychain (file fallback) + routers.json (Technitium links: dns-servers.json)
   state.rs                    per-window connection state
   error.rs
 e2e/                          end-to-end tests against a real VyOS router in Docker
