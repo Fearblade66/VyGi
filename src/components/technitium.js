@@ -1,7 +1,7 @@
 // IP > DNS Server (Technitium): stats, top clients/domains, block/allow lists,
 // pause blocking, query log, and handing the server out to LAN devices by DHCP.
 import { api, errorText } from "../lib/api.js";
-import { h, clear, setStatus } from "../lib/dom.js";
+import { h, clear, setStatus, every } from "../lib/dom.js";
 import { openWindow, tabs } from "../lib/mdi.js";
 import { makeTable, filterBox } from "../lib/table.js";
 import { formDialog, confirmBox, alertBox, modal } from "../lib/dialog.js";
@@ -557,6 +557,6 @@ export function openDnsServer(opts = {}) {
   if (opts.client) qClient.value = opts.client;
   win.body.addEventListener("dns-client", (e) => showLogFor({ client: e.detail }));
   init();
-  const timer = setInterval(() => { if (url && current === "Dashboard") loadDashboard(); }, 60_000);
+  const timer = every(() => { if (url && current === "Dashboard") loadDashboard(); }, 60_000);
   win.onClose(() => { clearInterval(timer); chart.dispose(); });
 }

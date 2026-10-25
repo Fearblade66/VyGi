@@ -1,5 +1,6 @@
-// Connects the real app to the test router and opens every window,
-// reporting each window's contents and any error in the status bar.
+// Connects the real app to the test router and opens every page and window,
+// reporting each one's contents, any error in the status bar, and any
+// uncaught script error (e.g. a broken refresh timer).
 // Usage: node smoke.mjs <app-binary> <screenshot-dir> [router-ip]
 import { session, H, F, connect, setHelpers } from "./wd.mjs";
 const [app = "../src-tauri/target/debug/vygi", out = ".", router = "172.17.0.2"] = process.argv.slice(2);
@@ -9,6 +10,8 @@ const log = (...a) => console.log(...a);
 const js = (code, ...a) => s.js(`${H}${F}${code}`, ...a);
 let failures = 0;
 try {
+  // Collect uncaught errors from the start (timers and promises included).
+  await s.js(`window.__smokeErrors = []; window.addEventListener('error', (e) => __smokeErrors.push(String(e.message))); window.addEventListener('unhandledrejection', (e) => __smokeErrors.push(String(e.reason?.message || e.reason))); return true;`);
   await connect(s, log, router);
   setHelpers(H + F);
   log("connected:", await js(`return status()`));
@@ -34,6 +37,12 @@ try {
     if (err) failures++;
     log(`${err ? "FAIL" : "ok  "} [${label}] ${err || body}`);
     if (await js(`return !!dlg()`)) await js(`dlg().querySelector('.dialog-buttons button').click(); return true;`);
+  }
+  await s.sleep(5000); // let the open windows' refresh timers run
+  const scriptErrors = [...new Set(await js(`return window.__smokeErrors`))];
+  for (const e of scriptErrors) {
+    failures++;
+    log(`FAIL [script error] ${e}`);
   }
 } catch (e) {
   failures++;

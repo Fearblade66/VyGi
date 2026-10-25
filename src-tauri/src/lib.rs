@@ -64,6 +64,7 @@ pub fn run() {
             sysinfo::neighbors,
             sysinfo::lldp_neighbors,
             sysinfo::ddns_status,
+            sysinfo::router_time,
             sysinfo::ddns_update_now,
             sysinfo::connections,
             sysinfo::ping_latency,

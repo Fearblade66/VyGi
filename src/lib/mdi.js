@@ -9,6 +9,25 @@ function workspace() {
   return document.getElementById("workspace");
 }
 
+/** Keeps windows reachable when the app window gets smaller. */
+function keepInside() {
+  const ws = workspace();
+  if (!ws || ws.hidden || !ws.clientWidth) return;
+  for (const el of ws.querySelectorAll(".mdi-win:not(.maximized)")) {
+    const w = Math.min(el.offsetWidth, ws.clientWidth - 10);
+    const hgt = Math.min(el.offsetHeight, ws.clientHeight - 10);
+    if (w !== el.offsetWidth) el.style.width = `${w}px`;
+    if (hgt !== el.offsetHeight) el.style.height = `${hgt}px`;
+    el.style.left = `${Math.max(0, Math.min(el.offsetLeft, ws.clientWidth - w))}px`;
+    el.style.top = `${Math.max(0, Math.min(el.offsetTop, ws.clientHeight - hgt))}px`;
+  }
+}
+let resizeTimer = null;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(keepInside, 120);
+});
+
 /**
  * Opens a window, or focuses the existing one with the same `key`.
  * Returns { el, body, close(), setTitle(), onClose(fn), onResize(fn), isNew }.

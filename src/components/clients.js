@@ -1,7 +1,7 @@
 // Clients: a UniFi-style list of devices on the network, with a detail panel
 // and actions (rename, fixed IP, block, ping).
 import { api, errorText } from "../lib/api.js";
-import { h, clear, setStatus, formatBytes, formatAge, formatBits } from "../lib/dom.js";
+import { h, clear, setStatus, formatBytes, formatAge, formatBits, every } from "../lib/dom.js";
 import { makeTable } from "../lib/table.js";
 import { registerView, showView, welcome } from "../lib/views.js";
 import { formDialog, confirmBox, alertBox } from "../lib/dialog.js";
@@ -280,7 +280,7 @@ export function initClients() {
   registerView("clients", {
     show: () => {
       load();
-      timer = setInterval(load, 10000);
+      timer = every(load, 10000);
     },
     hide: () => clearInterval(timer),
   });

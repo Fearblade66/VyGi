@@ -1,6 +1,6 @@
 // System windows: Resources (live CPU/memory), Identity & Clock, Reboot/Shutdown, Images.
 import { api, errorText } from "../lib/api.js";
-import { h, setStatus, formatBytes } from "../lib/dom.js";
+import { h, setStatus, formatBytes, every } from "../lib/dom.js";
 import { openWindow, closeAllWindows } from "../lib/mdi.js";
 import { makeTable } from "../lib/table.js";
 import { formDialog, confirmBox, alertBox } from "../lib/dialog.js";
@@ -71,7 +71,7 @@ export function openResources() {
     );
   }
   poll();
-  const timer = setInterval(poll, 2000);
+  const timer = every(poll, 2000);
   win.onClose(() => {
     clearInterval(timer);
     cpuChart.dispose();

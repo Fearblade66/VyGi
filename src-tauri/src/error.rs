@@ -39,6 +39,8 @@ pub enum AppError {
     Invalid(String),
     #[error("Timed out: {0}")]
     Timeout(String),
+    #[error("Another change is waiting for Confirm on this router (from another VyGi window, the CLI or someone else). Keep it with Confirm, or let it revert, before making a new change.")]
+    ForeignPending,
 }
 
 impl AppError {
@@ -57,6 +59,7 @@ impl AppError {
             AppError::Io(_) => "Io",
             AppError::Invalid(_) => "Invalid",
             AppError::Timeout(_) => "Timeout",
+            AppError::ForeignPending => "ForeignPending",
         }
     }
 }

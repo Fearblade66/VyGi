@@ -1,6 +1,6 @@
 // Firewall > Address Lists (VyOS firewall groups) and Firewall > Connections (conntrack).
 import { api, errorText } from "../lib/api.js";
-import { h, setStatus, formatBytes } from "../lib/dom.js";
+import { h, setStatus, formatBytes, every } from "../lib/dom.js";
 import { openWindow } from "../lib/mdi.js";
 import { makeTable, filterBox } from "../lib/table.js";
 import { formDialog, confirmBox, alertBox } from "../lib/dialog.js";
@@ -145,6 +145,6 @@ export function openConnections() {
     summary.textContent = `${flows.length} connections${top ? ` · busiest: ${top}` : ""}${counted ? "" : " · byte counters off (net.netfilter.nf_conntrack_acct)"}`;
   }
   load();
-  const timer = setInterval(() => auto.checked && load(), 5000);
+  const timer = every(() => auto.checked && load(), 5000);
   win.onClose(() => clearInterval(timer));
 }

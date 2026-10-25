@@ -1,6 +1,6 @@
 // VPN: WireGuard peers (live), IPsec SAs and OpenVPN status (VyOS op-mode text).
 import { api, errorText } from "../lib/api.js";
-import { h, setStatus, formatBytes, formatAge } from "../lib/dom.js";
+import { h, setStatus, formatBytes, formatAge, every } from "../lib/dom.js";
 import { openWindow, tabs } from "../lib/mdi.js";
 import { makeTable, filterBox } from "../lib/table.js";
 import { openConfigTree } from "./config_tree.js";
@@ -127,7 +127,7 @@ export function openVpn() {
   };
 
   loadWgNames().then(() => t.select("WireGuard"));
-  const timer = setInterval(() => {
+  const timer = every(() => {
     if (t.pages.WireGuard.classList.contains("active")) loadWg();
   }, 3000);
   win.onClose(() => clearInterval(timer));

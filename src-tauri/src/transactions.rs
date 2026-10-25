@@ -58,8 +58,10 @@ pub(crate) type CommitFuture<'a> = Pin<Box<dyn Future<Output = AppResult<String>
 pub(crate) const AUTO_CONFIRMED: &str = "Previous Safe Mode changes were confirmed automatically.";
 
 /// Runs one commit. VyOS refuses a new commit while a commit-confirm is
-/// pending ("Another confirm is pending"). Being able to send this request
-/// proves the pending change didn't cut us off, so confirm it first.
+/// pending ("Another confirm is pending"). If the pending change is this
+/// window's own, being able to send this request proves it didn't cut us
+/// off, so it is confirmed first. A change pending from elsewhere (another
+/// window, the CLI) is never confirmed silently: the UI asks.
 pub(crate) async fn commit<'a, F>(
     state: &WindowState,
     conn: &Connection,
@@ -68,20 +70,37 @@ pub(crate) async fn commit<'a, F>(
 where
     F: Fn() -> CommitFuture<'a>,
 {
-    let pending = matches!(state.tx.lock().await.confirm_deadline, Some(d) if d > Instant::now());
-    if pending {
+    let ours = matches!(state.tx.lock().await.confirm_deadline, Some(d) if d > Instant::now());
+    if ours {
         conn.api.confirm().await?;
         state.tx.lock().await.confirm_deadline = None;
         return Ok(format!("{AUTO_CONFIRMED}\n{}", run().await?));
     }
+    // Check first: with a confirm pending, VyOS still applies a new commit and only
+    // then fails to start its revert timer, so the change would go in unprotected.
+    if confirm_pending(conn).await {
+        return Err(AppError::ForeignPending);
+    }
     match run().await {
-        // Pending from another tool, or our timer state was lost.
-        Err(AppError::Api(m)) if m.contains("confirm is pending") => {
-            conn.api.confirm().await?;
-            Ok(format!("{AUTO_CONFIRMED}\n{}", run().await?))
-        }
+        Err(AppError::Api(m)) if m.contains("confirm is pending") => Err(AppError::Api(
+            "The change was applied, but its Safe Mode timer could not start because another change \
+             started waiting for Confirm at the same moment. Check it, then Confirm or roll back."
+                .into(),
+        )),
         other => other,
     }
+}
+
+/// Whether a commit-confirm is waiting on the router (VyOS runs it as a systemd timer).
+async fn confirm_pending(conn: &Connection) -> bool {
+    conn.ssh
+        .exec(
+            "systemctl is-active commit-confirm.timer",
+            Duration::from_secs(10),
+        )
+        .await
+        .map(|o| o.stdout.trim() == "active")
+        .unwrap_or(false)
 }
 
 pub(crate) async fn record_commit(state: &WindowState, confirm_minutes: u32) {

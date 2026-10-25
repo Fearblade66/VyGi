@@ -14,6 +14,7 @@ export const api = {
   disconnect: () => invoke("disconnect"),
   newWindow: () => invoke("new_window"),
   ddnsStatus: () => invoke("ddns_status"),
+  routerTime: () => invoke("router_time"),
   ddnsUpdateNow: () => invoke("ddns_update_now"),
   geoipStatus: () => invoke("geoip_status"),
   geoipUpdate: () => invoke("geoip_update"),

@@ -1,7 +1,7 @@
 // DHCP Server: servers per subnet (VyOS 1.5 layout), leases, static mappings.
 // Paths follow vyos-1x dhcp-server-common-config.xml.i (subnet-id, option ..., range N start/stop).
 import { api, errorText } from "../lib/api.js";
-import { h, setStatus } from "../lib/dom.js";
+import { h, setStatus, every } from "../lib/dom.js";
 import { openWindow, tabs } from "../lib/mdi.js";
 import { makeTable, filterBox } from "../lib/table.js";
 import { formDialog, alertBox, confirmBox } from "../lib/dialog.js";
@@ -419,7 +419,7 @@ export function openDhcp(startTab = "Servers") {
   }
 
   t.select(startTab);
-  const timer = setInterval(() => {
+  const timer = every(() => {
     if (t.pages.Leases.classList.contains("active")) loaders.Leases();
   }, 15000);
   win.onClose(() => clearInterval(timer));

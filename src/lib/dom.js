@@ -32,6 +32,16 @@ function append(el, children) {
   }
 }
 
+/**
+ * setInterval that skips its runs while VyGi is minimized or hidden, so the
+ * router isn't polled for data nobody sees. Stop it with clearInterval.
+ */
+export function every(fn, ms) {
+  return setInterval(() => {
+    if (!document.hidden) fn();
+  }, ms);
+}
+
 export function clear(el) {
   while (el.firstChild) el.removeChild(el.firstChild);
   return el;

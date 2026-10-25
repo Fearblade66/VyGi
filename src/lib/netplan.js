@@ -53,9 +53,13 @@ function dhcpFor(cfg, network) {
   return null;
 }
 
-function chainRules(cfg, chain) {
-  return cfg?.firewall?.ipv4?.[chain]?.filter?.rule || {};
+/** Rules of a filter chain; family "ipv4" (default) or "ipv6". */
+function chainRules(cfg, chain, family = "ipv4") {
+  return cfg?.firewall?.[family]?.[chain]?.filter?.rule || {};
 }
+
+/** The four chains VyGi adds network rules to. */
+const CHAINS = [["ipv4", "forward"], ["ipv4", "input"], ["ipv6", "forward"], ["ipv6", "input"]];
 
 /**
  * Networks for the Networks page. wan = the internet interface.
@@ -198,14 +202,14 @@ export function networkCommands(cfg, spec, env, existing = null) {
   if (mgmt && spec.isolate) throw new Error("VyGi is connected through this network, so isolating it would lock VyGi out. Connect through another network first.");
 
   // ---- forget our old rules for this network
-  const nums = { forward: new Numbers(chainRules(cfg, "forward")), input: new Numbers(chainRules(cfg, "input")) };
-  if (existing) {
-    for (const chain of ["forward", "input"]) {
-      for (const [n, r] of Object.entries(chainRules(cfg, chain))) {
-        if (isOurs(r, iface)) {
-          del(["firewall", "ipv4", chain, "filter", "rule", n]);
-          nums[chain].free(n);
-        }
+  const nums = {};
+  for (const [fam, chain] of CHAINS) {
+    nums[`${fam}/${chain}`] = new Numbers(chainRules(cfg, chain, fam));
+    if (!existing) continue;
+    for (const [n, r] of Object.entries(chainRules(cfg, chain, fam))) {
+      if (isOurs(r, iface)) {
+        del(["firewall", fam, chain, "filter", "rule", n]);
+        nums[`${fam}/${chain}`].free(n);
       }
     }
   }
@@ -262,13 +266,18 @@ export function networkCommands(cfg, spec, env, existing = null) {
   }
 
   // ---- internet (NAT + forward rules)
-  const rule = (chain, n, parts, what) => {
-    const base = ["firewall", "ipv4", chain, "filter", "rule", n];
+  // rule(family, chain, range, parts, what): early range [1, 99] for blocks so they
+  // run before the user's own allow rules; [900, 999] for allows.
+  const rule = (fam, chain, [from, to], parts, what) => {
+    const n = nums[`${fam}/${chain}`].take(from, to);
+    const base = ["firewall", fam, chain, "filter", "rule", n];
     for (const [k, v] of parts) set([...base, ...k], v);
     set([...base, "description"], desc(iface, what));
   };
-  const fwdDrop = cfg?.firewall?.ipv4?.forward?.filter?.["default-action"] === "drop";
-  const inDrop = cfg?.firewall?.ipv4?.input?.filter?.["default-action"] === "drop";
+  const EARLY = [1, 99];
+  const LATE = [900, 999];
+  const defDrop = (fam, chain) => cfg?.firewall?.[fam]?.[chain]?.filter?.["default-action"] === "drop";
+  const inIf = [["inbound-interface", "name"], iface];
   if (spec.internet) {
     const covered = Object.values(natRules).some((r) => !isOurs(r, iface) && r?.translation?.address === "masquerade" && (!r?.["outbound-interface"]?.name || r["outbound-interface"].name === env.wan) && (!r?.source?.address || ipv4InCidr(gw.ip, r.source.address)));
     if (!covered) {
@@ -282,25 +291,42 @@ export function networkCommands(cfg, spec, env, existing = null) {
       set([...r, "translation", "address"], "masquerade");
       set([...r, "description"], desc(iface, "internet"));
     }
-    if (fwdDrop) rule("forward", nums.forward.take(900, 999), [[["action"], "accept"], [["inbound-interface", "name"], iface], [["outbound-interface", "name"], env.wan]], "internet");
+    for (const fam of ["ipv4", "ipv6"]) {
+      if (defDrop(fam, "forward")) rule(fam, "forward", LATE, [[["action"], "accept"], inIf, [["outbound-interface", "name"], env.wan]], "internet");
+    }
   } else {
-    rule("forward", nums.forward.take(1, 99), [[["action"], "drop"], [["inbound-interface", "name"], iface], [["outbound-interface", "name"], env.wan]], "no internet");
+    // IPv6 too, or devices would still reach the internet over IPv6.
+    for (const fam of ["ipv4", "ipv6"]) rule(fam, "forward", EARLY, [[["action"], "drop"], inIf, [["outbound-interface", "name"], env.wan]], "no internet");
   }
 
   // ---- isolation from the other local networks (both directions) and from the router itself
   if (spec.isolate) {
+    // DNS servers handed out here that live on another local network (e.g. Technitium)
+    // must stay reachable, before the isolation drop.
+    const dns = spec.dhcp && spec.dnsMode === "custom" ? String(spec.dnsServers || "").split(/[\s,]+/).filter((d) => /^\d{1,3}(\.\d{1,3}){3}$/.test(d) && isPrivate(d) && !ipv4InCidr(d, net)) : [];
+    for (const d of [...new Set(dns)]) {
+      rule("ipv4", "forward", EARLY, [[["action"], "accept"], inIf, [["destination", "address"], d], [["protocol"], "tcp_udp"], [["destination", "port"], "53"]], `DNS server ${d}`);
+    }
     const group = cfg?.firewall?.group?.["network-group"]?.[LOCAL_GROUP];
     if (!group) for (const c of LOCAL_NETS) set(["firewall", "group", "network-group", LOCAL_GROUP, "network"], c);
-    rule("forward", nums.forward.take(1, 99), [[["action"], "drop"], [["inbound-interface", "name"], iface], [["destination", "group", "network-group"], LOCAL_GROUP], [["state"], "new"]], "isolate (out)");
-    rule("forward", nums.forward.take(1, 99), [[["action"], "drop"], [["outbound-interface", "name"], iface], [["source", "group", "network-group"], LOCAL_GROUP], [["state"], "new"]], "isolate (in)");
-    // Router: only DHCP, DNS and ping from this network.
-    rule("input", nums.input.take(1, 99), [[["action"], "accept"], [["inbound-interface", "name"], iface], [["protocol"], "udp"], [["destination", "port"], "67,68"]], "DHCP");
-    rule("input", nums.input.take(1, 99), [[["action"], "accept"], [["inbound-interface", "name"], iface], [["protocol"], "tcp_udp"], [["destination", "port"], "53"]], "DNS");
-    rule("input", nums.input.take(1, 99), [[["action"], "accept"], [["inbound-interface", "name"], iface], [["protocol"], "icmp"]], "ping");
-    rule("input", nums.input.take(1, 99), [[["action"], "accept"], [["inbound-interface", "name"], iface], [["state"], "established"], [["state"], "related"]], "replies");
-    rule("input", nums.input.take(1, 99), [[["action"], "drop"], [["inbound-interface", "name"], iface]], "isolate router");
-  } else if (inDrop) {
-    rule("input", nums.input.take(900, 999), [[["action"], "accept"], [["inbound-interface", "name"], iface]], "router access");
+    rule("ipv4", "forward", EARLY, [[["action"], "drop"], inIf, [["destination", "group", "network-group"], LOCAL_GROUP], [["state"], "new"]], "isolate (out)");
+    rule("ipv4", "forward", EARLY, [[["action"], "drop"], [["outbound-interface", "name"], iface], [["source", "group", "network-group"], LOCAL_GROUP], [["state"], "new"]], "isolate (in)");
+    // IPv6 addresses are public, so isolate by interface: anything not to/from the internet port.
+    rule("ipv6", "forward", EARLY, [[["action"], "drop"], inIf, [["outbound-interface", "name"], `!${env.wan}`], [["state"], "new"]], "isolate (out)");
+    rule("ipv6", "forward", EARLY, [[["action"], "drop"], [["outbound-interface", "name"], iface], [["inbound-interface", "name"], `!${env.wan}`], [["state"], "new"]], "isolate (in)");
+    // Router: only DHCP, DNS and ping from this network (plus what IPv6 itself needs).
+    rule("ipv4", "input", EARLY, [[["action"], "accept"], inIf, [["protocol"], "udp"], [["destination", "port"], "67,68"]], "DHCP");
+    rule("ipv4", "input", EARLY, [[["action"], "accept"], inIf, [["protocol"], "tcp_udp"], [["destination", "port"], "53"]], "DNS");
+    rule("ipv4", "input", EARLY, [[["action"], "accept"], inIf, [["protocol"], "icmp"]], "ping");
+    rule("ipv4", "input", EARLY, [[["action"], "accept"], inIf, [["state"], "established"], [["state"], "related"]], "replies");
+    rule("ipv4", "input", EARLY, [[["action"], "drop"], inIf], "isolate router");
+    rule("ipv6", "input", EARLY, [[["action"], "accept"], inIf, [["protocol"], "ipv6-icmp"]], "ICMPv6 (neighbour discovery, ping)");
+    rule("ipv6", "input", EARLY, [[["action"], "accept"], inIf, [["protocol"], "udp"], [["destination", "port"], "546,547"]], "DHCPv6");
+    rule("ipv6", "input", EARLY, [[["action"], "accept"], inIf, [["protocol"], "tcp_udp"], [["destination", "port"], "53"]], "DNS");
+    rule("ipv6", "input", EARLY, [[["action"], "accept"], inIf, [["state"], "established"], [["state"], "related"]], "replies");
+    rule("ipv6", "input", EARLY, [[["action"], "drop"], inIf], "isolate router");
+  } else {
+    for (const fam of ["ipv4", "ipv6"]) if (defDrop(fam, "input")) rule(fam, "input", LATE, [[["action"], "accept"], inIf], "router access");
   }
   return cmds;
 }
@@ -310,7 +336,7 @@ export function deleteNetworkCommands(cfg, net, env) {
   if (env.mgmtHost && ipv4InCidr(env.mgmtHost, net.network)) throw new Error("VyGi is connected through this network; deleting it would cut the connection.");
   const cmds = [];
   const del = (path) => cmds.push({ op: "delete", path });
-  for (const chain of ["forward", "input"]) for (const [n, r] of Object.entries(chainRules(cfg, chain))) if (isOurs(r, net.iface)) del(["firewall", "ipv4", chain, "filter", "rule", n]);
+  for (const [fam, chain] of CHAINS) for (const [n, r] of Object.entries(chainRules(cfg, chain, fam))) if (isOurs(r, net.iface)) del(["firewall", fam, chain, "filter", "rule", n]);
   for (const [n, r] of Object.entries(cfg?.nat?.source?.rule || {})) if (isOurs(r, net.iface)) del(["nat", "source", "rule", n]);
   const d = dhcpFor(cfg, net.network);
   if (d) {

@@ -275,6 +275,43 @@ pub async fn lldp_neighbors(state: Win) -> AppResult<Value> {
         .unwrap_or(Value::Null))
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RouterTime {
+    /// Unix seconds.
+    epoch: i64,
+    /// The router's offset from UTC in minutes (its time zone).
+    utc_offset_minutes: i32,
+}
+
+/// "1792890000 +0200" -> (epoch, offset minutes).
+fn parse_date_line(s: &str) -> Option<(i64, i32)> {
+    let mut it = s.split_whitespace();
+    let epoch = it.next()?.parse().ok()?;
+    let tz = it.next()?;
+    let sign = if tz.starts_with('-') { -1 } else { 1 };
+    let digits = tz.trim_start_matches(['+', '-']);
+    if digits.len() != 4 {
+        return None;
+    }
+    let h: i32 = digits[..2].parse().ok()?;
+    let m: i32 = digits[2..].parse().ok()?;
+    Some((epoch, sign * (h * 60 + m)))
+}
+
+/// The router's clock and time zone (schedules in firewall rules use them).
+#[tauri::command]
+pub async fn router_time(state: Win) -> AppResult<RouterTime> {
+    let conn = state.conn().await?;
+    let out = conn.ssh.exec_ok("date '+%s %z'").await?;
+    let (epoch, utc_offset_minutes) = parse_date_line(out.trim())
+        .ok_or_else(|| AppError::Ssh(format!("unexpected date output: {}", first_line(&out))))?;
+    Ok(RouterTime {
+        epoch,
+        utc_offset_minutes,
+    })
+}
+
 /// Dynamic DNS update status per host name (null when not configured).
 #[tauri::command]
 pub async fn ddns_status(state: Win) -> AppResult<Value> {
@@ -693,6 +730,16 @@ mod tests {
             ]
         );
         assert!(parse_table("DHCP server is not configured\n").is_empty());
+    }
+
+    #[test]
+    fn date_lines() {
+        assert_eq!(parse_date_line("1792890000 +0200"), Some((1792890000, 120)));
+        assert_eq!(
+            parse_date_line("1792890000 -0530"),
+            Some((1792890000, -330))
+        );
+        assert_eq!(parse_date_line("garbage"), None);
     }
 
     #[test]

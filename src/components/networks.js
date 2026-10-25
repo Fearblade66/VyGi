@@ -2,10 +2,10 @@
 // "New network" form that sets up the interface, DHCP, DNS, NAT, internet
 // access and isolation in one Safe Mode commit.
 import { api, errorText } from "../lib/api.js";
-import { h, clear, setStatus } from "../lib/dom.js";
+import { h, clear, setStatus, every } from "../lib/dom.js";
 import { formDialog, confirmBox, alertBox } from "../lib/dialog.js";
 import { applyChanges, isConnected, session, onSessionChange } from "../lib/session.js";
-import { registerView, welcome } from "../lib/views.js";
+import { registerView, welcome, loadingPage } from "../lib/views.js";
 import { icon } from "../lib/icons.js";
 import { toArray, ipv4InCidr, parseIpv4Cidr } from "../lib/vyos.js";
 import { readNetworks, suggestSubnet, suggestVlan, suggestPool, networkCommands, deleteNetworkCommands } from "../lib/netplan.js";
@@ -58,6 +58,7 @@ export function initNetworks() {
       clear(root).append(welcome(() => document.getElementById("btn-connect").click()));
       return;
     }
+    if (!root.querySelector(".page")) clear(root).append(loadingPage(3));
     let next;
     try {
       next = await loadState();
@@ -210,7 +211,7 @@ export function initNetworks() {
   registerView("networks", {
     show: () => {
       render();
-      timer = setInterval(() => !document.querySelector(".dialog") && render(), 30000);
+      timer = every(() => !document.querySelector(".dialog") && render(), 30000);
     },
     hide: () => clearInterval(timer),
   });

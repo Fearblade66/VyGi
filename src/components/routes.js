@@ -1,6 +1,6 @@
 // IP > Routes: kernel routing table per VRF, add/remove static routes.
 import { api, errorText } from "../lib/api.js";
-import { h, setStatus } from "../lib/dom.js";
+import { h, setStatus, every } from "../lib/dom.js";
 import { openWindow } from "../lib/mdi.js";
 import { makeTable, filterBox } from "../lib/table.js";
 import { formDialog, confirmBox, alertBox } from "../lib/dialog.js";
@@ -112,6 +112,6 @@ export function openRoutes() {
   }
 
   loadVrfs().then(load);
-  const timer = setInterval(load, 10000);
+  const timer = every(load, 10000);
   win.onClose(() => clearInterval(timer));
 }

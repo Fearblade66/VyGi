@@ -1,6 +1,6 @@
 // Interfaces window: live table with rates + sparklines, add/remove/enable/disable/edit.
 import { api, errorText } from "../lib/api.js";
-import { h, setStatus, formatBits, sparkline } from "../lib/dom.js";
+import { h, setStatus, formatBits, sparkline, every } from "../lib/dom.js";
 import { openWindow } from "../lib/mdi.js";
 import { makeTable, filterBox } from "../lib/table.js";
 import { formDialog, confirmBox, alertBox } from "../lib/dialog.js";
@@ -248,6 +248,6 @@ export function openInterfaces() {
   }
 
   loadConfig();
-  const timer = setInterval(poll, POLL_MS);
+  const timer = every(poll, POLL_MS);
   win.onClose(() => clearInterval(timer));
 }

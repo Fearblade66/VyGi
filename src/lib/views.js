@@ -62,6 +62,12 @@ export function applyTheme(value) {
   store("vygi.theme", value);
 }
 
+/** Placeholder while a page loads for the first time (grey cards that shimmer). */
+export function loadingPage(cards = 3) {
+  return h("div.page", h("div.skel.skel-line", { style: { width: "40%" } }),
+    h("div.net-grid", Array.from({ length: cards }, () => h("div.skel.skel-card"))));
+}
+
 /** Empty state for pages that need a router. */
 export function welcome(onConnect) {
   return h("div.welcome",
@@ -73,6 +79,16 @@ export function welcome(onConnect) {
       h("p.hint", "Tip: the window button next to the router name opens another window for a second router.")));
 }
 
+// Coming back from minimized: refresh the page (its timers skipped runs while hidden).
+let hiddenAt = 0;
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) hiddenAt = Date.now();
+  else if (current && Date.now() - hiddenAt > 15_000 && !document.querySelector(".dialog")) {
+    listeners.get(current)?.hide?.();
+    listeners.get(current)?.show?.();
+  }
+});
+
 export function initViews() {
   const theme = store("vygi.theme") || "modern-auto";
   const sel = document.getElementById("theme");
@@ -81,9 +97,15 @@ export function initViews() {
   sel.addEventListener("change", () => applyTheme(sel.value));
   document.getElementById("brand-logo").append(logo(26));
   for (const b of document.querySelectorAll("#view-switch button")) {
-    b.prepend(icon(VIEWS[b.dataset.view].icon));
+    const label = b.textContent.trim();
+    b.textContent = "";
+    b.title = label; // shown when the sidebar is narrow (icons only)
+    b.append(icon(VIEWS[b.dataset.view].icon), h("span.nav-text", label));
     b.addEventListener("click", () => showView(b.dataset.view));
   }
+  const connect = document.getElementById("btn-connect");
+  connect.textContent = "";
+  connect.append(icon("power", 15), h("span#connect-label.nav-text", "Connect"));
   document.getElementById("btn-new-window").append(icon("window", 16));
   document.getElementById("btn-terminal").prepend(icon("terminal", 15));
   document.getElementById("btn-save").title = "Write running config to the boot config";

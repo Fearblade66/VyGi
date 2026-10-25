@@ -93,3 +93,26 @@ test("edit replaces our earlier rules; delete removes everything we added", () =
   assert.ok(d.includes("delete firewall ipv4 forward filter rule 3"));
   assert.throws(() => deleteNetworkCommands(cfg, readNetworks(cfg, "eth0")[0], env), /connected through/);
 });
+
+test("isolated network keeps its DNS server on another LAN reachable, before the isolation drop", () => {
+  const l = lines(networkCommands(cfg, { ...guest, dnsMode: "custom", dnsServers: "192.168.1.5 1.1.1.1" }, env));
+  // rule 1 = DNS exception for the private server only, rule 2 = isolate (out)
+  assert.ok(l.includes("set firewall ipv4 forward filter rule 1 destination address 192.168.1.5"));
+  assert.ok(l.includes("set firewall ipv4 forward filter rule 1 destination port 53"));
+  assert.ok(l.includes("set firewall ipv4 forward filter rule 1 action accept"));
+  assert.ok(l.includes("set firewall ipv4 forward filter rule 2 description VyGi net eth1.30: isolate (out)"));
+  assert.ok(!l.some((x) => x.includes("destination address 1.1.1.1")));
+});
+
+test("IPv6: isolation and no-internet get matching rules, and delete removes them", () => {
+  const l = lines(networkCommands(cfg, { ...guest, internet: false }, env));
+  assert.ok(l.includes("set firewall ipv6 forward filter rule 1 description VyGi net eth1.30: no internet"));
+  assert.ok(l.includes("set firewall ipv6 forward filter rule 2 outbound-interface name !eth0"));
+  assert.ok(l.includes("set firewall ipv6 forward filter rule 3 inbound-interface name !eth0"));
+  assert.ok(l.includes("set firewall ipv6 input filter rule 1 protocol ipv6-icmp"));
+  assert.ok(l.includes("set firewall ipv6 input filter rule 5 action drop"));
+  const withV6 = structuredClone(cfg);
+  withV6.firewall.ipv6 = { forward: { filter: { rule: { 7: { action: "drop", description: "VyGi net eth1.10: no internet" } } } } };
+  const net = readNetworks(withV6, "eth0")[1];
+  assert.ok(lines(deleteNetworkCommands(withV6, net, env)).includes("delete firewall ipv6 forward filter rule 7"));
+});

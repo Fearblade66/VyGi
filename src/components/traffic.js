@@ -1,6 +1,6 @@
 // Winbox "Traffic" tab: live Rx/Tx graph for one interface.
 import { api, errorText } from "../lib/api.js";
-import { h, setStatus, formatBits, formatBytes } from "../lib/dom.js";
+import { h, setStatus, formatBits, formatBytes, every } from "../lib/dom.js";
 import { openWindow } from "../lib/mdi.js";
 import { liveChart } from "../lib/chart.js";
 
@@ -43,7 +43,7 @@ export function openTraffic(ifname) {
     totals.textContent = `Total received ${formatBytes(cur.rx)} (${s.rx?.packets ?? 0} packets, ${s.rx?.errors ?? 0} errors, ${s.rx?.dropped ?? 0} dropped) · sent ${formatBytes(cur.tx)} (${s.tx?.packets ?? 0} packets, ${s.tx?.errors ?? 0} errors)`;
   }
   poll();
-  const timer = setInterval(poll, 1000);
+  const timer = every(poll, 1000);
   win.onClose(() => {
     clearInterval(timer);
     chart.dispose();

@@ -1,6 +1,6 @@
 // Tools: Ping, Traceroute, Torch, Packet Sniffer, IP Scan and Profile. All run over SSH.
 import { api, errorText } from "../lib/api.js";
-import { h, setStatus, formatBits } from "../lib/dom.js";
+import { h, setStatus, formatBits, every } from "../lib/dom.js";
 import { openWindow } from "../lib/mdi.js";
 import { makeTable, filterBox } from "../lib/table.js";
 import { isPrivateMac } from "./neighbors.js";
@@ -296,6 +296,6 @@ export function openProfile() {
     }
   };
   load();
-  const timer = setInterval(load, 3000);
+  const timer = every(load, 3000);
   win.onClose(() => clearInterval(timer));
 }

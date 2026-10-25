@@ -1,14 +1,14 @@
 // Traffic Rules page: block the internet or sites for devices/networks, always
 // or on a schedule (e.g. kids' bedtime), with an on/off switch per rule.
 import { api, errorText } from "../lib/api.js";
-import { h, clear } from "../lib/dom.js";
+import { h, clear, every } from "../lib/dom.js";
 import { formDialog, confirmBox, alertBox } from "../lib/dialog.js";
 import { applyChanges, isConnected, onSessionChange } from "../lib/session.js";
-import { registerView, welcome } from "../lib/views.js";
+import { registerView, welcome, loadingPage } from "../lib/views.js";
 import { icon } from "../lib/icons.js";
 import { collectClients } from "../lib/netdata.js";
 import { readNetworks } from "../lib/netplan.js";
-import { DAYS, parseRules, ruleCommands, deleteRuleCommands, toggleCommands, describeSchedule, activeNow } from "../lib/trafficrules.js";
+import { DAYS, parseRules, ruleCommands, deleteRuleCommands, toggleCommands, describeSchedule, activeNow, routerClock } from "../lib/trafficrules.js";
 
 const MAC_IN = /([0-9a-f]{2}(?::[0-9a-f]{2}){5})\s*$/i;
 const CIDR_IN = /(\d{1,3}(?:\.\d{1,3}){3}\/\d{1,2})\s*$/;
@@ -26,15 +26,16 @@ onSessionChange((s) => {
 });
 
 async function loadState() {
-  const [cfg, routes, clients] = await Promise.all([
+  const [cfg, routes, clients, time] = await Promise.all([
     api.getConfig([]),
     api.routes(4, "default").catch(() => []),
     deviceList(),
+    api.routerTime().then((t) => ({ ...t, readAt: Date.now() })).catch(() => null),
   ]);
   const clientData = { clients };
   const def = routes.find((r) => r.dst === "default");
   const wan = def?.dev || (def?.nexthops || [])[0]?.dev || "";
-  return { cfg: cfg || {}, wan, clients: clientData.clients.filter((c) => c.mac && c.kind !== "vpn") };
+  return { cfg: cfg || {}, wan, time, clients: clientData.clients.filter((c) => c.mac && c.kind !== "vpn") };
 }
 
 export function initRules() {
@@ -51,6 +52,7 @@ export function initRules() {
       clear(root).append(welcome(() => document.getElementById("btn-connect").click()));
       return;
     }
+    if (!root.querySelector(".page")) clear(root).append(loadingPage(2));
     let next;
     try {
       next = await loadState();
@@ -63,7 +65,7 @@ export function initRules() {
     st = next;
     const rules = parseRules(st.cfg);
     const head = h("div.page-head",
-      h("div.hint", "Block the internet or sites for some devices, always or on a schedule. Times follow the router's clock."),
+      h("div.hint", "Block the internet or sites for some devices, always or on a schedule. Times follow the router's clock", st.time ? (() => { const c = clock(); return ` (now ${DAYS[c.getDay()]} ${String(c.getHours()).padStart(2, "0")}:${String(c.getMinutes()).padStart(2, "0")} there).`; })() : "."),
       h("span.grow"),
       h("button.primary", { on: { click: () => edit(null) } }, icon("plus", 16), "New rule"));
     const grid = h("div.rule-grid", rules.map(card));
@@ -104,9 +106,12 @@ export function initRules() {
     return el;
   }
 
+  // Schedules run on the router's clock and time zone, which may differ from this computer's.
+  const clock = () => (st?.time ? routerClock(st.time, st.time.readAt) : new Date());
+
   function statusBadge(r) {
     if (!r.enabled) return h("span.badge", "Paused");
-    return activeNow(r) ? h("span.badge.bad", "Blocking now") : h("span.badge.ok", "Not blocking now");
+    return activeNow(r, clock()) ? h("span.badge.bad", "Blocking now") : h("span.badge.ok", "Not blocking now");
   }
 
   async function edit(r, preset = {}) {
@@ -125,7 +130,7 @@ export function initRules() {
     await formDialog(r ? `Rule: ${r.name}` : "New traffic rule", [
       { name: "name", label: "Name", value: r?.name || preset.name || "", placeholder: "e.g. Kids bedtime, No TikTok" },
       { name: "block", label: "Block", type: "select", value: r?.block || "internet", options: [{ value: "internet", label: "all internet" }, { value: "sites", label: "specific sites" }] },
-      { name: "domains", label: "Sites", type: "textarea", rows: 3, value: (r?.domains || []).filter((d) => !d.startsWith("www.")).join("\n"), hint: "One per line, e.g. tiktok.com. The router blocks the addresses these names point to, so big services that share servers (YouTube with Google) can't be split, and apps may use other names. For reliable site blocking, use Technitium." },
+      { name: "domains", label: "Sites", type: "textarea", rows: 3, value: (r?.domains || []).filter((d) => !d.startsWith("www.")).join("\n"), hint: "One per line, e.g. tiktok.com. The router blocks the addresses these names point to, so big services that share servers (YouTube with Google) can't be split, and apps may use other names. Works for IPv4 only. For reliable site blocking, use Technitium." },
       { name: "targets", label: "For", type: "select", value: r?.targets.kind || "devices", options: [{ value: "devices", label: "these devices" }, { value: "networks", label: "these networks" }, { value: "all", label: "everyone" }] },
       { name: "devices", label: "Devices", type: "multicheck", value: deviceOpts.filter((o) => r?.targets.macs.includes(o.match(MAC_IN)?.[1]?.toLowerCase())), options: deviceOpts },
       { name: "networks", label: "Networks", type: "multicheck", value: netOpts.filter((o) => r?.targets.networks.includes(o.match(CIDR_IN)?.[1])), options: netOpts },
@@ -135,10 +140,12 @@ export function initRules() {
       { name: "stop", label: "Until", value: sched.stop || preset.stop || "07:00", placeholder: "HH:MM", hint: "An end time before the start runs overnight (22:00 → 07:00)." },
       { name: "enabled", label: "Rule on", type: "checkbox", value: r ? r.enabled : true },
     ], async (v) => {
+      const cidrs = v.networks.map((o) => o.match(CIDR_IN)?.[1]).filter(Boolean);
       const spec = {
         ...v,
         macs: v.devices.map((o) => o.match(MAC_IN)?.[1]).filter(Boolean),
-        networks: v.networks.map((o) => o.match(CIDR_IN)?.[1]).filter(Boolean),
+        networks: cidrs,
+        networkIfaces: nets.filter((n) => cidrs.includes(n.network)).map((n) => n.iface),
         days: v.days.map((d) => DAYS.indexOf(d)),
       };
       await applyChanges(ruleCommands(st.cfg, spec, r), r ? `rule ${v.name}` : `new rule ${v.name}`);
@@ -176,7 +183,7 @@ export function initRules() {
   registerView("rules", {
     show: () => {
       render();
-      timer = setInterval(() => !document.querySelector(".dialog") && render(), 60000);
+      timer = every(() => !document.querySelector(".dialog") && render(), 60000);
     },
     hide: () => clearInterval(timer),
   });

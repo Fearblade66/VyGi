@@ -20,7 +20,7 @@ Targets current VyOS (1.5 / rolling). The API calls were checked against `vyos-1
   - **Traffic Rules:** block the internet, or specific sites, for chosen devices or networks, always or on a schedule (e.g. the kids' tablet, Sun–Thu 22:00–07:00). Every rule has an on/off switch and shows whether it is blocking right now.
 - **Advanced** (Winbox-style): every feature as a draggable window, opened from the tool list in the sidebar.
 
-The sidebar shows the connected router, with a button to open **another window for a second router**. The top bar has the page title, **Safe Mode**, **Confirm** (while a change is waiting), **Save** and **Terminal**. In the Modern look, messages pop up in the corner. The theme menu at the bottom of the sidebar switches between **Modern** (light, dark, or following your OS) and **Classic** (Winbox gray).
+The sidebar shows the connected router, with a button to open **another window for a second router**. The top bar has the page title, **Safe Mode**, **Confirm** (while a change is waiting), **Save** and **Terminal**. In the Modern look, messages pop up in the corner. On narrow windows the sidebar shrinks to icons (except on Advanced, which needs the tool list). Pages stop polling the router while VyGi is minimized and refresh when you come back. The theme menu at the bottom of the sidebar switches between **Modern** (light, dark, or following your OS) and **Classic** (Winbox gray).
 
 ## What it does
 
@@ -55,7 +55,7 @@ The sidebar shows the connected router, with a button to open **another window f
 | System → Revisions | Commit history, a colored diff of each commit, and rollback to any revision **without rebooting**. |
 | New Terminal | A full SSH terminal (xterm.js). |
 | Failed changes | VyOS commits a change section by section, so when one part fails (e.g. an interface the hardware can't create), the parts before it stay applied. VyGi checks the running config after a failure and, if anything changed, puts back the config from just before, so a failed change never leaves half its pieces behind. |
-| Safe Mode | Every change is applied with VyOS `commit-confirm`. If you don't press **Confirm** in time, the router reverts it, so a change that cuts you off undoes itself. VyOS allows only one pending confirm at a time, so when you make another change while one is pending, VyGi confirms the earlier one first (you're evidently still connected) and starts a new timer. |
+| Safe Mode | Every change is applied with VyOS `commit-confirm`. If you don't press **Confirm** in time, the router reverts it, so a change that cuts you off undoes itself. VyOS allows only one pending confirm at a time. If the pending change is this window's own, VyGi confirms it first (you're evidently still connected) and starts a new timer. If it came from somewhere else (another VyGi window, the command line, another person), VyGi checks before applying anything and asks whether to keep that change; it never confirms it behind your back. After **Confirm**, a reminder offers **Save now**, and disconnecting with unsaved changes asks whether to save first. |
 | Save | Commits are live but are lost on reboot until you press **Save**. The button turns red while changes are unsaved. |
 
 ### Security
@@ -142,7 +142,7 @@ npx tauri build --debug --no-bundle
 cd e2e && node smoke.mjs ../src-tauri/target/debug/vygi .
 ```
 
-`smoke.mjs` drives the real app through `tauri-driver` (WebDriver; needs `webkit2gtk-driver`, `cargo install tauri-driver`, and a display or `Xvfb`). It connects, opens the Dashboard, Clients and every window, and fails on any error. Docker containers have no kernel modules and often no IPv6, so WireGuard interfaces, time zones, and firewall changes combined with NAT can't be applied there. Everything else can.
+`smoke.mjs` drives the real app through `tauri-driver` (WebDriver; needs `webkit2gtk-driver`, `cargo install tauri-driver`, and a display or `Xvfb`). It connects, opens every page and window, and fails on any error shown in the app or any uncaught script error. Docker containers have no kernel modules and often no IPv6, so WireGuard interfaces, time zones, and firewall changes combined with NAT can't be applied there. Everything else can.
 
 Testing on the real router found and fixed several things mocks didn't show: VyOS wraps list and value nodes in their own name in `/retrieve`, only one commit-confirm can be pending, the DHCP lease JSON output crashes on this VyOS build (VyGi falls back to the table), and the correct OpenVPN status command.
 
@@ -156,7 +156,9 @@ Testing on the real router found and fixed several things mocks didn't show: VyO
 - Clients only shows what the router can see (ARP, DHCP, WireGuard). Per-client traffic needs connection accounting, which VyOS leaves off, so Activity counts open connections instead.
 - Blocking a client drops its forwarded traffic by MAC address (IPv4 forward chain). Devices with private, changing MAC addresses can get around it.
 - Simple Queues limit IPv4 only, and match the device's IP address, so give it a fixed IP. The download shaper assumes a 1 Gbit/s LAN port as its total. Upload limiting drops packets above the limit (policing) instead of queueing them, so TCP uploads can look bursty. The queues were checked against VyOS's config validation in the test container, but that container's kernel can't run the actual traffic control, so the real speed limiting has not been measured yet.
-- Traffic Rules block sites by the addresses those names point to (VyOS domain groups, refreshed periodically). Big services that share servers (YouTube and Google) can't be told apart, and apps may use other names. For reliable site blocking, use Technitium. Schedules use the router's clock and time zone.
+- Traffic Rules block sites by the addresses those names point to (VyOS domain groups, refreshed periodically). Big services that share servers (YouTube and Google) can't be told apart, and apps may use other names. Site blocks cover IPv4 only (domain groups resolve IPv4). "Block the internet" rules and network isolation also add matching IPv6 rules (by MAC address or by interface), so devices can't get around them over IPv6. For reliable site blocking, use Technitium. Schedules use the router's clock and time zone; the Traffic Rules page shows the router's current time, and "Blocking now" is worked out on that clock.
+- An isolated network whose devices use a DNS server on another local network (e.g. Technitium on the main LAN) gets an exception for DNS to that server only.
+- The IPv6 rules couldn't be exercised with real IPv6 traffic in the test container (it has no IPv6). VyOS accepted and applied them.
 - Network isolation and Traffic Rules use low firewall rule numbers (1–99) so they run before your own allow rules; VyGi's "internet allowed" rules use 900–999. If you renumber rules by hand, keep VyGi's blocking rules first.
 - Creating VLAN networks was checked against VyOS's config validation, but the test container's kernel can't create VLAN interfaces, so a VLAN network has not been created end to end yet. Networks on a separate port were tested end to end.
 - Sites only cover connections open right now (the app isn't always running, so there's no history). CDNs can make a site show up under the CDN's name when no Technitium query log is available.

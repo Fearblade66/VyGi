@@ -1,6 +1,6 @@
 // Dashboard: a UniFi-style overview of the connected router.
 import { api, errorText } from "../lib/api.js";
-import { h, clear, formatBits, formatBytes } from "../lib/dom.js";
+import { h, clear, formatBits, formatBytes, every } from "../lib/dom.js";
 import { liveChart } from "../lib/chart.js";
 import { registerView, showView, welcome } from "../lib/views.js";
 import { session, isConnected } from "../lib/session.js";
@@ -31,11 +31,11 @@ export function initDashboard() {
   const root = document.getElementById("dashboard");
   let timers = [];
   let chart = null;
+  let chartRouter = null; // the graph keeps its history across visits, per router
   let state = {};
 
   function build() {
     clear(root);
-    chart?.dispose();
     const head = h("div.dash-head");
     const internet = card("span-4", "Internet", { label: "Interfaces", go: () => goWin(openInterfaces) });
     const gateway = card("span-4", "Gateway", { label: "Resources", go: () => goWin(openResources) });
@@ -51,7 +51,11 @@ export function initDashboard() {
     countries.el.hidden = true;
     const dns = card("span-12", "DNS (Technitium, last hour)", { label: "Open", go: () => goWin(openDnsServer) });
     dns.el.hidden = true;
-    chart = liveChart([{ label: "Download", color: "#006fff" }, { label: "Upload", color: "#12a150" }], { points: 150, format: formatBits, height: 190 });
+    if (!chart || chartRouter !== session.info?.profileId) {
+      chart?.dispose();
+      chart = liveChart([{ label: "Download", color: "#006fff" }, { label: "Upload", color: "#12a150" }], { points: 150, format: formatBits, height: 190 });
+      chartRouter = session.info?.profileId;
+    }
     traffic.body.append(chart.el);
     chart.el.style.background = "transparent";
     chart.el.style.border = "none";
@@ -334,7 +338,7 @@ export function initDashboard() {
     pollLoad();
     pollLatency();
     pollDns();
-    timers = [setInterval(pollTraffic, 2000), setInterval(pollLoad, 3000), setInterval(pollClients, 10000), setInterval(pollLatency, 20000), setInterval(pollDns, 60000)];
+    timers = [every(pollTraffic, 2000), every(pollLoad, 3000), every(pollClients, 10000), every(pollLatency, 20000), every(pollDns, 60000)];
   }
 
   function stop() {

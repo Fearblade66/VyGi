@@ -2,7 +2,8 @@ import "./styles.css";
 import { api, errorText } from "./lib/api.js";
 import { h, clear, setStatus } from "./lib/dom.js";
 import { closeAllWindows } from "./lib/mdi.js";
-import { initToolbar, isConnected, setConnected } from "./lib/session.js";
+import { modal } from "./lib/dialog.js";
+import { initToolbar, isConnected, setConnected, session, saveNow } from "./lib/session.js";
 import { showConnectDialog } from "./components/connect.js";
 import { openInterfaces } from "./components/interfaces.js";
 import { openRoutes } from "./components/routes.js";
@@ -126,6 +127,15 @@ function renderMenu() {
 
 async function toggleConnect() {
   if (isConnected()) {
+    if (session.unsaved && !session.confirmDeadline) {
+      const r = await modal("Unsaved changes", h("div", { style: { maxWidth: "420px" } }, "The router has changes that aren't saved: they'll be lost if it restarts. Save them before disconnecting?"), [
+        { label: "Cancel", value: "cancel" },
+        { label: "Disconnect without saving", value: "skip" },
+        { label: "Save and disconnect", value: "save", primary: true },
+      ]);
+      if (r === "cancel" || r === null) return;
+      if (r === "save") await saveNow();
+    }
     showView("dashboard", { remember: false });
     closeAllWindows();
     try {
