@@ -16,11 +16,11 @@ try {
   setHelpers(H + F);
   log("connected:", await js(`return status()`));
   await js(`[...document.querySelectorAll('.mdi-win .mdi-title button[title=Close]')].forEach(b => b.click()); return true;`);
-  for (const v of ["dashboard", "clients", "networks", "rules"]) {
+  for (const v of ["dashboard", "clients", "networks", "rules", "ports", "vpn"]) {
     await js(`document.querySelector('#view-switch button[data-view="${v}"]').click(); return true;`);
     await s.sleep(6000);
     await s.shot(`${out}/view-${v}.png`);
-    log(`[${v}]`, (await js(`return document.getElementById('${v}').innerText.replace(/\\s+/g, ' ').slice(0, 200)`)));
+    log(`[${v}]`, (await js(`return document.getElementById('${v === "vpn" ? "vpnpage" : v}').innerText.replace(/\\s+/g, ' ').slice(0, 200)`)));
   }
   const windows = [
     ["Quick Set"], ["Interfaces"], ["Addresses", "IP"], ["Routes", "IP"], ["ARP / Neighbors", "IP"], ["DHCP Server", "IP"],

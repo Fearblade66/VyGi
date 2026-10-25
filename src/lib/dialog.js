@@ -113,7 +113,9 @@ export async function formDialog(title, fields, submit, { intro, okLabel = "OK",
   if (onChange) {
     // onChange(fieldName, values, set) lets a form refill fields, e.g. when a select changes.
     const set = (name, value) => {
-      if (inputs[name] && "value" in inputs[name]) inputs[name].value = value;
+      const el = inputs[name];
+      if (el?.type === "checkbox") el.checked = !!value;
+      else if (el && "value" in el) el.value = value;
     };
     // set.show(name, bool) hides a field; set.hint(name, text) rewrites its hint.
     set.show = (name, on) => {

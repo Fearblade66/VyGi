@@ -18,6 +18,9 @@ Targets current VyOS (1.5 / rolling). The API calls were checked against `vyos-1
     - **Sites:** where each device's traffic goes, with site icons, the network owner and the country. Site names (e.g. YouTube, github.com) come from Technitium's query log. Without it, traffic is grouped by network owner (e.g. Google, Fastly). Countries and owners come from DB-IP Lite (IP data by DB-IP, db-ip.com, CC BY 4.0), downloaded once (about 18 MB) and looked up locally. Icons are downloaded from each site itself and cached; they can be turned off in Clients.
   - **Networks:** every local network as a card (subnet, gateway, VLAN, devices online, DHCP pool use). **New network** sets up a VLAN or a spare port with gateway, DHCP, DNS, internet access (NAT) and optional **isolation** in one go. Presets are **Standard**, **Guest** (internet only, can't reach your devices or the router's settings) and **IoT** (isolated, no internet). Isolation, and internet on/off for a network, are firewall rules VyGi labels "VyGi net …"; editing or deleting a network updates them.
   - **Traffic Rules:** block the internet, or specific sites, for chosen devices or networks, always or on a schedule (e.g. the kids' tablet, Sun–Thu 22:00–07:00). Every rule has an on/off switch and shows whether it is blocking right now.
+  - **Port Forwarding:** let the internet reach one device (game server, NAS, camera). Pick the device, a preset or ports (outside and inside can differ, ranges work), and optionally limit who may connect. VyGi adds the matching firewall rule when the forward chain drops by default, offers to reserve the device's address in DHCP, and warns when the router can't be reached from the internet (carrier-grade NAT, or a modem in front of it). Forwards made elsewhere are listed too; edit those in Advanced.
+  - **VPN:** WireGuard servers with their devices: connected or last seen, data used, and where each connects from (country). **Set up VPN** creates the server and shows a QR code for the first device; **Add device** adds more. Devices can be paused or removed. The public address defaults to your Dynamic DNS name, or the router's internet address. VyGi never keeps a device's private key, so a lost config can't be shown again: remove the device and add it again.
+- **Alerts** (bell in the top bar): while VyGi is open, even minimized, it checks the router every minute and tells you when the internet goes down or comes back, a new device joins, a Dynamic DNS update fails, the router restarted, or (off by default) a VPN device connects. Alerts show as pop-ups, as desktop notifications when VyGi isn't in front, and in the bell's list. Choose which ones you want in that list.
 - **Advanced** (Winbox-style): every feature as a draggable window, opened from the tool list in the sidebar.
 
 The sidebar shows the connected router, with a button to open **another window for a second router**. The top bar has the page title, **Safe Mode**, **Confirm** (while a change is waiting), **Save** and **Terminal**. In the Modern look, messages pop up in the corner. On narrow windows the sidebar shrinks to icons (except on Advanced, which needs the tool list). Pages stop polling the router while VyGi is minimized and refresh when you come back. The theme menu at the bottom of the sidebar switches between **Modern** (light, dark, or following your OS) and **Classic** (Winbox gray).
@@ -163,6 +166,10 @@ Testing on the real router found and fixed several things mocks didn't show: VyO
 - Creating VLAN networks was checked against VyOS's config validation, but the test container's kernel can't create VLAN interfaces, so a VLAN network has not been created end to end yet. Networks on a separate port were tested end to end.
 - Sites only cover connections open right now (the app isn't always running, so there's no history). CDNs can make a site show up under the CDN's name when no Technitium query log is available.
 - Technitium: the query log was written to Technitium's API documentation but not tested, because the test setup couldn't download the query-log app. Everything else was tested against Technitium 15.6. Devices only show up by name in Technitium if they query it directly (use **Use for LAN**). If they go through the router's DNS forwarding, Technitium only sees the router.
+- Alerts only run while VyGi is open; nothing watches the router when it's closed. New devices that joined while it was closed are reported when you next connect. Several VyGi windows on the same router each alert.
+- Port forwards don't add NAT loopback (hairpin): from inside your network, use the device's local address instead of your public address or DNS name.
+- Port forwards and the VPN page's public address cover IPv4 only.
+- The VPN page was tested with simulated router data: the test container's kernel lost WireGuard support, so creating a server there failed for reasons unrelated to VyGi. The WireGuard setup forms it uses were tested end to end earlier.
 - Log, Torch, Packet Sniffer and DHCP Leases use `sudo` over SSH. That works by default for VyOS admin users.
 
 ## Project layout
@@ -174,6 +181,7 @@ index.html, src/              UI (plain JavaScript + Vite)
                               rules.js (shared firewall/NAT rule editor),
                               netdata.js (client list), views.js (pages and themes),
                               icons.js, netplan.js (Networks), trafficrules.js (Traffic Rules),
+                              portfwd.js (Port Forwarding), alerts.js, wan.js,
                               flowrates.js, sites.js, ddns.js (pure logic, tested with npm test)
   components/                 one file per window
 src-tauri/src/                Rust backend

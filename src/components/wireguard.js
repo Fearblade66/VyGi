@@ -8,18 +8,20 @@ import { h, setStatus } from "../lib/dom.js";
 import { modal, formDialog, alertBox, confirmBox } from "../lib/dialog.js";
 import { applyChanges, session } from "../lib/session.js";
 import { toArray, has, parseIpv4Cidr, nextFreeIpv4 } from "../lib/vyos.js";
+import { wanInfo, wanProblem } from "../lib/wan.js";
 
 const FULL_TUNNEL = "0.0.0.0/0, ::/0";
 const NAME_RE = /^[A-Za-z0-9._-]{1,64}$/;
 
 /** Gathers what the wizards need to suggest sensible defaults. */
 async function snapshot() {
-  const [ifaces, fwInput, natSrc, dns, stats] = await Promise.all([
+  const [ifaces, fwInput, natSrc, dns, stats, w] = await Promise.all([
     api.getConfig(["interfaces"]).catch(() => ({})),
     api.getConfig(["firewall", "ipv4", "input", "filter"]).catch(() => ({})),
     api.getConfig(["nat", "source"]).catch(() => ({})),
     api.getConfig(["service", "dns", "forwarding"]).catch(() => ({})),
     api.interfaceStats().catch(() => ({ links: [] })),
+    wanInfo(),
   ]);
   const wg = ifaces.wireguard || {};
   // LAN subnets = private IPv4 networks on non-WireGuard interfaces (for split tunnels).
@@ -38,8 +40,10 @@ async function snapshot() {
   const masq = Object.values(natSrc.rule || {}).find((r) => r?.translation?.address === "masquerade" && r?.["outbound-interface"]?.name);
   return {
     wg,
+    endpoint: w.endpoint,
+    wanIp: w.wanIp,
     lans: [...new Set(lans)],
-    wan: masq?.["outbound-interface"]?.name || dhcpWan || "eth0",
+    wan: w.wan || masq?.["outbound-interface"]?.name || dhcpWan || "eth0",
     // Ports known to the config or present in the kernel (new ports may not be in the config yet).
     allIfaces: [...new Set([
       ...Object.values(ifaces).flatMap((m) => Object.keys(m || {})),
@@ -104,6 +108,12 @@ function buildClientConfig({ privateKey, address, dns, serverPublicKey, psk, end
     "PersistentKeepalive = 25",
     "",
   ].filter((l) => l !== null).join("\n");
+}
+
+function endpointHint(s) {
+  const p = wanProblem(s.wanIp);
+  if (p) return p.text;
+  return "Your router's public IP or Dynamic DNS name, as devices on the internet reach it. A Dynamic DNS name keeps working when your IP changes.";
 }
 
 /** Validates the endpoint; returns false if the user backs out of a private-address warning. */
@@ -175,7 +185,7 @@ export async function quickSetup(onDone) {
     { name: "iface", label: "Interface", value: name },
     { name: "address", label: "VPN address", value: server, hint: "The router's address inside the VPN; clients get addresses from this subnet." },
     { name: "port", label: "Listen port (UDP)", value: nextPort(s.wg) },
-    { name: "endpoint", label: "Public address", value: session.info?.profile.host || "", hint: "Your router's public IP or DNS name, as clients on the internet will reach it." },
+    { name: "endpoint", label: "Public address", value: s.endpoint || session.info?.profile.host || "", hint: endpointHint(s) },
     { name: "client", label: "First device name", value: "phone" },
     { name: "clientIp", label: "Device address", value: `${nextFreeIpv4(serverC.network, [serverC.ip])}/32` },
     { name: "mode", label: "Route through VPN", type: "select", value: "full", options: [
@@ -264,7 +274,7 @@ export async function quickSetup(onDone) {
   }
 }
 
-export async function addPeer(onDone) {
+export async function addPeer(onDone, iface0 = null) {
   let s;
   let dump = [];
   try {
@@ -285,7 +295,7 @@ export async function addPeer(onDone) {
     const ip = nextFreeIpv4(addr.network, used);
     return ip ? `${ip}/32` : "";
   };
-  const first = names[0];
+  const first = names.includes(iface0) ? iface0 : names[0];
   const firstAddr = toArray(s.wg[first]?.address).map(parseIpv4Cidr).find(Boolean);
   let result = null;
 
@@ -293,7 +303,7 @@ export async function addPeer(onDone) {
     { name: "iface", label: "Interface", type: "select", options: names, value: first },
     { name: "name", label: "Device name", value: "" , placeholder: "e.g. laptop" },
     { name: "ip", label: "Device address", value: "", placeholder: "automatic", hint: "Leave empty to use the next free address on the selected interface." },
-    { name: "endpoint", label: "Public address", value: session.info?.profile.host || "", hint: "Your router's public IP or DNS name." },
+    { name: "endpoint", label: "Public address", value: s.endpoint || session.info?.profile.host || "", hint: endpointHint(s) },
     { name: "mode", label: "Route through VPN", type: "select", value: "full", options: [
       { value: "full", label: "All traffic (full tunnel)" },
       { value: "split", label: "Only VPN + home LAN (split tunnel)" },

@@ -454,6 +454,27 @@ button.danger { color: var(--bad); }
 .rule-card.off { opacity: 0.6; }
 .empty-state { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; padding: 18px; border: 1px dashed var(--border-dark); border-radius: var(--radius, 0); background: var(--card, var(--white)); }
 .empty-state > div { flex: 1; }
+/* VPN page */
+.vpn-server { display: flex; flex-direction: column; gap: 12px; }
+.vpn-head { display: flex; align-items: center; gap: 10px; }
+.vpn-head .grow { flex: 1; min-width: 0; }
+.vpn-head button, .card-actions button { display: inline-flex; align-items: center; gap: 4px; }
+.card-actions { display: flex; gap: 8px; align-items: center; }
+.card-actions .grow { flex: 1; }
+/* alerts */
+#btn-alerts { position: relative; }
+.alert-count { position: absolute; top: -4px; right: -4px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--bad); color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }
+#alert-panel { position: fixed; top: 52px; right: 16px; width: min(380px, calc(100vw - 32px)); max-height: calc(100vh - 80px); overflow: auto; z-index: 900; background: var(--card, var(--white)); border: 1px solid var(--border); border-radius: var(--radius, 0); box-shadow: 0 12px 32px rgba(16, 24, 40, 0.18); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.alert-head { display: flex; align-items: center; gap: 8px; }
+.alert-head .grow { flex: 1; }
+.alert-list { display: flex; flex-direction: column; gap: 8px; }
+.alert-item { display: flex; gap: 8px; align-items: flex-start; line-height: 1.35; }
+.alert-dot { flex: none; width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: var(--accent, #2b6cb0); }
+.alert-item.bad .alert-dot { background: var(--bad); }
+.alert-item.warn .alert-dot { background: var(--warn); }
+.alert-item.ok .alert-dot { background: var(--ok); }
+.alert-foot { border-top: 1px solid var(--border); padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.alert-kinds { display: flex; flex-direction: column; gap: 3px; }
 .form .hint { line-height: 1.4; }
 .form span[style] label, .form label input[type="checkbox"] { vertical-align: middle; }
 .multicheck { display: flex; flex-wrap: wrap; gap: 4px 14px; }

@@ -1,4 +1,5 @@
-// Top-level views: Dashboard, Clients, Networks, Traffic Rules (UniFi-style pages)
+// Top-level views: Dashboard, Clients, Networks, Traffic Rules, Port Forwarding,
+// VPN (UniFi-style pages)
 // and Advanced (the Winbox-style window workspace), plus the Classic / Modern look.
 import { h } from "./dom.js";
 import { icon, logo } from "./icons.js";
@@ -8,6 +9,8 @@ const VIEWS = {
   clients: { title: "Clients", icon: "clients", el: "clients" },
   networks: { title: "Networks", icon: "networks", el: "networks" },
   rules: { title: "Traffic Rules", icon: "rules", el: "rules" },
+  ports: { title: "Port Forwarding", icon: "forward", el: "ports" },
+  vpn: { title: "VPN", icon: "vpn", el: "vpnpage" },
   windows: { title: "Advanced", icon: "advanced", el: "workspace" },
 };
 const listeners = new Map(); // view -> { show(), hide() }

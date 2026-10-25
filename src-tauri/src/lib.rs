@@ -25,6 +25,7 @@ use crate::state::AppState;
 pub fn run() {
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
             app.manage(AppState::new(ProfileStore::new(dir)));
