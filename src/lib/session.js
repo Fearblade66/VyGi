@@ -1,8 +1,10 @@
 // Connection state, the Safe Mode / Save toolbar, and the shared "apply" helper.
 import { api, errorText } from "./api.js";
 import { setTitle } from "./platform.js";
-import { setStatus, toast } from "./dom.js";
-import { confirmBox } from "./dialog.js";
+import { setStatus, toast, h } from "./dom.js";
+import { confirmBox, modal } from "./dialog.js";
+import { checkChange } from "./doctor.js";
+import { wanInfo } from "./wan.js";
 import { addEntry, updateEntry, settlePending, parseRevisions } from "./history.js";
 
 const listeners = new Set();
@@ -51,7 +53,8 @@ function applyTx(tx) {
  * commands: [{op: "set"|"delete", path: [...], value?}]
  * Throws on failure (the caller shows the error).
  */
-export async function applyChanges(commands, what = "Changes") {
+export async function applyChanges(commands, what = "Changes", { check = true } = {}) {
+  if (check) commands = await reviewChange(commands, what);
   const minutes = safeMinutes();
   setStatus(`Applying: ${what}…`);
   let tx;
@@ -80,6 +83,48 @@ function remember(what, minutes) {
     const top = parseRevisions(t)[0];
     if (top) updateEntry(router, e.id, { stamp: top.stamp });
   }).catch(() => {});
+}
+
+// What the conflict checks need to know about the router, kept for a minute.
+let envCache = { at: 0, router: null, env: null };
+async function routerEnv() {
+  const router = session.info?.profileId;
+  if (envCache.router === router && Date.now() - envCache.at < 60_000) return envCache.env;
+  const w = await wanInfo();
+  const env = { wan: w.wan, wanCidr: w.wanCidr, mgmtHost: session.info?.profile?.host, defaultPassword: !!session.info?.defaultPassword, user: session.info?.profile?.sshUser };
+  envCache = { at: Date.now(), router, env };
+  return env;
+}
+
+/**
+ * Before a change: would it cause problems elsewhere? Shows what else VyGi
+ * would change (only its own settings) and anything you should know, and
+ * asks. Returns the commands to apply; throws if you cancel.
+ */
+async function reviewChange(commands, what) {
+  let cfg;
+  let env;
+  try {
+    [cfg, env] = await Promise.all([api.getConfig([]), routerEnv()]);
+  } catch {
+    return commands; // can't check (e.g. not connected): VyOS still validates the change
+  }
+  const { extras, warnings } = checkChange(cfg || {}, commands, env);
+  if (!extras.length && !warnings.length) return commands;
+  const boxes = extras.map((x) => h("input", { type: "checkbox", checked: true }));
+  const body = h("div.review", { style: { width: "560px" } },
+    h("p", `Before applying "${what}", VyGi checked how it fits with the rest of your setup.`),
+    extras.length ? h("div", h("h4", "VyGi will also change these, so nothing breaks:"),
+      extras.map((x, i) => h("label.review-item", boxes[i], h("span", h("b", x.finding.title), h("span.hint", ` ${x.finding.text}`))))) : null,
+    warnings.length ? h("div", h("h4", "Worth knowing:"),
+      warnings.map((w) => h("div.review-item", h(`span.pill.${w.level === "bad" ? "bad" : "warn"}`, w.level === "bad" ? "problem" : "note"), h("span", h("b", w.title), h("span.hint", ` ${w.text}`))))) : null,
+    h("div.hint", "Settings made in Advanced or by hand are never changed automatically."));
+  const r = await modal("Check before applying", body, [
+    { label: "Cancel", value: "cancel" },
+    { label: extras.length ? "Apply" : "Apply anyway", value: "apply", primary: true },
+  ]);
+  if (r !== "apply") throw new Error("Cancelled: nothing was changed.");
+  return [...commands, ...extras.filter((_, i) => boxes[i].checked).flatMap((x) => x.commands)];
 }
 
 /** Updates the toolbar from a TxStatus returned by a command. */

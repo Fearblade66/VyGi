@@ -584,3 +584,6 @@ button.danger { color: var(--bad); }
 .copy-box { flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; resize: none; }
 .token-list table { width: 100%; }
 .token-list td, .token-list th { padding: 5px 6px; }
+.review h4 { margin: 10px 0 6px; }
+.review-item { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; line-height: 1.4; }
+.review-item input { margin-top: 3px; }

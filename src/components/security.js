@@ -41,7 +41,7 @@ async function fix(f, reload) {
   reload();
 }
 
-async function changePassword(reload) {
+export async function changePassword(reload) {
   const user = session.info?.profile?.sshUser || "vyos";
   const ok = await formDialog(`New password for ${user}`, [
     { name: "pw", label: "New password", type: "password", hint: "At least 8 characters. Something long and unique; VyGi remembers it for you." },

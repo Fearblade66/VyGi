@@ -15,7 +15,7 @@ import { openDnsServer, dnsSummary } from "./technitium.js";
 import { loadSites, siteRows, countryRows, sitesFootnote } from "../lib/activity.js";
 import { siteIcon } from "../lib/siteicon.js";
 import { siteOf } from "../lib/sites.js";
-import { loadFindings, renderFindings } from "./security.js";
+import { loadDoctor, renderDoctor } from "./doctor.js";
 
 const PING_TARGET = "1.1.1.1";
 
@@ -46,7 +46,7 @@ export function initDashboard() {
     const top = card("span-6", "Most active clients", { label: "All clients", go: () => showView("clients") });
     const vpn = card("span-3", "VPN", { label: "Open", go: () => goWin(openVpn) });
     const alerts = card("span-3", "Alerts");
-    const security = card("span-12", "Security");
+    const security = card("span-12", "Health check");
     security.el.hidden = true;
     const sites = card("span-7", "Top sites now", { label: "All clients", go: () => showView("clients") });
     const countries = card("span-5", "Traffic by country");
@@ -363,10 +363,10 @@ export function initDashboard() {
   // Shown when something needs fixing; "all good" stays out of the way.
   async function pollSecurity() {
     try {
-      const f = await loadFindings();
+      const f = await loadDoctor();
       if (!ui) return;
-      ui.securityCard.hidden = !f.length;
-      renderFindings(ui.security, f, pollSecurity);
+      ui.securityCard.hidden = !f.some((x) => x.level !== "info" || x.fix);
+      renderDoctor(ui.security, f, pollSecurity);
     } catch {
       /* not critical */
     }
