@@ -1,5 +1,6 @@
 // Floating, draggable, resizable sub-windows inside #workspace (Winbox MDI style).
 import { h } from "./dom.js";
+import { currentView, showView } from "./views.js";
 
 const open = new Map(); // key -> window object
 let zTop = 10;
@@ -33,6 +34,9 @@ window.addEventListener("resize", () => {
  * Returns { el, body, close(), setTitle(), onClose(fn), onResize(fn), isNew }.
  */
 export function openWindow({ key, title, width = 640, height = 380 }) {
+  // Windows live on the Advanced page; opening one from another page (e.g. the
+  // Terminal button) goes there, or it would open out of sight.
+  if (currentView() !== "windows") showView("windows");
   if (key && open.has(key)) {
     const w = open.get(key);
     w.focus();
