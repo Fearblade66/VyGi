@@ -156,6 +156,8 @@ In the alerts bell, switch on **Watch this router 24/7 on the VyGi server**. Fro
 
 **Insights** (sidebar) shows what was recorded: internet traffic for the last 24 hours, 7 or 30 days, data per device, and the system log with search and a level filter. History is kept for 30 days (`VYGI_KEEP_DAYS` to change), in the data volume under `history/`.
 
+Changing the web password logs out every other browser session.
+
 **Phone notifications:** in the bell, **Phone notifications**. The simplest is [ntfy](https://ntfy.sh): install the free app, subscribe to a topic with a hard-to-guess name (anyone who knows it can read it), and paste its URL (e.g. `https://ntfy.sh/vygi-6f3a9c2e`); or use your own ntfy server, with an access token for protected topics. A webhook URL works too: Discord and Slack webhooks get a message, anything else (Home Assistant, n8n…) gets JSON `{title, text, level, kind, at}`. **Save and test** sends a test message.
 
 The server needs the router's password and API key saved (tick **Remember** when connecting) and the router trusted once from VyGi.
@@ -166,7 +168,7 @@ VyGi can be used by Claude, so it can check your setup, explain problems ("why w
 
 - **Web version (MCP):** **API access** at the bottom of the sidebar → **New token**. A **full** token lets Claude read and change settings; a **read-only** one only reads. VyGi shows the token once, with ready-to-paste setup for **Claude Code** (`claude mcp add --transport http vygi https://<vygi>:8443/mcp --header "Authorization: Bearer <token>"`) and **Claude Desktop**. Because VyGi's certificate is self-signed, download it there and start Claude with `NODE_EXTRA_CA_CERTS=<file>`, and make sure `VYGI_HOSTNAMES` includes the address you use (VyGi remakes its own certificate when that changes).
   - Claude gets tools to list routers, read status, devices, the configuration (passwords, keys and secrets redacted), run `show` commands (except ones that print secrets), ping, and read the 24/7 history (alerts, traffic, data per device, logs).
-  - Changes always go through **Safe Mode**: they undo themselves after a few minutes unless Claude calls `confirm_changes` after checking the router still works (it then also saves them). The routers' logins, the HTTPS API and the Safe Mode settings can't be changed through the API, and whole sections can't be deleted.
+  - Changes always go through **Safe Mode**: they undo themselves after a few minutes unless Claude calls `confirm_changes` after checking the router still works (it then also saves them). The routers' logins, the HTTPS API, the Safe Mode settings, and settings that run commands as root or copy the config elsewhere (task scheduler, event handler, config sync, containers) can't be changed through the API, and whole sections can't be deleted. `get_config` hides passwords, keys (except public keys) and SNMP community names; `show` commands that print secrets (configuration, PKI, tech-support) are refused.
   - Tokens are stored only as fingerprints, can be revoked at any time (which also closes their router connections), and work only from programs, not browsers on other sites. Keep VyGi inside your home network.
 - **Any version:** Advanced → System → **Report for Claude** makes a Markdown file describing the router (health, interfaces, networks, rules, port forwards, security findings, recent alerts and the configuration with secrets removed) to attach in a chat with Claude.
 

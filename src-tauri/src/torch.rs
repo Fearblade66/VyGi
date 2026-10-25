@@ -221,7 +221,7 @@ pub async fn open_torch(
         expr.push_str(&format!(" and ({})", filter.trim()));
     }
     let cmd = format!(
-        "sudo -n tcpdump -l -n -nn -t -e -s 96 -i any {} 2>&1",
+        "sudo -n tcpdump -l -n -nn -t -e -s 96 -i any -- {} 2>&1",
         shell_quote(&expr)
     );
     let mut channel = conn.ssh.exec_channel(&cmd).await?;

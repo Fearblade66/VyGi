@@ -321,12 +321,12 @@ async fn change_password(
     headers: HeaderMap,
     Json(req): Json<PasswordReq>,
 ) -> Response {
-    if s.auth.session(&headers).is_none() || headers.get("x-vygi-tab").is_none() {
+    let (Some(session), Some(_)) = (s.auth.session(&headers), headers.get("x-vygi-tab")) else {
         return plain_error(StatusCode::UNAUTHORIZED, "Log in first");
-    }
+    };
     match s
         .auth
-        .change_password(&req.current, &req.new_password)
+        .change_password(&session, &req.current, &req.new_password)
         .await
     {
         Ok(()) => Json(json!({ "ok": true })).into_response(),

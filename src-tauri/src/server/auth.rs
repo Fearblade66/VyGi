@@ -155,12 +155,8 @@ impl Auth {
 
     /// Checks the password; returns the Set-Cookie value for a new session.
     pub async fn login(&self, password: &str) -> Result<String, String> {
-        {
-            let mut fails = self.fails.lock().unwrap_or_else(|e| e.into_inner());
-            fails.retain(|t| t.elapsed() < LOCK_WINDOW);
-            if fails.len() >= MAX_FAILS {
-                return Err("Too many wrong passwords. Wait a few minutes.".into());
-            }
+        if self.locked() {
+            return Err("Too many wrong passwords. Wait a few minutes.".into());
         }
         let hash = self.hash.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let pw = password.to_string();
@@ -168,10 +164,7 @@ impl Auth {
             .await
             .unwrap_or(false);
         if !ok {
-            self.fails
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .push(Instant::now());
+            self.failed();
             tokio::time::sleep(Duration::from_secs(1)).await; // slows down guessing
             return Err("Wrong password".into());
         }
@@ -192,10 +185,19 @@ impl Auth {
         }
     }
 
-    /// New password; other sessions stay logged in.
-    pub async fn change_password(&self, current: &str, new: &str) -> Result<(), String> {
+    /// New password; every other session is logged out (someone who knew
+    /// the old password loses access), `keep` stays logged in.
+    pub async fn change_password(
+        &self,
+        keep: &str,
+        current: &str,
+        new: &str,
+    ) -> Result<(), String> {
         if new.chars().count() < MIN_PASSWORD {
             return Err(format!("Use at least {MIN_PASSWORD} characters"));
+        }
+        if self.locked() {
+            return Err("Too many wrong passwords. Wait a few minutes.".into());
         }
         let hash = self.hash.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let cur = current.to_string();
@@ -203,6 +205,7 @@ impl Auth {
             .await
             .unwrap_or(false)
         {
+            self.failed();
             tokio::time::sleep(Duration::from_secs(1)).await;
             return Err("The current password is wrong".into());
         }
@@ -211,7 +214,25 @@ impl Auth {
             .await
             .map_err(|e| e.to_string())??;
         *self.hash.lock().unwrap_or_else(|e| e.into_inner()) = h;
-        self.save()
+        self.save()?;
+        self.sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|t, _| t == keep);
+        Ok(())
+    }
+
+    fn locked(&self) -> bool {
+        let mut fails = self.fails.lock().unwrap_or_else(|e| e.into_inner());
+        fails.retain(|t| t.elapsed() < LOCK_WINDOW);
+        fails.len() >= MAX_FAILS
+    }
+
+    fn failed(&self) {
+        self.fails
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(Instant::now());
     }
 
     /// Drops expired sessions.
@@ -259,5 +280,36 @@ mod tests {
         h.insert(header::COOKIE, "vygi_session=nope".parse().unwrap());
         assert_eq!(auth.session(&h), None);
         assert!(auth.cookie("t", 5).contains("; Secure"));
+    }
+
+    #[tokio::test]
+    async fn password_change_logs_out_others() {
+        let mut b = [0u8; 8];
+        getrandom::fill(&mut b).unwrap();
+        let dir = std::env::temp_dir().join(format!("vygi-auth-{}", hex::encode(b)));
+        std::fs::create_dir_all(&dir).unwrap();
+        let auth = Auth::load(&dir, Some("first password 1"), true).unwrap();
+        let tok = |c: String| {
+            c.split(';')
+                .next()
+                .unwrap()
+                .split_once('=')
+                .unwrap()
+                .1
+                .to_string()
+        };
+        let mine = tok(auth.login("first password 1").await.unwrap());
+        let other = tok(auth.login("first password 1").await.unwrap());
+        assert!(auth
+            .change_password(&mine, "wrong", "second password 2")
+            .await
+            .is_err());
+        auth.change_password(&mine, "first password 1", "second password 2")
+            .await
+            .unwrap();
+        let has = |t: &str| auth.sessions.lock().unwrap().contains_key(t);
+        assert!(has(&mine) && !has(&other));
+        assert!(auth.login("first password 1").await.is_err());
+        assert!(auth.login("second password 2").await.is_ok());
     }
 }

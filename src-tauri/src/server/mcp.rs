@@ -70,19 +70,25 @@ pub fn redact(v: &Value) -> Value {
             m.iter()
                 .map(|(k, v)| {
                     let secret = k.contains("password")
-                        || k.contains("private-key")
                         || k.contains("preshared")
                         || k.contains("secret")
                         || k == "key"
+                        || (k.ends_with("-key") && k != "public-key")
                         || k.contains("token");
-                    (
-                        k.clone(),
-                        if secret && !v.is_object() {
-                            json!("<redacted>")
-                        } else {
-                            redact(v)
-                        },
-                    )
+                    let value = if secret && !v.is_object() {
+                        json!("<redacted>")
+                    } else if k == "community" && v.is_object() {
+                        // SNMP community names are the password
+                        let m = v.as_object().into_iter().flatten();
+                        Value::Object(
+                            m.enumerate()
+                                .map(|(i, (_, c))| (format!("<redacted-{}>", i + 1), redact(c)))
+                                .collect(),
+                        )
+                    } else {
+                        redact(v)
+                    };
+                    (k.clone(), value)
                 })
                 .collect(),
         ),
@@ -113,12 +119,18 @@ pub fn check_commands(cmds: &[ConfigCommand]) -> Result<(), String> {
                 p[0]
             ));
         }
+        // logins, the API, Safe Mode, and settings that run commands as root on
+        // the router or copy its config elsewhere
         let protected = p.starts_with(&["system", "login"])
             || p.starts_with(&["service", "https"])
             || p.starts_with(&["system", "config-management"])
+            || p.starts_with(&["system", "task-scheduler"])
+            || p.starts_with(&["service", "event-handler"])
+            || p.starts_with(&["service", "config-sync"])
+            || p.starts_with(&["container"])
             || (p.starts_with(&["service", "ssh"]) && c.op == "delete" && p.len() <= 2);
         if protected {
-            return Err(format!("`{}` can't be changed through the API (logins, the API itself and Safe Mode are off limits)", p.join(" ")));
+            return Err(format!("`{}` can't be changed through the API (logins, the API itself, Safe Mode, scheduled tasks, event handlers, config sync and containers are off limits)", p.join(" ")));
         }
     }
     Ok(())
@@ -133,6 +145,7 @@ pub fn check_show(path: &[String]) -> Result<(), String> {
     let first = p.first().copied().unwrap_or("");
     let secret = first == "configuration"
         || first == "pki"
+        || first == "tech-support"
         || p.starts_with(&["system", "commit"])
         || p.iter()
             .any(|w| w.contains("private-key") || w.contains("password") || w.contains("secret"));
@@ -259,6 +272,15 @@ async fn call(srv: &Arc<Server>, token: &Token, name: &str, a: &Value) -> AppRes
         ));
     }
     let now = now_ms();
+    if matches!(
+        name,
+        "get_alerts" | "traffic_history" | "device_usage" | "search_logs"
+    ) && srv.app.profiles.find(&router).is_err()
+    {
+        return Err(AppError::Invalid(format!(
+            "No saved router `{router}`. Use list_routers."
+        )));
+    }
     // history tools read the server's files; no router connection needed
     match name {
         "get_alerts" => {
@@ -449,6 +471,13 @@ mod tests {
             assert!(!r.contains(secret), "{secret} leaked: {r}");
         }
         assert!(r.contains("10.0.0.1/24") && r.contains("PUB") && r.contains("ssh-ed25519"));
+        let more = json!({
+            "protocols": { "ospf": { "area": { "0": { "authentication": { "md5": { "key-id": { "1": { "md5-key": "M5" } } } } } } } },
+            "service": { "snmp": { "community": { "c0mmun1ty": { "authorization": "ro" } } } },
+        });
+        let r = redact(&more).to_string();
+        assert!(!r.contains("M5") && !r.contains("c0mmun1ty"), "{r}");
+        assert!(r.contains("\"ro\""));
     }
 
     #[test]
@@ -479,6 +508,21 @@ mod tests {
         assert!(check_commands(&[cmd("delete", &["service", "ssh"])]).is_err());
         assert!(check_commands(&[cmd("set", &["service", "ssh", "port"])]).is_ok());
         assert!(check_commands(&[cmd("delete", &["firewall"])]).is_err());
+        for p in [
+            &[
+                "system",
+                "task-scheduler",
+                "task",
+                "x",
+                "executable",
+                "path",
+            ][..],
+            &["service", "event-handler", "event", "x", "script", "path"],
+            &["service", "config-sync", "secondary", "address"],
+            &["container", "name", "x", "image"],
+        ] {
+            assert!(check_commands(&[cmd("set", p)]).is_err(), "{p:?}");
+        }
         assert!(check_commands(&[cmd("comment", &["firewall", "x"])]).is_err());
         assert!(check_commands(&[]).is_err());
     }
@@ -491,6 +535,7 @@ mod tests {
         assert!(check_show(&p(&["configuration", "commands"])).is_err());
         assert!(check_show(&p(&["system", "commit", "file", "0"])).is_err());
         assert!(check_show(&p(&["pki", "certificate"])).is_err());
+        assert!(check_show(&p(&["tech-support", "report"])).is_err());
         assert!(check_show(&p(&["interfaces", "wireguard", "wg0", "private-key"])).is_err());
     }
 

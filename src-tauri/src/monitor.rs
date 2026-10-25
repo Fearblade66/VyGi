@@ -97,7 +97,8 @@ fn stream_command(kind: &StreamKind) -> AppResult<String> {
             let iface = validate_name(interface)?;
             let mut cmd = format!("sudo -n tcpdump -l -n -nn -i {iface} -c 20000");
             if !filter.trim().is_empty() {
-                cmd.push(' ');
+                // `--`: a filter starting with "-" must not be read as an option (e.g. -w file)
+                cmd.push_str(" -- ");
                 cmd.push_str(&shell_quote(filter.trim()));
             }
             cmd

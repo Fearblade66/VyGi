@@ -73,7 +73,8 @@ pub struct Store {
 }
 
 fn safe(id: &str) -> String {
-    id.chars()
+    let s: String = id
+        .chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '@') {
                 c
@@ -81,7 +82,13 @@ fn safe(id: &str) -> String {
                 '_'
             }
         })
-        .collect()
+        .collect();
+    // "." and ".." would point at the history folder itself or its parent
+    if s.chars().all(|c| c == '.') {
+        "_".repeat(s.len().max(1))
+    } else {
+        s
+    }
 }
 
 fn append_lines<T: Serialize>(path: &Path, items: &[T]) {
@@ -338,6 +345,14 @@ mod tests {
         let mut b = [0u8; 8];
         getrandom::fill(&mut b).unwrap();
         std::env::temp_dir().join(format!("vygi-hist-{}", hex::encode(b)))
+    }
+
+    #[test]
+    fn router_ids_stay_inside() {
+        assert_eq!(safe(".."), "__");
+        assert_eq!(safe("."), "_");
+        assert_eq!(safe("../x"), ".._x");
+        assert_eq!(safe("vyos@10.0.0.1"), "vyos@10.0.0.1");
     }
 
     #[test]
