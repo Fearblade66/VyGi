@@ -6,24 +6,14 @@ import { formDialog, confirmBox, alertBox } from "../lib/dialog.js";
 import { applyChanges, isConnected, onSessionChange } from "../lib/session.js";
 import { registerView, welcome, loadingPage } from "../lib/views.js";
 import { icon } from "../lib/icons.js";
-import { collectClients } from "../lib/netdata.js";
+import { deviceList } from "./groups.js";
+import { readGroups } from "../lib/devgroups.js";
 import { readNetworks } from "../lib/netplan.js";
 import { DAYS, parseRules, ruleCommands, deleteRuleCommands, toggleCommands, describeSchedule, activeNow, routerClock } from "../lib/trafficrules.js";
 
 const MAC_IN = /([0-9a-f]{2}(?::[0-9a-f]{2}){5})\s*$/i;
 const CIDR_IN = /(\d{1,3}(?:\.\d{1,3}){3}\/\d{1,2})\s*$/;
 
-// The device list is slow to build (several router calls); reuse it for a minute.
-let clientCache = { at: 0, clients: null };
-async function deviceList() {
-  if (clientCache.clients && Date.now() - clientCache.at < 60_000) return clientCache.clients;
-  const { clients } = await collectClients().catch(() => ({ clients: [] }));
-  clientCache = { at: Date.now(), clients };
-  return clients;
-}
-onSessionChange((s) => {
-  if (!s.info) clientCache = { at: 0, clients: null };
-});
 
 async function loadState() {
   const [cfg, routes, clients, time] = await Promise.all([
@@ -79,7 +69,9 @@ export function initRules() {
   }
 
   function card(r) {
-    const who = r.targets.kind === "devices" ? r.targets.macs.map(deviceLabel).join(", ") : r.targets.kind === "networks" ? r.targets.networks.join(", ") : "everyone";
+    const who = r.targets.kind === "devices" ? r.targets.macs.map(deviceLabel).join(", ")
+      : r.targets.kind === "group" ? `group ${readGroups(st.cfg).find((g) => g.gname === r.targets.group)?.name || r.targets.group}`
+      : r.targets.kind === "networks" ? r.targets.networks.join(", ") : "everyone";
     const what = r.block === "sites" ? `Blocks ${r.domains.filter((d) => !d.startsWith("www.")).join(", ")}` : "Blocks the internet";
     const sw = h("input", { type: "checkbox", checked: r.enabled, title: r.enabled ? "Rule on: click to pause" : "Paused: click to turn on" });
     sw.addEventListener("click", (e) => e.stopPropagation());
@@ -127,11 +119,13 @@ export function initRules() {
     for (const m of r?.targets.macs || []) if (!st.clients.some((c) => c.mac === m)) deviceOpts.push(`(not seen now) — ${m}`);
     const netOpts = nets.map((n) => `${n.name} — ${n.network}`);
     const sched = r?.schedule || {};
+    const groups = readGroups(st.cfg);
     await formDialog(r ? `Rule: ${r.name}` : "New traffic rule", [
       { name: "name", label: "Name", value: r?.name || preset.name || "", placeholder: "e.g. Kids bedtime, No TikTok" },
       { name: "block", label: "Block", type: "select", value: r?.block || "internet", options: [{ value: "internet", label: "all internet" }, { value: "sites", label: "specific sites" }] },
       { name: "domains", label: "Sites", type: "textarea", rows: 3, value: (r?.domains || []).filter((d) => !d.startsWith("www.")).join("\n"), hint: "One per line, e.g. tiktok.com. The router blocks the addresses these names point to, so big services that share servers (YouTube with Google) can't be split, and apps may use other names. Works for IPv4 only. For reliable site blocking, use Technitium." },
-      { name: "targets", label: "For", type: "select", value: r?.targets.kind || "devices", options: [{ value: "devices", label: "these devices" }, { value: "networks", label: "these networks" }, { value: "all", label: "everyone" }] },
+      { name: "targets", label: "For", type: "select", value: r?.targets.kind || "devices", options: [{ value: "devices", label: "these devices" }, { value: "group", label: "a device group" }, { value: "networks", label: "these networks" }, { value: "all", label: "everyone" }] },
+      { name: "group", label: "Group", type: "select", value: r?.targets.group || groups[0]?.gname || "", options: groups.length ? groups.map((g) => ({ value: g.gname, label: `${g.name} (${g.macs.length} device${g.macs.length === 1 ? "" : "s"})` })) : [{ value: "", label: "no groups yet" }] },
       { name: "devices", label: "Devices", type: "multicheck", value: deviceOpts.filter((o) => r?.targets.macs.includes(o.match(MAC_IN)?.[1]?.toLowerCase())), options: deviceOpts },
       { name: "networks", label: "Networks", type: "multicheck", value: netOpts.filter((o) => r?.targets.networks.includes(o.match(CIDR_IN)?.[1])), options: netOpts },
       { name: "schedule", label: "When", type: "select", value: sched.kind || preset.schedule || "always", options: [{ value: "always", label: "always" }, { value: "times", label: "on a schedule" }] },
@@ -159,6 +153,8 @@ export function initRules() {
         set.show("domains", v.block === "sites");
         set.show("devices", v.targets === "devices");
         set.show("networks", v.targets === "networks");
+        set.show("group", v.targets === "group");
+        set.hint("group", groups.length ? "The rule follows the group: devices added to it later are covered too." : "Make groups on the Clients page (Groups…).");
         set.show("days", v.schedule === "times");
         set.show("start", v.schedule === "times");
         set.show("stop", v.schedule === "times");

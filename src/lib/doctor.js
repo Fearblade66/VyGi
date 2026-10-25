@@ -15,7 +15,7 @@ const isPrivate = (ip) => PRIVATE.some((c) => ipv4InCidr(ip, c));
 const ipNum = (ip) => ip.split(".").reduce((a, b) => a * 256 + Number(b), 0);
 const isVyGi = (r) => /^VyGi\b/.test(String(r?.description || ""));
 // leaves that hold several values (set adds a value instead of replacing)
-const MULTI = new Set(["address", "network", "mac-address", "name-server", "allow-from", "listen-address", "member"]);
+const MULTI = new Set(["address", "network", "mac-address", "name-server", "allow-from", "listen-address", "member", "interface"]);
 
 /** The config after `commands` (set/delete), approximately as VyOS would make it. */
 export function simulate(cfg, commands) {
@@ -23,6 +23,18 @@ export function simulate(cfg, commands) {
   for (const c of commands || []) {
     const path = c.path || [];
     if (!path.length) continue;
+    // `delete ... mac-address X`: removes one value of a multi-value leaf
+    if (c.op === "delete" && path.length >= 2) {
+      const holder = path.slice(0, -2).reduce((n, k) => (n == null ? null : n[k] ?? null), out);
+      const key = path[path.length - 2];
+      const cur = holder?.[key];
+      if (cur != null && typeof cur !== "object" || Array.isArray(cur)) {
+        const left = toArray(cur).filter((v) => v !== path[path.length - 1]);
+        if (!left.length) delete holder[key];
+        else holder[key] = left.length === 1 ? left[0] : left;
+        continue;
+      }
+    }
     const parent = path.slice(0, -1).reduce((n, k) => {
       if (n == null) return null;
       if (c.op === "set" && (n[k] == null || typeof n[k] !== "object" || Array.isArray(n[k]))) n[k] = {};
@@ -257,7 +269,9 @@ export function diagnose(cfg, env = {}) {
   // ---- leftovers VyGi made that nothing uses any more
   const text = JSON.stringify({ firewall: { ipv4: cfg?.firewall?.ipv4, ipv6: cfg?.firewall?.ipv6 }, nat: cfg?.nat, policy: cfg?.policy });
   for (const [kind, groups] of Object.entries(cfg?.firewall?.group || {})) {
-    for (const g of Object.keys(groups || {})) {
+    for (const [g, gc] of Object.entries(groups || {})) {
+      // device groups (devgroups.js) stand on their own, used or not
+      if (String(gc?.description || "").startsWith("VyGi group: ")) continue;
       if (/^VYGI-/.test(g) && !text.includes(`"${g}"`)) {
         add({ id: `leftover-group:${kind}:${g}`, level: "info", title: "Leftover from a deleted rule", text: `The ${kind} "${g}" was made by VyGi and nothing uses it any more.`, fix: [{ op: "delete", path: ["firewall", "group", kind, g] }] });
       }

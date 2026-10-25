@@ -37,13 +37,16 @@ export function parseRules(cfg) {
     const networks = toArray(groups["network-group"]?.[g]?.network);
     const domains = toArray(groups["domain-group"]?.[g]?.address);
     const t = r?.time || {};
+    const devGroup = r?.source?.group?.["mac-group"];
     const n6 = Object.entries(cfg?.firewall?.ipv6?.forward?.filter?.rule || {}).find(([, x]) => String(x?.description || "") === r.description)?.[0] || null;
     out.push({
       n, n6, id, name: m[2],
       enabled: !("disable" in (r || {})),
       block: domains.length ? "sites" : "internet",
       domains,
-      targets: { kind: macs.length ? "devices" : networks.length ? "networks" : "all", macs, networks },
+      targets: devGroup && devGroup !== g
+        ? { kind: "group", group: devGroup, macs: [], networks: [] }
+        : { kind: macs.length ? "devices" : networks.length ? "networks" : "all", macs, networks },
       schedule: t.starttime || t.weekdays ? { kind: "times", start: t.starttime || "00:00", stop: t.stoptime || "23:59", days: t.weekdays ? parseDays(t.weekdays) : [0, 1, 2, 3, 4, 5, 6] } : { kind: "always" },
     });
   }
@@ -96,8 +99,8 @@ function freeNumber(used, from, to) {
 
 /**
  * Commands to create or replace a rule.
- * spec: { name, block: "internet"|"sites", domains (text), targets: "devices"|"networks"|"all",
- *         macs: [mac], networks: [cidr], schedule: "always"|"times", days: [0..6], start, stop, enabled }
+ * spec: { name, block: "internet"|"sites", domains (text), targets: "devices"|"group"|"networks"|"all",
+ *         macs: [mac], group: "VYGI-G<id>", networks: [cidr], schedule: "always"|"times", days: [0..6], start, stop, enabled }
  */
 export function ruleCommands(cfg, spec, existing = null) {
   const name = String(spec.name || "").trim().replace(/['"]/g, "");
@@ -138,6 +141,11 @@ export function ruleCommands(cfg, spec, existing = null) {
     for (const m of macs) set([...GROUP, "mac-group", g, "mac-address"], m);
     set([...FWD, n, "source", "group", "mac-group"], g);
     v6.push([["source", "group", "mac-group"], g]);
+  } else if (spec.targets === "group") {
+    // a device group (devgroups.js): the rule follows its members
+    if (!cfg?.firewall?.group?.["mac-group"]?.[spec.group]) throw new Error("Choose a device group");
+    set([...FWD, n, "source", "group", "mac-group"], spec.group);
+    v6.push([["source", "group", "mac-group"], spec.group]);
   } else if (spec.targets === "networks") {
     const nets = [...new Set(spec.networks || [])];
     if (!nets.length) throw new Error("Choose at least one network");

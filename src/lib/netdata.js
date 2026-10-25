@@ -2,6 +2,7 @@
 // ARP/NDP neighbors, DHCP leases and static mappings, static DNS names,
 // WireGuard peers, and active connections per address.
 import { api } from "./api.js";
+import { isVpnClient } from "./vpnclient.js";
 import { toArray, flattenInterfaces, parseIpv4Cidr, ipv4InCidr } from "./vyos.js";
 import { parseWgDump } from "../components/vpn.js";
 import { createSampler, accountingOn } from "./flowrates.js";
@@ -93,9 +94,11 @@ export function mergeClients({ neighbors = [], leases = [], dhcpConfig = {}, hos
 
   // WireGuard peers are clients too (keyed by public key).
   const peerNames = new Map();
+  const tunnels = new Set(Object.entries(wgConfig || {}).filter(([, w]) => isVpnClient(w)).map(([i]) => i)); // VPN clients: the provider isn't a device
   for (const [iface, w] of Object.entries(wgConfig || {})) for (const [name, p] of Object.entries(w?.peer || {})) peerNames.set(p?.["public-key"], { name, iface });
   const now = Date.now() / 1000;
   for (const p of parseWgDump(wgDump || "")) {
+    if (tunnels.has(p.iface)) continue;
     const meta = peerNames.get(p.publicKey);
     const c = get(`wg:${p.publicKey}`, { kind: "vpn" });
     c.name = meta?.name || "";

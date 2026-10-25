@@ -2,6 +2,7 @@
 // minimized) and reports changes as a pop-up, a desktop notification when
 // VyGi isn't in front, and in the bell list in the top bar.
 import { notify, isDesktop } from "../lib/platform.js";
+import { isVpnClient } from "../lib/vpnclient.js";
 import { formDialog } from "../lib/dialog.js";
 import { showView } from "../lib/views.js";
 import { api, errorText } from "../lib/api.js";
@@ -93,6 +94,7 @@ export function initAlerts() {
   let timer = null;
   let running = false;
   let names = new Map(); // wireguard public key -> peer name
+  let tunnelKeys = new Set(); // public keys of VPN providers (VyGi's VPN clients)
 
   const routerData = () => load(routerKey(), { state: {}, log: [], unread: 0 });
   // Web version: the VyGi server may watch this router 24/7; then its alerts
@@ -140,11 +142,20 @@ export function initAlerts() {
       if (on.vpn) {
         const wg = await api.getConfig(["interfaces", "wireguard"]).catch(() => ({}));
         names = new Map();
-        for (const c of Object.values(wg || {})) for (const [n, p] of Object.entries(c?.peer || {})) names.set(p?.["public-key"], n);
+        tunnelKeys = new Set();
+        for (const c of Object.values(wg || {})) {
+          for (const [n, p] of Object.entries(c?.peer || {})) {
+            if (isVpnClient(c)) tunnelKeys.add(p?.["public-key"]); // a VPN provider, not a device
+            else names.set(p?.["public-key"], n);
+          }
+        }
       }
       const snap = await snapshot(on);
       if (session.info?.profileId !== router) return; // switched router meanwhile
-      if (snap.vpn) for (const p of snap.vpn) p.name = names.get(p.key) || p.name;
+      if (snap.vpn) {
+        snap.vpn = snap.vpn.filter((p) => !tunnelKeys.has(p.key));
+        for (const p of snap.vpn) p.name = names.get(p.key) || p.name;
+      }
       const d = routerData();
       const { state, alerts } = evaluate(d.state || {}, snap);
       const shown = alerts.filter((a) => on[a.kind]);

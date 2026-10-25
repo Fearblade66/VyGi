@@ -2,6 +2,7 @@
 // Flow adapted from VyManager's QuickSetupWizard; keys are generated locally so a
 // client's private key never reaches the router.
 import QRCode from "qrcode";
+import { vpnServers } from "../lib/vpnclient.js";
 import { saveText } from "../lib/platform.js";
 import { api, errorText } from "../lib/api.js";
 import { h, setStatus } from "../lib/dom.js";
@@ -23,7 +24,8 @@ async function snapshot() {
     api.interfaceStats().catch(() => ({ links: [] })),
     wanInfo(),
   ]);
-  const wg = ifaces.wireguard || {};
+  const wg = vpnServers(ifaces.wireguard); // VPN clients (to a provider) aren't servers
+  const allWg = Object.keys(ifaces.wireguard || {});
   // LAN subnets = private IPv4 networks on non-WireGuard interfaces (for split tunnels).
   const lans = [];
   let dhcpWan = null;
@@ -40,6 +42,7 @@ async function snapshot() {
   const masq = Object.values(natSrc.rule || {}).find((r) => r?.translation?.address === "masquerade" && r?.["outbound-interface"]?.name);
   return {
     wg,
+    allWg,
     endpoint: w.endpoint,
     wanIp: w.wanIp,
     lans: [...new Set(lans)],
@@ -173,7 +176,7 @@ export async function quickSetup(onDone) {
   } catch (e) {
     return alertBox("Quick Setup", errorText(e));
   }
-  const name = nextName(Object.keys(s.wg));
+  const name = nextName(s.allWg);
   const server = nextSubnet(s.wg);
   const serverC = parseIpv4Cidr(server);
   let result = null;
@@ -199,7 +202,7 @@ export async function quickSetup(onDone) {
   ], async (v) => {
     const iface = v.iface.trim();
     if (!/^wg\d+$/.test(iface)) throw new Error("Interface name must be wg0, wg1, …");
-    if (s.wg[iface]) throw new Error(`${iface} already exists`);
+    if (s.allWg.includes(iface)) throw new Error(`${iface} already exists`);
     const sc = parseIpv4Cidr(v.address);
     if (!sc || sc.bits > 30) throw new Error("VPN address must look like 10.10.0.1/24");
     const port = Number(v.port);

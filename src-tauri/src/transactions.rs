@@ -200,12 +200,17 @@ async fn undo_partial(
         Box::pin(conn.api.load_config_text(&text, 0))
     })
     .await;
+    // the inner message: `err` already says "Router API error"
+    let first = match &err {
+        AppError::Api(m) => m.clone(),
+        other => other.to_string(),
+    };
     match undone {
         Ok(_) => AppError::Api(format!(
-            "{err}\n\nThe router had applied part of this change before the error. VyGi put the configuration back the way it was."
+            "{first}\n\nThe router had applied part of this change before the error. VyGi put the configuration back the way it was."
         )),
         Err(e2) => AppError::Api(format!(
-            "{err}\n\nThe router applied part of this change and VyGi could not undo it ({e2}). Check System > Revisions / Rollback."
+            "{first}\n\nThe router applied part of this change and VyGi could not undo it ({e2}). Check System > Revisions / Rollback."
         )),
     }
 }

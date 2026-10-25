@@ -601,26 +601,36 @@ async fn snapshot(ws: &Arc<WindowState>, rw: &RouterWatch) -> Snapshot {
     }
     if rw.on("vpn") {
         if let Ok(dump) = monitor::wireguard_dump(w()).await {
-            let names: HashMap<String, String> =
-                transactions::get_config(w(), vec!["interfaces".into(), "wireguard".into()])
-                    .await
-                    .ok()
-                    .and_then(|v| v.as_object().cloned())
-                    .into_iter()
-                    .flatten()
-                    .flat_map(|(_, ifc)| {
-                        ifc["peer"]
-                            .as_object()
-                            .cloned()
-                            .into_iter()
-                            .flatten()
-                            .map(|(n, p)| (p["public-key"].as_str().unwrap_or("").to_string(), n))
-                    })
-                    .collect();
+            let wg = transactions::get_config(w(), vec!["interfaces".into(), "wireguard".into()])
+                .await
+                .ok()
+                .and_then(|v| v.as_object().cloned())
+                .unwrap_or_default();
+            // VyGi's VPN clients connect to a provider: that's not a device on your VPN
+            let tunnels: Vec<String> = wg
+                .iter()
+                .filter(|(_, c)| {
+                    c["description"]
+                        .as_str()
+                        .is_some_and(|d| d.starts_with("VyGi VPN client: "))
+                })
+                .map(|(i, _)| i.clone())
+                .collect();
+            let names: HashMap<String, String> = wg
+                .into_iter()
+                .flat_map(|(_, ifc)| {
+                    ifc["peer"]
+                        .as_object()
+                        .cloned()
+                        .into_iter()
+                        .flatten()
+                        .map(|(n, p)| (p["public-key"].as_str().unwrap_or("").to_string(), n))
+                })
+                .collect();
             s.vpn = Some(
                 dump.lines()
                     .map(|l| l.split('\t').collect::<Vec<_>>())
-                    .filter(|f| f.len() == 9)
+                    .filter(|f| f.len() == 9 && !tunnels.iter().any(|t| t == f[0]))
                     .map(|f| Peer {
                         name: names.get(f[1]).cloned().unwrap_or_else(|| f[4].to_string()),
                         key: f[1].to_string(),

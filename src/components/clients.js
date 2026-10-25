@@ -10,6 +10,8 @@ import { collectClients, BLOCK_GROUP } from "../lib/netdata.js";
 import { toArray, ipv4InCidr } from "../lib/vyos.js";
 import { openPing } from "./tools.js";
 import { editQueue } from "./queues.js";
+import { openGroups, editDeviceGroups } from "./groups.js";
+import { readGroups, groupsOf } from "../lib/devgroups.js";
 import { dnsSummary, dnsHitsByIp, openDnsServer } from "./technitium.js";
 import { loadSites, siteRows, sitesFootnote } from "../lib/activity.js";
 import { iconsEnabled, setIconsEnabled } from "../lib/siteicon.js";
@@ -79,6 +81,7 @@ export function initClients() {
   let clients = [];
   let dnsHits = null; // ip -> DNS queries in the last hour, when Technitium is linked
   let filter = "all";
+  let groups = []; // device groups (devgroups.js)
   let search = "";
   let selectedKey = null;
   let timer = null;
@@ -97,7 +100,7 @@ export function initClients() {
       { key: "ip", label: "IP Address", width: "130px" },
       { key: "network", label: "Network", width: "100px", render: (c) => c.network || c.iface || "" },
       { key: "kind", label: "Connection", width: "100px", render: (c) => (c.kind === "vpn" ? "VPN" : "Wired / LAN") },
-      { key: "tags", label: "", width: "170px", render: (c) => h("span", c.blocked ? h("span.tag.bad", "blocked") : null, c.fixedIp ? h("span.tag", "fixed IP") : null, c.privateMac ? h("span.tag", "private MAC") : null, c.source.includes("dhcp") ? h("span.tag", "DHCP") : null) },
+      { key: "tags", label: "", width: "170px", render: (c) => h("span", c.blocked ? h("span.tag.bad", "blocked") : null, ...groupsOf(groups, c.mac || "").map((g) => h("span.tag.group", g.name)), c.fixedIp ? h("span.tag", "fixed IP") : null, c.privateMac ? h("span.tag", "private MAC") : null, c.source.includes("dhcp") ? h("span.tag", "DHCP") : null) },
       { key: "activity", label: "Activity", width: "190px", className: "num", render: activity },
     ],
     {
@@ -112,7 +115,7 @@ export function initClients() {
   root.append(welcomeEl);
   root.append(h("div.clients",
     h("div.clients-main",
-      h("div.clients-bar", searchEl, h("button", { on: { click: load } }, "⟳ Refresh"), summary, h("span.grow"),
+      h("div.clients-bar", searchEl, h("button", { on: { click: load } }, "⟳ Refresh"), h("button", { title: "Groups of devices, for Traffic Rules, the VPN client and speed limits", on: { click: () => openGroups(load) } }, "Groups…"), summary, h("span.grow"),
         h("label.hint", { title: "Site icons are downloaded from each site itself (no third-party service) and cached on this computer." },
           h("input", { type: "checkbox", checked: iconsEnabled(), on: { change: (e) => { setIconsEnabled(e.target.checked); sitesFor = null; renderSide(); } } }), " Site icons")),
       acctBanner, chipsEl, table.wrap),
@@ -120,11 +123,13 @@ export function initClients() {
 
   function render() {
     clear(chipsEl);
-    for (const [id, label, fn] of FILTERS) {
+    const filters = [...FILTERS, ...groups.map((g) => [`g:${g.id}`, g.name, (c) => g.macs.includes(c.mac)])];
+    if (!filters.some((f) => f[0] === filter)) filter = "all";
+    for (const [id, label, fn] of filters) {
       const n = clients.filter(fn).length;
-      chipsEl.append(h(`button.chip${filter === id ? ".on" : ""}`, { on: { click: () => { filter = id; render(); } } }, `${label} ${n}`));
+      chipsEl.append(h(`button.chip${filter === id ? ".on" : ""}${id.startsWith("g:") ? ".group" : ""}`, { on: { click: () => { filter = id; render(); } } }, `${label} ${n}`));
     }
-    const fn = FILTERS.find((f) => f[0] === filter)[2];
+    const fn = filters.find((f) => f[0] === filter)[2];
     const rows = clients.filter(fn).filter((c) => !search || [c.label, c.ip, c.mac, c.network].some((v) => String(v || "").toLowerCase().includes(search)));
     table.setRows(rows);
     renderSide();
@@ -160,6 +165,7 @@ export function initClients() {
         ...row("IP address", c.ip),
         ...row("IPv6", c.ip6?.join(", ")),
         ...row("MAC", c.mac),
+        ...row("Groups", groupsOf(groups, c.mac || "").map((g) => g.name).join(", ")),
         ...row("Network", c.network),
         ...row("Interface", c.iface),
         ...row("Connection", c.kind === "vpn" ? "VPN (WireGuard)" : "Wired / LAN"),
@@ -180,6 +186,7 @@ export function initClients() {
         c.ip ? h("button", { on: { click: () => rename(c) } }, "Rename") : null,
         c.mac && c.iface && c.kind !== "vpn" && !c.online ? h("button", { title: "Send a Wake-on-LAN packet (the device must have Wake-on-LAN turned on)", on: { click: () => wake(c) } }, "Wake up") : null,
         c.mac && c.ip && c.kind !== "vpn" && !c.fixedIp ? h("button", { on: { click: () => fixIp(c) } }, "Fix IP") : null,
+        c.mac && c.kind !== "vpn" ? h("button", { on: { click: async () => (await editDeviceGroups(c.mac, c.label)) && load() } }, "Groups…") : null,
         c.mac && c.kind !== "vpn" ? h("button", { style: { color: c.blocked ? "var(--ok)" : "var(--bad)" }, on: { click: () => toggleBlock(c) } }, c.blocked ? "Unblock" : "Block") : null,
         c.ip && c.kind !== "vpn" && !c.ip.includes(":") ? h("button", { title: "Limit this device's download/upload speed (Simple Queue)", on: { click: () => editQueue({ ip: c.ip, name: c.name }) } }, "Limit speed") : null,
         c.ip ? h("button", { on: { click: () => { showView("windows"); openPing(); setTimeout(() => { const i = document.querySelector('.mdi-win.active input'); if (i) i.value = c.ip; }, 0); } } }, "Ping") : null,
@@ -199,7 +206,13 @@ export function initClients() {
     try {
       let sum;
       let traffic;
-      [{ clients, traffic }, sum] = await Promise.all([collectClients(), dnsSummary().catch(() => null)]);
+      let macGroups;
+      [{ clients, traffic }, sum, macGroups] = await Promise.all([
+        collectClients(),
+        dnsSummary().catch(() => null),
+        api.getConfig(["firewall", "group", "mac-group"]).catch(() => ({})),
+      ]);
+      groups = readGroups({ firewall: { group: { "mac-group": macGroups || {} } } });
       acctBanner.hidden = traffic.accounting || !clients.some((c) => c.connections);
       if (traffic.accounting && !traffic.ready) setTimeout(() => !root.hidden && load(), 3000); // second sample for rates
       dnsHits = sum && !sum.error ? dnsHitsByIp(sum) : null;

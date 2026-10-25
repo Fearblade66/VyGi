@@ -2,6 +2,7 @@
 // ("password", "open port"), devices, networks, rules, forwards, VPN devices
 // and any setting in the router's configuration.
 import { api } from "../lib/api.js";
+import { vpnServers } from "../lib/vpnclient.js";
 import { h, clear } from "../lib/dom.js";
 import { icon } from "../lib/icons.js";
 import { isConnected, session, onSessionChange } from "../lib/session.js";
@@ -94,7 +95,7 @@ export function initSearch(tools) {
       const sc = Math.max(score(f.name, q), score(f.outside, q), score(f.ip, q));
       if (sc) out.push({ group: "Port Forwards", label: f.name, sub: `${f.outside} → ${f.ip}`, sc, go: page("ports") });
     }
-    for (const [iface, w] of Object.entries(d.cfg?.interfaces?.wireguard || {})) {
+    for (const [iface, w] of Object.entries(vpnServers(d.cfg?.interfaces?.wireguard))) {
       for (const name of Object.keys(w?.peer || {})) {
         const sc = score(name, q);
         if (sc) out.push({ group: "VPN devices", label: name, sub: iface, sc, go: page("vpn") });

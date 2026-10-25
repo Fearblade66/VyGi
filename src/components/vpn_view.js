@@ -4,7 +4,7 @@
 import { api, errorText } from "../lib/api.js";
 import { h, clear, every, formatBytes, formatAge } from "../lib/dom.js";
 import { alertBox } from "../lib/dialog.js";
-import { applyChanges, isConnected, onSessionChange } from "../lib/session.js";
+import { applyChanges, isConnected, onSessionChange, session } from "../lib/session.js";
 import { registerView, welcome, loadingPage } from "../lib/views.js";
 import { icon } from "../lib/icons.js";
 import { toArray } from "../lib/vyos.js";
@@ -13,12 +13,14 @@ import { parseWgDump } from "./vpn.js";
 import { countryName } from "../lib/sites.js";
 import { flag } from "../lib/activity.js";
 import { quickSetup, addPeer, removePeer } from "./wireguard.js";
+import { vpnServers } from "../lib/vpnclient.js";
+import { vpnClientSection } from "./vpnclient_view.js";
 
 const ONLINE_SECS = 180; // a WireGuard handshake happens at least every 2 minutes while in use
 
 async function loadState() {
   const [wg, dump, w] = await Promise.all([
-    api.getConfig(["interfaces", "wireguard"]).then((x) => x || {}).catch(() => ({})),
+    api.getConfig(["interfaces", "wireguard"]).then((x) => vpnServers(x)).catch(() => ({})),
     api.wireguardDump().catch(() => ""),
     wanInfo(),
   ]);
@@ -76,7 +78,21 @@ export function initVpnPage() {
     clear(root).append(h("div.page", head,
       problem ? h("div.warn-box", problem.text) : null,
       st.servers.length && !st.ddns ? h("div.hint", "Tip: set up Dynamic DNS (Advanced → IP → Dynamic DNS) so devices still find the router when your internet address changes.") : null,
-      ...body));
+      ...body,
+      clientSection()));
+  }
+
+  let clientSec = null;
+  let clientSecRouter = null;
+  function clientSection() {
+    const router = session.info?.profileId;
+    if (!clientSec || clientSecRouter !== router) {
+      clientSec = vpnClientSection(render);
+      clientSecRouter = router;
+    } else {
+      clientSec.refresh();
+    }
+    return clientSec;
   }
 
   async function lookupCountries(st) {
