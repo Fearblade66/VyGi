@@ -47,6 +47,8 @@ pub fn run() {
             connection::disconnect,
             connection::new_window,
             connection::change_login_password,
+            sysinfo::wake_on_lan,
+            sysinfo::speed_test,
             transactions::tx_status,
             transactions::get_config,
             transactions::run_show,

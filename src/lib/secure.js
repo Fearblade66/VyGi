@@ -97,12 +97,5 @@ export function securityFindings(cfg, ctx) {
     });
   }
 
-  if (cfg?.service?.upnp) {
-    out.push({
-      id: "upnp", level: "warn", title: "UPnP is on",
-      text: "UPnP lets any device at home open ports to the internet without asking. Games and consoles like it, but so does malware. Turn it off unless something needs it.",
-      fix: [{ op: "delete", path: ["service", "upnp"] }], fixLabel: "Turn off",
-    });
-  }
   return out;
 }

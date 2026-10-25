@@ -70,3 +70,18 @@ test("duration", () => {
   assert.equal(duration(90 * 60000), "1 h 30 min");
   assert.equal(duration(3 * 86400000), "3 days");
 });
+
+test("watched hosts: down after two failures, back with duration", () => {
+  const nas = (ok) => [{ key: "192.168.1.5", name: "NAS (192.168.1.5)", ok }];
+  const { out } = run([
+    { at: 0, watch: nas(true) },
+    { at: 60000, watch: nas(false) },
+    { at: 120000, watch: nas(false) },
+    { at: 180000, watch: nas(null) }, // couldn't check: no change
+    { at: 420000, watch: nas(true) },
+  ]);
+  assert.deepEqual(out[1], []);
+  assert.deepEqual(out[2], ["watch: NAS (192.168.1.5) isn't answering."]);
+  assert.deepEqual(out[3], []);
+  assert.deepEqual(out[4], ["watch: NAS (192.168.1.5) is reachable again (down for 5 min)."]);
+});

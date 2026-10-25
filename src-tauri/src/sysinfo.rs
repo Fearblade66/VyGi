@@ -833,3 +833,88 @@ mod tests {
         assert_eq!(l.temperatures, vec![45.0, 51.5]);
     }
 }
+
+// ---------------------------------------------------------------- wake-on-lan
+
+/// Sends a Wake-on-LAN magic packet from the router (VyOS `execute wake-on-lan`).
+#[tauri::command]
+pub async fn wake_on_lan(state: Win, interface: String, mac: String) -> AppResult<()> {
+    let valid_if = !interface.is_empty()
+        && interface.len() <= 32
+        && interface
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_');
+    let valid_mac = mac.len() == 17
+        && mac
+            .split(':')
+            .all(|p| p.len() == 2 && p.chars().all(|c| c.is_ascii_hexdigit()));
+    if !valid_if || !valid_mac {
+        return Err(AppError::Invalid("bad interface or MAC address".into()));
+    }
+    let cmd = format!("sudo /usr/sbin/etherwake -i {interface} {mac}");
+    state.conn().await?.ssh.exec_ok(&cmd).await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------- speed test
+
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeedResult {
+    down_bps: f64,
+    up_bps: f64,
+    streams: u32,
+    seconds: u32,
+}
+
+const SPEED_STREAMS: u32 = 8;
+const SPEED_SECS: u32 = 8;
+
+/// Sums the bytes/second each parallel curl printed (one number per line).
+fn sum_rates(text: &str) -> f64 {
+    text.lines()
+        .filter_map(|l| l.trim().parse::<f64>().ok())
+        .sum()
+}
+
+/// Measures the router's own internet speed against Cloudflare's speed test
+/// servers: several parallel downloads, then uploads, each limited in time.
+#[tauri::command]
+pub async fn speed_test(state: Win) -> AppResult<SpeedResult> {
+    let conn = state.conn().await?;
+    let (n, t) = (SPEED_STREAMS, SPEED_SECS);
+    // curl prints its average speed even when --max-time stops it (exit 28).
+    // Uploads stream from stdin (-T -); --data-binary would read it all into memory first.
+    let down = format!(
+        "for i in $(seq {n}); do curl -s -o /dev/null --max-time {t} -w '%{{speed_download}}\\n' 'https://speed.cloudflare.com/__down?bytes=10000000000' & done; wait"
+    );
+    let up = format!(
+        "for i in $(seq {n}); do head -c 2000000000 /dev/zero | curl -s -o /dev/null --max-time {t} -X POST -T - -w '%{{speed_upload}}\\n' https://speed.cloudflare.com/__up & done; wait"
+    );
+    let limit = Duration::from_secs(u64::from(t) + 20);
+    let d = conn.ssh.exec(&down, limit).await?;
+    let down_bps = sum_rates(&d.stdout) * 8.0;
+    if down_bps <= 0.0 {
+        return Err(AppError::Api(
+            "The router couldn't reach the speed test server (speed.cloudflare.com).".into(),
+        ));
+    }
+    let u = conn.ssh.exec(&up, limit).await?;
+    Ok(SpeedResult {
+        down_bps,
+        up_bps: sum_rates(&u.stdout) * 8.0,
+        streams: n,
+        seconds: t,
+    })
+}
+
+#[cfg(test)]
+mod speed_tests {
+    use super::sum_rates;
+
+    #[test]
+    fn sums_parallel_rates() {
+        assert_eq!(sum_rates("1000.5\n2000\n\nx\n500\n"), 3500.5);
+        assert_eq!(sum_rates(""), 0.0);
+    }
+}

@@ -170,6 +170,7 @@ export function initClients() {
       c.ip && c.down != null ? h("div", h("h3", { style: { margin: "14px 0 4px" } }, "Sites"), sitesBox) : null,
       h("div.actions",
         c.ip ? h("button", { on: { click: () => rename(c) } }, "Rename") : null,
+        c.mac && c.iface && c.kind !== "vpn" && !c.online ? h("button", { title: "Send a Wake-on-LAN packet (the device must have Wake-on-LAN turned on)", on: { click: () => wake(c) } }, "Wake up") : null,
         c.mac && c.ip && c.kind !== "vpn" && !c.fixedIp ? h("button", { on: { click: () => fixIp(c) } }, "Fix IP") : null,
         c.mac && c.kind !== "vpn" ? h("button", { style: { color: c.blocked ? "var(--ok)" : "var(--bad)" }, on: { click: () => toggleBlock(c) } }, c.blocked ? "Unblock" : "Block") : null,
         c.ip && c.kind !== "vpn" && !c.ip.includes(":") ? h("button", { title: "Limit this device's download/upload speed (Simple Queue)", on: { click: () => editQueue({ ip: c.ip, name: c.name }) } }, "Limit speed") : null,
@@ -225,6 +226,15 @@ export function initClients() {
       await load();
       return true;
     }, { okLabel: "Apply" });
+  }
+
+  async function wake(c) {
+    try {
+      await api.wakeOnLan(c.iface, c.mac);
+      setStatus(`Wake-up packet sent to ${c.label}. It can take a minute to come online.`);
+    } catch (e) {
+      alertBox("Wake up", errorText(e));
+    }
   }
 
   async function fixIp(c) {

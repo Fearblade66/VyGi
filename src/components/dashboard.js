@@ -1,6 +1,6 @@
 // Dashboard: a UniFi-style overview of the connected router.
 import { api, errorText } from "../lib/api.js";
-import { h, clear, formatBits, formatBytes, every } from "../lib/dom.js";
+import { h, clear, formatBits, formatBytes, every, setStatus } from "../lib/dom.js";
 import { liveChart } from "../lib/chart.js";
 import { registerView, showView, welcome } from "../lib/views.js";
 import { session, isConnected } from "../lib/session.js";
@@ -170,8 +170,42 @@ export function initDashboard() {
         ["Latency", lat?.avgMs != null ? `${lat.avgMs.toFixed(1)} ms to ${PING_TARGET}` : "–"],
         ["Packet loss", lat?.lossPercent != null ? `${lat.lossPercent}%` : "–"],
         ["Now", Number.isFinite(state.down) ? `↓ ${formatBits(state.down)}  ↑ ${formatBits(state.up)}` : "–"],
+        ["Speed test", speedText()],
       ]),
+      h("div.card-actions", { style: { marginTop: "8px" } },
+        h("button", { disabled: speedRunning, title: "Measures the router's own internet speed (Cloudflare). Uses a few GB of data on a fast line.", on: { click: runSpeedTest } }, speedRunning ? "Testing… (about 20 s)" : "Run speed test")),
     );
+  }
+
+  // Speed test: last result per router, kept on this computer.
+  let speedRunning = false;
+  const speedKey = () => `vygi.speed.${session.info?.profileId}`;
+  function speedText() {
+    let r = null;
+    try {
+      r = JSON.parse(localStorage.getItem(speedKey()));
+    } catch {
+      /* none */
+    }
+    if (!r) return "not run yet";
+    return `↓ ${formatBits(r.downBps)}  ↑ ${formatBits(r.upBps)} · ${new Date(r.at).toLocaleDateString()}`;
+  }
+  async function runSpeedTest() {
+    speedRunning = true;
+    renderInternet();
+    try {
+      const r = await api.speedTest();
+      try {
+        localStorage.setItem(speedKey(), JSON.stringify({ ...r, at: Date.now() }));
+      } catch {
+        /* shown once anyway */
+      }
+      setStatus(`Speed test: ↓ ${formatBits(r.downBps)}, ↑ ${formatBits(r.upBps)}.`);
+    } catch (e) {
+      setStatus(`Speed test failed: ${errorText(e)}`, true);
+    }
+    speedRunning = false;
+    if (ui) renderInternet();
   }
 
   function renderGateway() {

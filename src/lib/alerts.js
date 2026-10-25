@@ -8,8 +8,9 @@ export const KINDS = {
   ddns: "Dynamic DNS update failed",
   reboot: "Router restarted",
   vpn: "VPN device connected",
+  watch: "Watched device or server down / back",
 };
-export const DEFAULT_ON = { internet: true, device: true, ddns: true, reboot: true, vpn: false };
+export const DEFAULT_ON = { internet: true, device: true, ddns: true, reboot: true, vpn: false, watch: true };
 
 const DDNS_BAD = /fail|bad|abuse|noconnect|nohost|notfqdn|error|911|dnserr/i;
 const FAILS_FOR_DOWN = 2; // checks in a row before "internet down" (one lost ping isn't an outage)
@@ -18,7 +19,7 @@ const MAX_DEVICE_ALERTS = 5;
 /**
  * prev: state from the last call (or {} the first time, or what was saved for this router).
  * now: { at (ms), internetOk (bool|null), devices: [{mac, ip, name}], ddns: [{host, status}],
- *        uptime (s|null), vpn: [{key, name, handshake (unix s)}] }
+ *        uptime (s|null), vpn: [{key, name, handshake (unix s)}], watch: [{key, name, ok}] }
  * Returns { state, alerts: [{kind, text, level}] }. Nothing is reported for
  * things seen for the first time (no "new device" flood on first run).
  */
@@ -79,6 +80,30 @@ export function evaluate(prev, now) {
     const on = now.vpn.filter((p) => p.handshake && now.at / 1000 - p.handshake < 180);
     if (prev.vpnOn) for (const p of on) if (!was.has(p.key)) add("vpn", `${p.name || "A VPN device"} connected to the VPN.`);
     state.vpnOn = on.map((p) => p.key);
+  }
+
+  // watched hosts (Netwatch-style): down after two failed checks in a row, like the internet
+  if (now.watch) {
+    const fails = { ...(prev.watchFails || {}) };
+    const down = { ...(prev.watchDown || {}) };
+    for (const w of now.watch) {
+      if (w.ok === true) {
+        if (down[w.key]) add("watch", `${w.name} is reachable again (down for ${duration(now.at - down[w.key])}).`, "ok");
+        delete fails[w.key];
+        delete down[w.key];
+      } else if (w.ok === false) {
+        fails[w.key] = (fails[w.key] || 0) + 1;
+        if (fails[w.key] === FAILS_FOR_DOWN && !down[w.key]) {
+          down[w.key] = now.at;
+          add("watch", `${w.name} isn't answering.`, "bad");
+        }
+      }
+    }
+    const keys = new Set(now.watch.map((w) => w.key));
+    for (const k of Object.keys(fails)) if (!keys.has(k)) delete fails[k];
+    for (const k of Object.keys(down)) if (!keys.has(k)) delete down[k];
+    state.watchFails = fails;
+    state.watchDown = down;
   }
 
   state.at = now.at;

@@ -29,6 +29,8 @@ function store(key, value) {
 }
 
 const kindsKey = "vygi.alerts.kinds";
+const watchKey = () => `vygi.watch.${session.info?.profileId}`;
+const HOST_RE = /^[A-Za-z0-9.:-]{1,253}$/;
 const routerKey = () => `vygi.alerts.${session.info?.profileId}`;
 const enabled = () => ({ ...DEFAULT_ON, ...load(kindsKey, {}) });
 
@@ -43,13 +45,19 @@ async function snapshot(on) {
     }
     return false;
   };
-  const [internetOk, neighbors, leases, ddnsRaw, load, dump] = await Promise.all([
+  const watched = on.watch ? load(watchKey(), []) : [];
+  const watchOne = async (w) => {
+    const r = await safe(api.pingLatency(w.host));
+    return { key: w.host, name: w.name ? `${w.name} (${w.host})` : w.host, ok: r == null ? null : r.lossPercent != null && r.lossPercent < 100 };
+  };
+  const [internetOk, neighbors, leases, ddnsRaw, sysLoad, dump, watch] = await Promise.all([
     on.internet ? ping() : null,
     on.device ? safe(api.neighbors()) : null,
     on.device ? safe(api.dhcpLeases(4)) : null,
     on.ddns ? safe(api.getConfig(["service", "dns", "dynamic"]).then((c) => (c && Object.keys(c).length ? api.ddnsStatus() : []))) : null,
     on.reboot ? safe(api.systemLoad()) : null,
     on.vpn ? safe(api.wireguardDump()) : null,
+    watched.length ? Promise.all(watched.map(watchOne)) : null,
   ]);
   let devices = null;
   if (on.device && neighbors) {
@@ -67,8 +75,9 @@ async function snapshot(on) {
     internetOk,
     devices,
     ddns: ddnsRaw ? parseStatus(ddnsRaw) : null,
-    uptime: load?.uptimeSecs ?? null,
+    uptime: sysLoad?.uptimeSecs ?? null,
     vpn: dump != null ? parseWgDump(dump).map((p) => ({ key: p.publicKey, name: p.allowedIps.split(",")[0], handshake: p.handshake })) : null,
+    watch,
   };
 }
 
@@ -128,6 +137,8 @@ export function initAlerts() {
         if (document.hidden || !document.hasFocus()) notifyDesktop(`VyGi: ${host}`, a.text);
       }
       if (panel) renderPanel();
+    } catch (e) {
+      console.warn("alerts check failed", e); // try again next minute
     } finally {
       running = false;
     }
@@ -150,8 +161,29 @@ export function initAlerts() {
       h("div.alert-head", h("b", "Alerts"), h("span.grow"),
         d.log?.length ? h("button", { on: { click: () => { store(routerKey(), { ...routerData(), log: [], unread: 0 }); renderPanel(); updateBadge(); } } }, "Clear") : null),
       list,
-      h("div.alert-foot", h("div.hint", "Alert me about:"), kinds,
+      h("div.alert-foot", h("div.hint", "Alert me about:"), kinds, watchEditor(),
         h("div.hint", "Alerts only work while VyGi is open (it can be minimized).")));
+  }
+
+  // Netwatch-style: hosts the router pings every minute (a NAS, a camera, a server outside).
+  function watchEditor() {
+    const list = load(watchKey(), []);
+    const save = (l) => {
+      store(watchKey(), l);
+      renderPanel();
+    };
+    const host = h("input", { placeholder: "address, e.g. 192.168.1.5" });
+    const name = h("input", { placeholder: "name (optional)" });
+    const add = () => {
+      const v = host.value.trim();
+      if (!HOST_RE.test(v)) return host.focus();
+      if (!list.some((w) => w.host === v)) save([...list, { host: v, name: name.value.trim() }]);
+    };
+    return h("div.watch-box",
+      h("div.hint", "Watch these (the router pings them every minute):"),
+      list.map((w) => h("div.watch-row", h("span.grow", w.name ? `${w.name} · ${w.host}` : w.host),
+        h("button", { title: "Stop watching", on: { click: () => save(list.filter((x) => x.host !== w.host)) } }, "✕"))),
+      h("div.watch-row", host, name, h("button", { on: { click: add } }, "Add")));
   }
 
   function togglePanel(open = !panel) {
@@ -172,7 +204,8 @@ export function initAlerts() {
     togglePanel();
   });
   document.addEventListener("click", (e) => {
-    if (panel && !panel.contains(e.target)) togglePanel(false);
+    // a button that re-rendered the panel is no longer in the page: not an outside click
+    if (panel && e.target.isConnected && !panel.contains(e.target)) togglePanel(false);
   });
 
   let activeRouter = null;

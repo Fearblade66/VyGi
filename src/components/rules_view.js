@@ -8,6 +8,7 @@ import { registerView, welcome, loadingPage } from "../lib/views.js";
 import { icon } from "../lib/icons.js";
 import { collectClients } from "../lib/netdata.js";
 import { readNetworks } from "../lib/netplan.js";
+import { regionCard } from "./regions_ui.js";
 import { DAYS, parseRules, ruleCommands, deleteRuleCommands, toggleCommands, describeSchedule, activeNow, routerClock } from "../lib/trafficrules.js";
 
 const MAC_IN = /([0-9a-f]{2}(?::[0-9a-f]{2}){5})\s*$/i;
@@ -75,7 +76,7 @@ export function initRules() {
         h("div", h("b", "No rules yet"), h("div.hint", "Example: no internet for the kids' tablet on school nights, 22:00–07:00.")),
         h("button", { on: { click: () => edit(null, { name: "Bedtime", schedule: "times", start: "22:00", stop: "07:00", days: [0, 1, 2, 3, 4] }) } }, "Create a bedtime rule")));
     }
-    clear(root).append(h("div.page", head, grid));
+    clear(root).append(h("div.page", head, h("div.rule-grid", regionCard(st.cfg, render)), grid));
   }
 
   function card(r) {

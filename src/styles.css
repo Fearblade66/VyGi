@@ -530,3 +530,10 @@ button.danger { color: var(--bad); }
 .hist-item.off { opacity: 0.6; }
 .hist-item .grow { flex: 1; min-width: 0; }
 .hist-when { flex: none; width: 150px; color: var(--muted); font-size: 12px; }
+.country-list { max-height: 320px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; }
+.country-row { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.country-list input[type="search"] { flex: 1; }
+.watch-box { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.watch-row { display: flex; gap: 6px; align-items: center; }
+.watch-row .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.watch-row input { flex: 1; min-width: 0; }

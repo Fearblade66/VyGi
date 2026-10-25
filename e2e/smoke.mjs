@@ -16,7 +16,7 @@ try {
   setHelpers(H + F);
   log("connected:", await js(`return status()`));
   await js(`[...document.querySelectorAll('.mdi-win .mdi-title button[title=Close]')].forEach(b => b.click()); return true;`);
-  for (const v of ["dashboard", "clients", "networks", "rules", "ports", "vpn"]) {
+  for (const v of ["dashboard", "clients", "networks", "rules", "ports", "vpn", "history"]) {
     await js(`document.querySelector('#view-switch button[data-view="${v}"]').click(); return true;`);
     await s.sleep(6000);
     await s.shot(`${out}/view-${v}.png`);

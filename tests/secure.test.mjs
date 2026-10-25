@@ -31,10 +31,10 @@ test("narrow drop rules don't count; connected via WAN gets no fix", () => {
   assert.match(f.text, /cut VyGi off/);
 });
 
-test("default password, open DNS, UPnP", () => {
-  const cfg = { service: { dns: { forwarding: { "allow-from": ["192.168.1.0/24", "0.0.0.0/0"] } }, upnp: {} } };
+test("default password, open DNS", () => {
+  const cfg = { service: { dns: { forwarding: { "allow-from": ["192.168.1.0/24", "0.0.0.0/0"] } } } };
   const f = securityFindings(cfg, { ...ctx, defaultPassword: true });
-  assert.deepEqual(ids(f), ["dns-open", "password", "revert-reboot", "upnp", "wan-input"]);
+  assert.deepEqual(ids(f), ["dns-open", "password", "revert-reboot", "wan-input"]);
   assert.deepEqual(f.find((x) => x.id === "dns-open").fix, [{ op: "delete", path: ["service", "dns", "forwarding", "allow-from", "0.0.0.0/0"] }]);
   const only = securityFindings({ service: { dns: { forwarding: { "allow-from": "0.0.0.0/0" } } } }, ctx).find((x) => x.id === "dns-open");
   assert.equal(only.fix, null);
