@@ -1,7 +1,7 @@
 // Clients: a UniFi-style list of devices on the network, with a detail panel
 // and actions (rename, fixed IP, block, ping).
 import { api, errorText } from "../lib/api.js";
-import { h, clear, setStatus, formatBytes, formatAge } from "../lib/dom.js";
+import { h, clear, setStatus, formatBytes, formatAge, formatBits } from "../lib/dom.js";
 import { makeTable } from "../lib/table.js";
 import { registerView, showView } from "../lib/views.js";
 import { formDialog, confirmBox, alertBox } from "../lib/dialog.js";
@@ -11,6 +11,8 @@ import { toArray, ipv4InCidr } from "../lib/vyos.js";
 import { openPing } from "./tools.js";
 import { editQueue } from "./queues.js";
 import { dnsSummary, dnsHitsByIp, openDnsServer } from "./technitium.js";
+import { loadSites, siteRows, sitesFootnote } from "../lib/activity.js";
+import { iconsEnabled, setIconsEnabled } from "../lib/siteicon.js";
 
 const FILTERS = [
   ["all", "All", () => true],
@@ -54,6 +56,16 @@ export function unblockCommands(mac, cfg) {
   return cmds;
 }
 
+/** "↓ 1.2 Mbps ↑ 80 kbps" when traffic counting is on, else the connection count. */
+function activity(c) {
+  if (c.down != null) {
+    if (!c.rateReady) return "measuring…";
+    if (c.down + c.up < 1) return c.connections ? "idle" : "";
+    return h("span", { title: `${c.connections} connections` }, `↓ ${formatBits(c.down * 8)} ↑ ${formatBits(c.up * 8)}`);
+  }
+  return c.connections ? `${c.connections} conn.` : "";
+}
+
 export function initClients() {
   const root = document.getElementById("clients");
   let clients = [];
@@ -66,6 +78,9 @@ export function initClients() {
   const chipsEl = h("div.clients-bar");
   const searchEl = h("input", { type: "text", placeholder: "Search name, IP or MAC", style: { width: "240px" }, on: { input: (e) => { search = e.target.value.trim().toLowerCase(); render(); } } });
   const summary = h("span.hint");
+  const acctBanner = h("div.warn-box", { hidden: true, style: { margin: "0 0 8px" } },
+    "Per-device download/upload speeds need the router to count bytes per connection (off by default in VyOS; a small CPU cost). ",
+    h("button", { on: { click: enableAccounting } }, "Turn on traffic counting"));
   const side = h("aside.side", { hidden: true });
   const table = makeTable(
     [
@@ -74,8 +89,8 @@ export function initClients() {
       { key: "ip", label: "IP Address", width: "130px" },
       { key: "network", label: "Network", width: "100px", render: (c) => c.network || c.iface || "" },
       { key: "kind", label: "Connection", width: "100px", render: (c) => (c.kind === "vpn" ? "VPN" : "Wired / LAN") },
-      { key: "tags", label: "", width: "190px", render: (c) => h("span", c.blocked ? h("span.tag.bad", "blocked") : null, c.fixedIp ? h("span.tag", "fixed IP") : null, c.privateMac ? h("span.tag", "private MAC") : null, c.source.includes("dhcp") ? h("span.tag", "DHCP") : null) },
-      { key: "connections", label: "Activity", width: "90px", className: "num", render: (c) => (c.connections ? `${c.connections} conn.` : "") },
+      { key: "tags", label: "", width: "170px", render: (c) => h("span", c.blocked ? h("span.tag.bad", "blocked") : null, c.fixedIp ? h("span.tag", "fixed IP") : null, c.privateMac ? h("span.tag", "private MAC") : null, c.source.includes("dhcp") ? h("span.tag", "DHCP") : null) },
+      { key: "activity", label: "Activity", width: "190px", className: "num", render: activity },
     ],
     {
       rowKey: (c) => c.key,
@@ -87,8 +102,10 @@ export function initClients() {
 
   root.append(h("div.clients",
     h("div.clients-main",
-      h("div.clients-bar", h("h2", { style: { margin: "0 8px 0 0", fontSize: "18px" } }, "Clients"), searchEl, h("button", { on: { click: load } }, "⟳ Refresh"), summary),
-      chipsEl, table.wrap),
+      h("div.clients-bar", h("h2", { style: { margin: "0 8px 0 0", fontSize: "18px" } }, "Clients"), searchEl, h("button", { on: { click: load } }, "⟳ Refresh"), summary, h("span.grow"),
+        h("label.hint", { title: "Site icons are downloaded from each site itself (no third-party service) and cached on this computer." },
+          h("input", { type: "checkbox", checked: iconsEnabled(), on: { change: (e) => { setIconsEnabled(e.target.checked); sitesFor = null; renderSide(); } } }), " Site icons")),
+      acctBanner, chipsEl, table.wrap),
     side));
 
   function render() {
@@ -103,10 +120,26 @@ export function initClients() {
     renderSide();
   }
 
+  // Sites of the selected device; kept between refreshes to avoid flicker.
+  const sitesBox = h("div", h("div.hint", "Loading…"));
+  let sitesFor = null;
+  async function fillSites(c) {
+    if (sitesFor !== c.key) {
+      sitesFor = c.key;
+      sitesBox.replaceChildren(h("div.hint", "Loading…"));
+    }
+    const res = await loadSites({ client: c.ip });
+    if (sitesFor !== c.key) return;
+    sitesBox.replaceChildren(
+      res.measured ? siteRows(res.sites) : h("div.hint", "Measuring…"),
+      sitesFootnote(res, () => fillSites(c)));
+  }
+
   function renderSide() {
     const c = clients.find((x) => x.key === selectedKey);
     side.hidden = !c;
     if (!c) return;
+    if (c.ip && c.down != null) fillSites(c).catch(() => {});
     const row = (k, v) => (v ? [h("dt", k), h("dd", { title: String(v) }, String(v))] : []);
     clear(side).append(
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "start", gap: "8px" } },
@@ -124,11 +157,15 @@ export function initClients() {
         ...row("Last handshake", c.lastSeen ? formatAge(c.lastSeen) : ""),
         ...row("Traffic", c.rx != null ? `↓ ${formatBytes(c.rx)} ↑ ${formatBytes(c.tx)}` : ""),
         ...row("Active connections", c.connections ? String(c.connections) : ""),
+        ...row("Download now", c.down != null && c.rateReady ? formatBits(c.down * 8) : ""),
+        ...row("Upload now", c.down != null && c.rateReady ? formatBits(c.up * 8) : ""),
+        ...row("Data (open conn.)", c.totalDown != null ? `↓ ${formatBytes(c.totalDown)} ↑ ${formatBytes(c.totalUp)}` : ""),
         ...row("DNS queries (1 h)", dnsHits && c.ip ? (dnsHits.get(c.ip) ?? 0).toLocaleString() : ""),
         ...row("Neighbor state", c.state),
         ...row("Known from", c.source.join(", ")),
         ...row("MAC type", c.privateMac ? "private (randomized)" : c.mac ? "hardware" : "")),
       c.privateMac ? h("div.hint", "This device uses a private MAC address. Phones may change it per network or over time, which breaks fixed IPs and blocking.") : null,
+      c.ip && c.down != null ? h("div", h("h3", { style: { margin: "14px 0 4px" } }, "Sites"), sitesBox) : null,
       h("div.actions",
         c.ip ? h("button", { on: { click: () => rename(c) } }, "Rename") : null,
         c.mac && c.ip && c.kind !== "vpn" && !c.fixedIp ? h("button", { on: { click: () => fixIp(c) } }, "Fix IP") : null,
@@ -149,7 +186,10 @@ export function initClients() {
     }
     try {
       let sum;
-      [{ clients }, sum] = await Promise.all([collectClients(), dnsSummary().catch(() => null)]);
+      let traffic;
+      [{ clients, traffic }, sum] = await Promise.all([collectClients(), dnsSummary().catch(() => null)]);
+      acctBanner.hidden = traffic.accounting || !clients.some((c) => c.connections);
+      if (traffic.accounting && !traffic.ready) setTimeout(() => !root.hidden && load(), 3000); // second sample for rates
       dnsHits = sum && !sum.error ? dnsHitsByIp(sum) : null;
       summary.textContent = `${clients.filter((c) => c.online).length} online · updated ${new Date().toLocaleTimeString()}`;
       render();
@@ -224,10 +264,20 @@ export function initClients() {
     await load();
   }
 
+  async function enableAccounting() {
+    try {
+      await applyChanges([{ op: "set", path: ["system", "sysctl", "parameter", "net.netfilter.nf_conntrack_acct", "value"], value: "1" }], "turn on per-connection traffic counting");
+      setStatus("Traffic counting is on. Speeds appear for connections opened from now on.");
+      load();
+    } catch (e) {
+      alertBox("Failed", errorText(e));
+    }
+  }
+
   registerView("clients", {
     show: () => {
       load();
-      timer = setInterval(load, 15000);
+      timer = setInterval(load, 10000);
     },
     hide: () => clearInterval(timer),
   });

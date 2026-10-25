@@ -291,6 +291,12 @@ pub struct Flow {
     reply_dst: String,
     packets: u64,
     bytes: u64,
+    /// Bytes sent by the side that opened the connection (a LAN device's upload).
+    orig_bytes: u64,
+    /// Bytes sent back (that device's download).
+    reply_bytes: u64,
+    /// Kernel connection id, stable for the life of the connection.
+    id: String,
     timeout: u64,
     assured: bool,
 }
@@ -317,10 +323,13 @@ fn parse_flow(line: &str) -> Option<Flow> {
         reply_dst: String::new(),
         packets: 0,
         bytes: 0,
+        orig_bytes: 0,
+        reply_bytes: 0,
+        id: String::new(),
         timeout,
         assured: line.contains("[ASSURED]"),
     };
-    let (mut srcs, mut dsts, mut sports, mut dports) = (0, 0, 0, 0);
+    let (mut srcs, mut dsts, mut sports, mut dports, mut byte_fields) = (0, 0, 0, 0, 0);
     for t in &toks {
         let Some((k, v)) = t.split_once('=') else {
             continue;
@@ -355,7 +364,17 @@ fn parse_flow(line: &str) -> Option<Flow> {
                 dports += 1;
             }
             "packets" => f.packets += v.parse().unwrap_or(0),
-            "bytes" => f.bytes += v.parse().unwrap_or(0),
+            "bytes" => {
+                let b: u64 = v.parse().unwrap_or(0);
+                if byte_fields == 0 {
+                    f.orig_bytes = b;
+                } else {
+                    f.reply_bytes = b;
+                }
+                f.bytes += b;
+                byte_fields += 1;
+            }
+            "id" => f.id = v.into(),
             _ => {}
         }
     }
@@ -373,7 +392,7 @@ pub async fn connections(state: Win) -> AppResult<Vec<Flow>> {
         .await?
         .ssh
         .exec(
-            "sudo -n conntrack -L -o extended 2>/dev/null | head -5000",
+            "sudo -n conntrack -L -o extended,id 2>/dev/null | head -5000",
             Duration::from_secs(30),
         )
         .await?;
@@ -651,7 +670,7 @@ mod tests {
 
     #[test]
     fn flows() {
-        let tcp = "ipv4     2 tcp      6 431999 ESTABLISHED src=192.168.1.10 dst=1.1.1.1 sport=50000 dport=443 packets=12 bytes=3000 src=1.1.1.1 dst=203.0.113.7 sport=443 dport=50000 packets=10 bytes=9000 [ASSURED] mark=0 use=1";
+        let tcp = "ipv4     2 tcp      6 431999 ESTABLISHED src=192.168.1.10 dst=1.1.1.1 sport=50000 dport=443 packets=12 bytes=3000 src=1.1.1.1 dst=203.0.113.7 sport=443 dport=50000 packets=10 bytes=9000 [ASSURED] mark=0 id=3735928559 use=1";
         let f = parse_flow(tcp).unwrap_or_else(|| panic!("tcp"));
         assert_eq!(
             (
@@ -665,6 +684,10 @@ mod tests {
         assert_eq!(
             (f.reply_dst.as_str(), f.bytes, f.packets, f.assured),
             ("203.0.113.7", 12000, 22, true)
+        );
+        assert_eq!(
+            (f.orig_bytes, f.reply_bytes, f.id.as_str()),
+            (3000, 9000, "3735928559")
         );
         let udp = "ipv4     2 udp      17 25 src=192.168.1.10 dst=9.9.9.9 sport=5353 dport=53 src=9.9.9.9 dst=192.168.1.10 sport=53 dport=5353 mark=0 use=1";
         let u = parse_flow(udp).unwrap_or_else(|| panic!("udp"));

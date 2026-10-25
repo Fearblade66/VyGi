@@ -8,6 +8,11 @@ import { formDialog, confirmBox, alertBox, modal } from "../lib/dialog.js";
 import { applyChanges, session, onSessionChange } from "../lib/session.js";
 import { liveChart } from "../lib/chart.js";
 import { toArray } from "../lib/vyos.js";
+import { siteIcon } from "../lib/siteicon.js";
+import { siteOf } from "../lib/sites.js";
+
+/** Table cell: site icon + domain. */
+const domainCell = (key) => (r) => h("span.cell-icon", siteIcon(siteOf(r[key]).icon, r[key]), h("span", r[key]));
 
 const PERIODS = { LastHour: "Last hour", LastDay: "Last 24 hours", LastWeek: "Last 7 days", LastMonth: "Last 30 days" };
 const DOMAIN_RE = /^(\*\.)?[A-Za-z0-9_]([A-Za-z0-9_-]{0,62}\.)*[A-Za-z0-9_-]{1,63}\.?$/;
@@ -60,6 +65,49 @@ export async function dnsSummary() {
   }
   summaryCache = { key, at: Date.now(), data };
   return data;
+}
+
+let loggerCache = { key: null, list: null };
+onSessionChange(() => (loggerCache = { key: null, list: null }));
+
+/** Installed Technitium apps that keep a query log: [{ name, classPath }]. */
+export async function queryLoggers() {
+  const key = connKey();
+  if (loggerCache.key === key && loggerCache.list) return loggerCache.list;
+  let list = [];
+  try {
+    const r = await dnsCall("apps/list");
+    list = (r.apps || []).flatMap((a) => (a.dnsApps || []).filter((d) => d.isQueryLogger).map((d) => ({ name: a.name, classPath: d.classPath })));
+  } catch {
+    list = [];
+  }
+  loggerCache = { key, list };
+  return list;
+}
+
+const recentCache = new Map(); // "client|limit" -> { at, entries }
+
+/**
+ * Newest query-log entries (optionally for one client IP), cached 60 s.
+ * Returns null when no DNS server or no query log app is available.
+ */
+export async function recentQueries({ client = "", limit = 1000 } = {}) {
+  if (!(await dnsServerUrl())) return null;
+  const lg = (await queryLoggers())[0];
+  if (!lg) return null;
+  const key = `${connKey()}|${client}|${limit}`;
+  const hit = recentCache.get(key);
+  if (hit && Date.now() - hit.at < 60_000) return hit.entries;
+  const params = { name: lg.name, classPath: lg.classPath, pageNumber: "1", entriesPerPage: String(limit), descendingOrder: "true" };
+  if (client) params.clientIpAddress = client;
+  try {
+    const r = await dnsCall("logs/query", params);
+    const entries = r.entries || [];
+    recentCache.set(key, { at: Date.now(), entries });
+    return entries;
+  } catch {
+    return null;
+  }
 }
 
 /** Queries per client IP (last hour) from a summary. */
@@ -176,7 +224,6 @@ export function openDnsServer(opts = {}) {
   win.body.style.overflow = "auto";
   let url = null;
   let period = "LastHour";
-  let loggers = null; // [{ name, classPath }]
   let current = "Dashboard";
 
   const periodSel = h("select", { on: { change: () => { period = periodSel.value; reload(); } } }, Object.entries(PERIODS).map(([v, l]) => h("option", { value: v }, l)));
@@ -221,7 +268,7 @@ export function openDnsServer(opts = {}) {
     h("span.hint", "Double-click a client to see its queries (needs a query log app)."), h("span.grow"), filterBox(topClients)), topClients.wrap, topClients.count);
 
   const topDomains = makeTable([
-    { key: "name", label: "Domain", width: "420px" },
+    { key: "name", label: "Domain", width: "420px", render: domainCell("name") },
     { key: "hits", label: "Queries", width: "90px", className: "num" },
     { key: "share", label: "Share", className: "num" },
   ], { rowKey: (r) => r.name });
@@ -230,7 +277,7 @@ export function openDnsServer(opts = {}) {
     h("span.grow"), filterBox(topDomains)), topDomains.wrap, topDomains.count);
 
   const topBlocked = makeTable([
-    { key: "name", label: "Blocked domain", width: "420px" },
+    { key: "name", label: "Blocked domain", width: "420px", render: domainCell("name") },
     { key: "hits", label: "Times blocked", width: "110px", className: "num" },
     { key: "share", label: "Share", className: "num" },
   ], { rowKey: (r) => r.name });
@@ -241,7 +288,7 @@ export function openDnsServer(opts = {}) {
   // Custom block / allow lists
   const lists = {};
   const listPane = (kind, title, hint) => {
-    const table = makeTable([{ key: "domain", label: title }], { rowKey: (r) => r.domain });
+    const table = makeTable([{ key: "domain", label: title, render: domainCell("domain") }], { rowKey: (r) => r.domain });
     lists[kind] = table;
     return h("div", { style: { flex: "1", minWidth: "0", display: "flex", flexDirection: "column" } },
       h("div.win-toolbar",
@@ -264,7 +311,7 @@ export function openDnsServer(opts = {}) {
   const logTable = makeTable([
     { key: "time", label: "Time", width: "150px" },
     { key: "clientIpAddress", label: "Client", width: "120px" },
-    { key: "qname", label: "Domain", width: "240px" },
+    { key: "qname", label: "Domain", width: "240px", render: domainCell("qname") },
     { key: "qtype", label: "Type", width: "60px" },
     { key: "responseType", label: "Result", width: "100px" },
     { key: "rcode", label: "Code", width: "80px" },
@@ -342,19 +389,8 @@ export function openDnsServer(opts = {}) {
     }
   }
 
-  async function findLoggers() {
-    if (loggers) return loggers;
-    try {
-      const r = await dnsCall("apps/list");
-      loggers = (r.apps || []).flatMap((a) => (a.dnsApps || []).filter((d) => d.isQueryLogger).map((d) => ({ name: a.name, classPath: d.classPath })));
-    } catch {
-      loggers = [];
-    }
-    return loggers;
-  }
-
   async function loadLog() {
-    const lg = (await findLoggers())[0];
+    const lg = (await queryLoggers())[0];
     if (!lg) {
       logNote.textContent = "No query log app is installed in Technitium. Install \"Query Logs (Sqlite)\" from Technitium's App Store (Apps > App Store) to see every query here.";
       logTable.setRows([]);

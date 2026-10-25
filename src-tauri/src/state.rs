@@ -38,6 +38,8 @@ pub struct AppState {
     windows: StdMutex<HashMap<String, Arc<WindowState>>>,
     /// Technitium tokens kept for this run only when the OS keychain is unavailable.
     pub dns_tokens: StdMutex<HashMap<String, String>>,
+    /// GeoIP databases, loaded on first lookup.
+    pub geo: StdMutex<Option<Arc<crate::geoip::GeoDb>>>,
 }
 
 impl AppState {
@@ -46,6 +48,7 @@ impl AppState {
             profiles,
             windows: StdMutex::new(HashMap::new()),
             dns_tokens: StdMutex::new(HashMap::new()),
+            geo: StdMutex::new(None),
         }
     }
 

@@ -4,6 +4,8 @@
 import { api } from "./api.js";
 import { toArray, flattenInterfaces, parseIpv4Cidr, ipv4InCidr } from "./vyos.js";
 import { parseWgDump } from "../components/vpn.js";
+import { createSampler, accountingOn } from "./flowrates.js";
+import { session } from "./session.js";
 
 export const BLOCK_GROUP = "VYGI-BLOCKED";
 
@@ -124,6 +126,18 @@ export function mergeClients({ neighbors = [], leases = [], dhcpConfig = {}, hos
   return [...byKey.values()].sort((a, b) => (b.online - a.online) || num(a.ip) - num(b.ip));
 }
 
+// One traffic sampler per router; rates come from consecutive collectClients() calls.
+const sampler = createSampler();
+let samplerKey = null;
+/** The latest traffic sample: { ready, clients, remotes, accounting } (see flowrates.js). */
+export let lastTraffic = { ready: false, clients: new Map(), remotes: new Map(), accounting: false };
+
+/** isLan(ip) for the router's networks, excluding the router's own addresses. */
+export function lanTester(networks) {
+  const own = new Set(networks.map((n) => n.routerIp));
+  return (ip) => !!ip && !own.has(ip) && networks.some((n) => ipv4InCidr(ip, n.cidr));
+}
+
 /** Fetches everything and merges. Failures of optional sources are ignored. */
 export async function collectClients() {
   const safe = (p, fallback) => p.catch(() => fallback);
@@ -140,5 +154,16 @@ export async function collectClients() {
   const clients = mergeClients({
     neighbors, leases: Array.isArray(leases) ? leases : [], dhcpConfig, hosts, wgDump, wgConfig: ifaces?.wireguard || {}, flows, ifaces, blocked: toArray(groups?.["mac-address"]),
   });
-  return { clients, networks: networksFromConfig(ifaces), ifaces, flows };
+  const networks = networksFromConfig(ifaces);
+  if (samplerKey !== session.info?.profileId) {
+    sampler.reset();
+    samplerKey = session.info?.profileId;
+  }
+  const accounting = accountingOn(flows);
+  lastTraffic = { ...sampler.sample(flows, Date.now(), lanTester(networks)), accounting };
+  for (const c of clients) {
+    const t = c.ip ? lastTraffic.clients.get(c.ip) : null;
+    if (t && accounting) Object.assign(c, { down: t.down, up: t.up, totalDown: t.totalDown, totalUp: t.totalUp, rateReady: lastTraffic.ready });
+  }
+  return { clients, networks, ifaces, flows, traffic: lastTraffic };
 }

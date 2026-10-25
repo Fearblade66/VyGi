@@ -2,8 +2,10 @@ mod backup;
 mod checkup;
 mod connection;
 mod error;
+mod geoip;
 mod monitor;
 mod security;
+mod siteicons;
 mod ssh;
 mod state;
 mod sysinfo;
@@ -73,6 +75,10 @@ pub fn run() {
             wireguard::wireguard_keypair,
             wireguard::wireguard_psk,
             torch::open_torch,
+            siteicons::site_icons,
+            geoip::geoip_status,
+            geoip::geoip_update,
+            geoip::geoip_lookup,
             technitium::dns_server_link,
             technitium::dns_server_setup,
             technitium::dns_server_forget,

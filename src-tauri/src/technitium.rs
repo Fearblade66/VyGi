@@ -116,6 +116,8 @@ impl Client {
     fn new(link: &DnsServerLink, token: String) -> AppResult<Self> {
         let (tls, seen_fp) = pinned_client_config(link.tls_fingerprint.clone())?;
         let http = reqwest::Client::builder()
+            // Routers and DNS servers are local: never through a system proxy.
+            .no_proxy()
             .tls_backend_preconfigured(tls)
             .connect_timeout(Duration::from_secs(6))
             .timeout(Duration::from_secs(30))

@@ -42,6 +42,8 @@ impl VyosApi {
     pub fn new(host: &str, port: u16, key: String, pinned_fp: Option<String>) -> AppResult<Self> {
         let (tls, seen_fp) = pinned_client_config(pinned_fp.clone())?;
         let client = reqwest::Client::builder()
+            // Routers and DNS servers are local: never through a system proxy.
+            .no_proxy()
             .tls_backend_preconfigured(tls)
             .connect_timeout(Duration::from_secs(8))
             // Commits can take a while on big configs.

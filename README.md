@@ -12,6 +12,8 @@ Targets current VyOS (1.5 / rolling). The API calls were checked against `vyos-1
 ## Two ways to work
 
 - **Dashboard and Clients** (UniFi-style). The **Dashboard** shows internet status and latency, a live WAN traffic graph, CPU and memory, clients online, networks with DHCP pool use, the most active clients, VPN devices and alerts. **Clients** lists every device the router knows about (from ARP, DHCP, fixed IPs, local DNS names and WireGuard). Click a device for details and to **Rename** it, give it a **Fixed IP**, **Limit speed**, **Block** it from the internet, or **Ping** it.
+  - **Per-device speeds**: live download/upload per device (Clients and the Dashboard). This needs per-connection traffic counting, which VyOS leaves off; Clients has a one-click **Turn on traffic counting** (sets `system sysctl parameter net.netfilter.nf_conntrack_acct value 1`).
+  - **Sites**: where each device's traffic goes, with site icons, the network owner and the country, UniFi-style. The Dashboard shows **Top sites now** and **Traffic by country**. Site names (e.g. YouTube, github.com) come from Technitium's query log. Without it, traffic is grouped by network owner (e.g. Google, Fastly). Countries and owners come from DB-IP Lite (IP data by DB-IP, db-ip.com, CC BY 4.0), downloaded once (about 18 MB) and looked up locally. Icons are downloaded from each site itself and cached; they can be turned off in Clients.
 - **Windows** (Winbox-style): every feature as a draggable window, opened from the menu on the left.
 
 Switch with the **Dashboard / Clients / Windows** buttons in the toolbar. **+ Window** opens another app window, so you can manage several routers at once (like several Winbox sessions). Each window has its own connection, Safe Mode timer and terminals, and closing a window disconnects its router. The **look** menu next to them picks **Classic** (Winbox gray) or **Modern** (light, dark, or following your OS).
@@ -148,6 +150,7 @@ Testing on the real router found and fixed several things mocks didn't show: VyO
 - Clients only shows what the router can see (ARP, DHCP, WireGuard). Per-client traffic needs connection accounting, which VyOS leaves off, so Activity counts open connections instead.
 - Blocking a client drops its forwarded traffic by MAC address (IPv4 forward chain). Devices with private, changing MAC addresses can get around it.
 - Simple Queues limit IPv4 only, and match the device's IP address, so give it a fixed IP. The download shaper assumes a 1 Gbit/s LAN port as its total. Upload limiting drops packets above the limit (policing) instead of queueing them, so TCP uploads can look bursty. The queues were checked against VyOS's config validation in the test container, but that container's kernel can't run the actual traffic control, so the real speed limiting has not been measured yet.
+- Sites only cover connections open right now (the app isn't always running, so there's no history). CDNs can make a site show up under the CDN's name when no Technitium query log is available.
 - Technitium: the query log was written to Technitium's API documentation but not tested, because the test setup couldn't download the query-log app. Everything else was tested against Technitium 15.6. Devices only show up by name in Technitium if they query it directly (use **Use for LAN**). If they go through the router's DNS forwarding, Technitium only sees the router.
 - Log, Torch, Packet Sniffer and DHCP Leases use `sudo` over SSH. That works by default for VyOS admin users.
 
@@ -169,6 +172,8 @@ src-tauri/src/                Rust backend
   monitor.rs                  live stats, routes, WireGuard, log/ping/capture streams
   torch.rs                    Torch: per-flow rates from tcpdump
   technitium.rs               Technitium DNS Server API client (allow-listed calls)
+  geoip.rs                    DB-IP Lite country/ASN download and lookups
+  siteicons.rs                site icon fetching and cache
   sysinfo.rs                  resources, neighbors, LLDP, connections, IP scan, processes, images, DHCP leases
   backup.rs                   config export/import
   wireguard.rs                WireGuard key generation (local)
@@ -179,7 +184,7 @@ src-tauri/src/                Rust backend
 e2e/                          end-to-end tests against a real VyOS router in Docker
 ```
 
-Run the backend tests with `cd src-tauri && cargo test`.
+Run the backend tests with `cd src-tauri && cargo test`, and the UI logic tests with `npm test`.
 
 ## Credits and license
 

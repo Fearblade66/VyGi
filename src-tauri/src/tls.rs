@@ -112,3 +112,24 @@ pub fn pinned_client_config(
         .with_no_client_auth();
     Ok((config, seen))
 }
+
+/// HTTPS client for public websites (GeoIP database downloads, site icons),
+/// verified against the operating system's trusted certificates.
+pub fn public_client(timeout: std::time::Duration) -> AppResult<reqwest::Client> {
+    use rustls_platform_verifier::BuilderVerifierExt;
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let config = rustls::ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .map_err(|e| AppError::Http(format!("TLS setup failed: {e}")))?
+        .with_platform_verifier()
+        .map_err(|e| AppError::Http(format!("TLS setup failed: {e}")))?
+        .with_no_client_auth();
+    reqwest::Client::builder()
+        .tls_backend_preconfigured(config)
+        .connect_timeout(std::time::Duration::from_secs(8))
+        .timeout(timeout)
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .user_agent(concat!("VyGi/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .map_err(|e| AppError::Http(e.to_string()))
+}

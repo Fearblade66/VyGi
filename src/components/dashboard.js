@@ -12,6 +12,9 @@ import { openVpn } from "./vpn.js";
 import { openResources } from "./resources.js";
 import { openDhcp } from "./dhcp.js";
 import { openDnsServer, dnsSummary } from "./technitium.js";
+import { loadSites, siteRows, countryRows, sitesFootnote } from "../lib/activity.js";
+import { siteIcon } from "../lib/siteicon.js";
+import { siteOf } from "../lib/sites.js";
 
 const PING_TARGET = "1.1.1.1";
 
@@ -42,6 +45,10 @@ export function initDashboard() {
     const top = card("span-6", "Most active clients", { label: "All clients", go: () => showView("clients") });
     const vpn = card("span-3", "VPN", { label: "Open", go: () => goWin(openVpn) });
     const alerts = card("span-3", "Alerts");
+    const sites = card("span-7", "Top sites now", { label: "All clients", go: () => showView("clients") });
+    const countries = card("span-5", "Traffic by country");
+    sites.el.hidden = true;
+    countries.el.hidden = true;
     const dns = card("span-12", "DNS (Technitium, last hour)", { label: "Open", go: () => goWin(openDnsServer) });
     dns.el.hidden = true;
     chart = liveChart([{ label: "Download", color: "#006fff" }, { label: "Upload", color: "#12a150" }], { points: 150, format: formatBits, height: 190 });
@@ -49,8 +56,8 @@ export function initDashboard() {
     chart.el.style.background = "transparent";
     chart.el.style.border = "none";
     chart.el.style.padding = "0";
-    root.append(h("div.dash", head, internet.el, gateway.el, clients.el, traffic.el, networks.el, top.el, vpn.el, alerts.el, dns.el));
-    return { dnsCard: dns.el, dns: dns.body, head, internet: internet.body, gateway: gateway.body, clients: clients.body, networks: networks.body, top: top.body, vpn: vpn.body, alerts: alerts.body };
+    root.append(h("div.dash", head, internet.el, gateway.el, clients.el, traffic.el, networks.el, top.el, vpn.el, alerts.el, sites.el, countries.el, dns.el));
+    return { sitesCard: sites.el, sites: sites.body, countriesCard: countries.el, countries: countries.body, dnsCard: dns.el, dns: dns.body, head, internet: internet.body, gateway: gateway.body, clients: clients.body, networks: networks.body, top: top.body, vpn: vpn.body, alerts: alerts.body };
   }
 
   function goWin(open) {
@@ -112,6 +119,7 @@ export function initDashboard() {
       renderClients();
       renderNetworks();
       renderTop();
+      renderSites();
       renderVpn();
       renderInternet();
       renderAlerts();
@@ -215,15 +223,18 @@ export function initDashboard() {
   }
 
   function renderTop() {
-    const c = (state.clients || []).filter((x) => x.connections > 0).sort((a, b) => b.connections - a.connections).slice(0, 6);
-    const max = Math.max(1, ...c.map((x) => x.connections));
+    // With traffic counting on, rank by current speed; otherwise by open connections.
+    const byRate = (state.clients || []).some((x) => x.down != null && x.rateReady);
+    const score = (x) => (byRate ? (x.down || 0) + (x.up || 0) : x.connections);
+    const c = (state.clients || []).filter((x) => score(x) > 0).sort((a, b) => score(b) - score(a)).slice(0, 6);
+    const max = Math.max(1e-9, ...c.map(score));
     clear(ui.top).append(c.length
       ? h("div.list-rows", c.map((x) => h("div",
           h("span.dot.on"),
           h("span.grow", h("b", x.label), x.label !== x.ip ? h("span.hint", ` ${x.ip}`) : null),
-          h("span", { style: { width: "90px" } }, h("div.bar", h("span", { style: { width: `${(x.connections / max) * 100}%` } }))),
-          h("span.num", `${x.connections} conn.`))))
-      : h("div.empty", "No active connections right now."));
+          h("span", { style: { width: "90px" } }, h("div.bar", h("span", { style: { width: `${(score(x) / max) * 100}%` } }))),
+          h("span.num", byRate ? `↓ ${formatBits(x.down * 8)} ↑ ${formatBits(x.up * 8)}` : `${x.connections} conn.`))))
+      : h("div.empty", byRate ? "No traffic right now." : "No active connections right now."));
   }
 
   function renderVpn() {
@@ -261,6 +272,22 @@ export function initDashboard() {
       : h("div.empty", h("span.pill.ok", "all good"), " Nothing needs attention."));
   }
 
+  async function renderSites() {
+    const on = (state.clients || []).some((x) => x.down != null);
+    ui.sitesCard.hidden = !on;
+    ui.countriesCard.hidden = !on;
+    if (!on) return;
+    let res;
+    try {
+      res = await loadSites();
+    } catch {
+      return;
+    }
+    if (!ui) return;
+    ui.sites.replaceChildren(res.measured ? siteRows(res.sites, { limit: 8 }) : h("div.hint", "Measuring…"), sitesFootnote(res, renderSites));
+    ui.countries.replaceChildren(res.hasGeo ? countryRows(res.countries) : h("div.empty", "Needs the location data (button on the left)."));
+  }
+
   async function pollDns() {
     const sum = await dnsSummary().catch(() => null);
     if (!ui) return;
@@ -287,8 +314,8 @@ export function initDashboard() {
         h("div", { style: { marginTop: "6px" } }, h("b", `${(st.totalBlocked ?? 0).toLocaleString()} blocked`), ` (${pct(blockedPct)})`),
         h("div.hint", `${st.totalClients ?? 0} clients · ${pct(st.totalQueries ? (st.totalCached / st.totalQueries) * 100 : NaN)} from cache`)),
       list("Most active clients", sum.allClients || [], (r) => names.get(r.name) || r.domain || r.name),
-      list("Top domains", sum.topDomains || [], (r) => r.name),
-      list("Top blocked", sum.topBlockedDomains || [], (r) => r.name)));
+      list("Top domains", sum.topDomains || [], (r) => h("span.cell-icon", siteIcon(siteOf(r.name).icon, r.name), r.name)),
+      list("Top blocked", sum.topBlockedDomains || [], (r) => h("span.cell-icon", siteIcon(siteOf(r.name).icon, r.name), r.name))));
     renderAlerts();
   }
 
