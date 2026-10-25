@@ -17,6 +17,7 @@ const SESSION_TTL: Duration = Duration::from_secs(30 * 24 * 3600);
 const MAX_FAILS: usize = 10;
 const LOCK_WINDOW: Duration = Duration::from_secs(5 * 60);
 const MIN_PASSWORD: usize = 10;
+const LOCKED: &str = "Too many wrong passwords. Wait 5 minutes, or restart VyGi (e.g. docker restart vygi) to clear it.";
 
 #[derive(Serialize, Deserialize, Default)]
 struct Stored {
@@ -156,7 +157,7 @@ impl Auth {
     /// Checks the password; returns the Set-Cookie value for a new session.
     pub async fn login(&self, password: &str) -> Result<String, String> {
         if self.locked() {
-            return Err("Too many wrong passwords. Wait a few minutes.".into());
+            return Err(LOCKED.into());
         }
         let hash = self.hash.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let pw = password.to_string();
@@ -197,7 +198,7 @@ impl Auth {
             return Err(format!("Use at least {MIN_PASSWORD} characters"));
         }
         if self.locked() {
-            return Err("Too many wrong passwords. Wait a few minutes.".into());
+            return Err(LOCKED.into());
         }
         let hash = self.hash.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let cur = current.to_string();

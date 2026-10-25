@@ -137,6 +137,7 @@ Then open `https://<that machine>:8443`, accept the certificate warning once (Vy
 - **Image:** `ghcr.io/fearblade66/vygi:latest`, built by CI from this repository. If the package is private on GitHub, either make it public (repository → Packages → vygi → Package settings) or build it yourself: `docker build -t vygi .`
 - **Settings** (environment variables):
   - `VYGI_PASSWORD`: the web password (at least 10 characters). Without it, VyGi makes one on first start and prints it in the log; you can change it in VyGi (**Web password** at the bottom of the sidebar).
+  - **Locked out?** After 10 wrong passwords in 5 minutes, logins are refused until 5 minutes after the last wrong one; `docker restart vygi` clears it right away. **Forgot the password?** Set `VYGI_PASSWORD` to a new one and restart the container.
   - `VYGI_HOSTNAMES`: extra names or addresses for the self-signed certificate, e.g. `vygi.lan,192.168.1.10` (VyGi remakes its own certificate when this changes). Or replace `tls/cert.pem` and `tls/key.pem` in the data volume with your own (then delete `tls/made-by-vygi-for.txt` so VyGi leaves them alone).
   - `VYGI_TLS=off`: plain HTTP on port 8080, only for running behind your own HTTPS reverse proxy.
   - `VYGI_LISTEN`: address and port (default `0.0.0.0:8443`).
