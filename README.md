@@ -16,7 +16,7 @@ Targets current VyOS (1.5 / rolling). The API calls were checked against `vyos-1
   - **Clients:** every device the router knows about (from ARP, DHCP, fixed IPs, local DNS names and WireGuard). Click a device for details and to **Wake up** an offline one (Wake-on-LAN), **Rename** it, give it a **Fixed IP**, **Limit speed**, **Block** it, or **Ping** it.
     - **Per-device speeds:** live download/upload per device, here and on the Dashboard. This needs per-connection traffic counting, which VyOS leaves off; Clients has a one-click **Turn on traffic counting** (sets `system sysctl parameter net.netfilter.nf_conntrack_acct value 1`).
     - **Sites:** where each device's traffic goes, with site icons, the network owner and the country. Site names (e.g. YouTube, github.com) come from Technitium's query log. Without it, traffic is grouped by network owner (e.g. Google, Fastly). Countries and owners come from DB-IP Lite (IP data by DB-IP, db-ip.com, CC BY 4.0), downloaded once (about 18 MB) and looked up locally. Icons are downloaded from each site itself and cached; they can be turned off in Clients.
-  - **Simple:** the common things as on/off switches, with the Health check on top: **Protect the router** (block the internet from reaching it), **Count data per device**, **Smooth gaming and calls** (CAKE shaping a little below your upload speed, taken from the Dashboard speed test, so big uploads don't make games and calls lag), **Remote access (VPN)**, **Guest network** (a VLAN on your main network: internet only, isolated; needs a VLAN-capable access point), **Block ads and trackers** (Technitium; adds the StevenBlack list only when it has none), **Watch this router 24/7** (web version) and a shortcut to bedtime rules. A switch only manages what VyGi made: when the same thing was set up by hand (another traffic policy, a hand-made VPN or guest network) it shows "Set up by hand" and stays locked. Every switch goes through the same conflict check as any other change.
+  - **Simple:** the common things as on/off switches, with the Health check on top: **Protect the router** (block the internet from reaching it), **Count data per device**, **Smooth gaming and calls** (CAKE shaping a little below your upload speed, taken from the Dashboard speed test, so big uploads don't make games and calls lag), **Remote access (VPN)**, **Guest network** (a VLAN on your main network: internet only, isolated; needs a VLAN-capable access point), **Block ads and trackers** (Technitium; adds the StevenBlack list only when it has none), **Watch this router 24/7** (web version), **Backup internet line** (a second line on a spare port, used automatically while the main line doesn't answer pings; see below) and a shortcut to bedtime rules. A **VyOS updates** card checks for a newer version in the same list the router's own `show system updates` uses (for rolling builds the public nightly list, otherwise the router's `system update-check url`) and **Update now** saves the settings, installs the new image next to the current one (the router downloads it) and asks before restarting; the old version stays selectable under Advanced → System → Images. A switch only manages what VyGi made: when the same thing was set up by hand (another traffic policy, a hand-made VPN or guest network) it shows "Set up by hand" and stays locked. Every switch goes through the same conflict check as any other change.
   - **Networks:** every local network as a card (subnet, gateway, VLAN, devices online, DHCP pool use). **New network** sets up a VLAN, a spare port, or several ports bridged together (they then work like one switch) with gateway, DHCP, DNS, internet access (NAT) and optional **isolation** in one go. Presets are **Standard**, **Guest** (internet only, can't reach your devices or the router's settings) and **IoT** (isolated, no internet). Isolation, and internet on/off for a network, are firewall rules VyGi labels "VyGi net …"; editing or deleting a network updates them. A bridged network's ports can be changed later.
   - **Traffic Rules:** block the internet, or specific sites, for chosen devices or networks, always or on a schedule (e.g. the kids' tablet, Sun–Thu 22:00–07:00). Every rule has an on/off switch and shows whether it is blocking right now. **Region blocking** (UniFi-style) at the top of the page blocks all traffic to and from chosen countries, for every device and the router itself, using VyOS's GeoIP firewall matching (DB-IP data the router downloads itself).
   - **Port Forwarding:** let the internet reach one device (game server, NAS, camera). Pick the device, a preset or ports (outside and inside can differ, ranges work), and optionally limit who may connect. VyGi adds the matching firewall rule when the forward chain drops by default, offers to reserve the device's address in DHCP, and warns when the router can't be reached from the internet (carrier-grade NAT, or a modem in front of it). Forwards made elsewhere are listed too; edit those in Advanced.
@@ -151,6 +151,8 @@ In the alerts bell, switch on **Watch this router 24/7 on the VyGi server**. Fro
 
 - runs the alert checks (internet down/back, new devices, Dynamic DNS, router restarts, VPN devices, watched hosts) even when no VyGi tab is open, and sends them to your phone;
 - records internet traffic, data used per device (needs traffic counting on the router: Clients → Turn on traffic counting), and the router's system log (followed continuously, so nothing is missed after a reconnect).
+- every 6 hours, saves a backup of the router's config when it changed (so changes made outside VyGi are kept too; under `backups/`, the last 30 per router);
+- once a day, checks for a new VyOS version and alerts once per new version.
 
 **Insights** (sidebar) shows what was recorded: internet traffic for the last 24 hours, 7 or 30 days, data per device, and the system log with search and a level filter. History is kept for 30 days (`VYGI_KEEP_DAYS` to change), in the data volume under `history/`.
 
@@ -175,6 +177,10 @@ VyGi can be used by Claude, so it can check your setup, explain problems ("why w
    - SSH key: `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`
    - HTTPS certificate: `show pki certificate`, or `openssl x509 -noout -fingerprint -sha256 -in <cert file>`
 3. Leave **Safe Mode** on while you learn. After each change, press **Confirm (m:ss)** once you've checked you still have access. Then press **Save**.
+
+### Backup internet line (failover)
+
+Uses VyOS WAN load balancing in failover mode: the main line is pinged (1.1.1.1) and the backup (9.9.9.9) every few seconds; after 3 failed checks new connections use the backup, and they move back after 3 good checks (open connections are reset when that happens, so they reconnect on the working line). Traffic to private addresses (your own networks) and traffic arriving from either line are left alone; the router's own traffic (DNS, updates) fails over too. The backup port gets its address by DHCP (or a fixed one), its own masquerade from the load balancer, and the same "block new connections from the internet" protection as the main line. Port forwards and the VPN still only work on the main line. Load balancing set up by hand is shown as such and left alone.
 
 ## How this differs from the original blueprint
 
@@ -239,7 +245,7 @@ index.html, src/              UI (plain JavaScript + Vite)
                               netdata.js (client list), views.js (pages and themes),
                               icons.js, netplan.js (Networks), trafficrules.js (Traffic Rules),
                               portfwd.js (Port Forwarding), alerts.js, wan.js, secure.js (security check),
-                              history.js (change history), doctor.js (health check and conflict checks), switches.js (Simple page switches), regions.js (region blocking), searchindex.js (search),
+                              history.js (change history), doctor.js (health check and conflict checks), switches.js (Simple page switches), failover.js (backup internet line), regions.js (region blocking), searchindex.js (search),
                               flowrates.js, sites.js, ddns.js (pure logic, tested with npm test)
   components/                 one file per window
 src-tauri/src/                Rust backend (the desktop app, or with --features server the web server)
@@ -257,6 +263,7 @@ src-tauri/src/                Rust backend (the desktop app, or with --features 
   geoip.rs                    DB-IP Lite country/ASN download and lookups
   siteicons.rs                site icon fetching and cache
   sysinfo.rs                  resources, neighbors, LLDP, connections, IP scan, processes, images, DHCP leases
+  updates.rs                  VyOS update check (same version list as `show system updates`)
   backup.rs                   config export/import
   wireguard.rs                WireGuard key generation (local)
   checkup.rs                  connect check-up: snapshots, changes, health

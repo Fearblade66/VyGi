@@ -16,13 +16,15 @@ use serde_json::{json, Value};
 use tokio::sync::watch;
 
 use super::alerts::{self, Alert, Device, Peer, Snapshot, Watched};
-use super::history::{DeviceTotal, LogLine, Store};
+use super::history::{DeviceTotal, LogLine, Saved, Store};
 use crate::error::{AppError, AppResult};
 use crate::ssh::StreamEvent;
 use crate::state::{AppState, Out, St, Win, WindowState};
-use crate::{connection, monitor, sysinfo, transactions};
+use crate::{checkup, connection, monitor, sysinfo, transactions, updates};
 
 const CHECK_EVERY: Duration = Duration::from_secs(60);
+const BACKUP_EVERY: u64 = 6 * 3600 * 1000;
+const UPDATE_CHECK_EVERY: u64 = 24 * 3600 * 1000;
 
 #[derive(Serialize, Deserialize, Default, Clone)]
 #[serde(default, rename_all = "camelCase")]
@@ -330,6 +332,7 @@ impl Watcher {
                     lock(&status).error = Some(format!("Couldn't send a notification: {e}"));
                 }
                 record_traffic(&ws, &store, &mut ctx, snap.devices.as_deref()).await;
+                upkeep(&self.app, &ws, &rw, &store, &mut saved).await;
                 saved.cursor = lock(&cursor).clone();
                 store.save(&saved);
                 let now = now_ms();
@@ -358,6 +361,41 @@ impl Watcher {
             }
         }
         lock(&status).running = false;
+    }
+}
+
+/// Automatic upkeep: a backup when the config changed (checked every few
+/// hours, so changes made outside VyGi are kept too) and a daily VyOS update
+/// check that alerts once per new version.
+async fn upkeep(
+    app: &AppState,
+    ws: &WindowState,
+    rw: &RouterWatch,
+    store: &Store,
+    saved: &mut Saved,
+) {
+    let Ok(conn) = ws.conn().await else { return };
+    let now = now_ms();
+    if now.saturating_sub(saved.last_backup) > BACKUP_EVERY
+        && checkup::backup_if_changed(&app.dirs, &conn).await.is_ok()
+    {
+        saved.last_backup = now;
+    }
+    if now.saturating_sub(saved.last_update_check) > UPDATE_CHECK_EVERY {
+        saved.last_update_check = now;
+        if let Ok(u) = updates::check(&conn).await {
+            if u.available && u.remote != saved.update_seen {
+                saved.update_seen = u.remote.clone();
+                if rw.on("update") {
+                    store.add_alerts(&[Alert {
+                        kind: "update".into(),
+                        text: format!("VyOS update available: {} (running {}). Install it from the Simple page.", u.remote, u.local),
+                        level: "info".into(),
+                        at: now,
+                    }]);
+                }
+            }
+        }
     }
 }
 

@@ -61,6 +61,11 @@ pub struct Saved {
     pub alerts: State,
     /// journalctl cursor, to continue the log where it stopped
     pub cursor: Option<String>,
+    /// when the watcher last backed up the config / checked for a VyOS update (ms)
+    pub last_backup: u64,
+    pub last_update_check: u64,
+    /// the newest VyOS version already alerted about
+    pub update_seen: String,
 }
 
 pub struct Store {

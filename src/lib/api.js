@@ -65,6 +65,7 @@ export const api = {
   processes: () => invoke("processes"),
   imageList: () => invoke("image_list"),
   imageAdd: (url) => invoke("image_add", { url }),
+  updateCheck: () => invoke("update_check"),
   imageSetDefault: (name) => invoke("image_set_default", { name }),
   imageDelete: (name) => invoke("image_delete", { name }),
   power: (action) => invoke("power", { action }),

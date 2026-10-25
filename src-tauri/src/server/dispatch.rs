@@ -17,7 +17,7 @@ use crate::error::{AppError, AppResult};
 use crate::state::{AppState, Out, St, Win, WindowState};
 use crate::{
     backup, checkup, connection, geoip, monitor, siteicons, sysinfo, technitium, torch,
-    transactions, wireguard,
+    transactions, updates, wireguard,
 };
 
 fn arg<T: DeserializeOwned>(args: &Value, name: &str) -> AppResult<T> {
@@ -93,6 +93,7 @@ pub async fn call(
         "ip_scan" => json(sysinfo::ip_scan(w(), arg(&a, "network")?).await),
         "processes" => json(sysinfo::processes(w()).await),
         "image_list" => json(sysinfo::image_list(w()).await),
+        "update_check" => json(updates::update_check(w()).await),
         "image_add" => json(sysinfo::image_add(w(), arg(&a, "url")?).await),
         "image_set_default" => json(sysinfo::image_set_default(w(), arg(&a, "name")?).await),
         "image_delete" => json(sysinfo::image_delete(w(), arg(&a, "name")?).await),

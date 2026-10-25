@@ -8,7 +8,7 @@ const WAN_BLOCK_RULE = "9900"; // late, so the user's own allow rules (e.g. Wire
 const DHCP6_RULE = "9890";
 
 /** True if the rules (or default) already stop new connections from the internet port. */
-function wanBlocked(chain, wan) {
+export function wanBlocked(chain, wan) {
   if (!chain) return false;
   if (chain["default-action"] === "drop" || chain["default-action"] === "reject") return true;
   return Object.values(chain.rule || {}).some((r) => {

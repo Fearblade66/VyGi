@@ -3,7 +3,7 @@
 // was set up by hand (Advanced, the CLI) it shows that and leaves it alone.
 // Every change goes through applyChanges, so conflicts are checked first.
 import { api, errorText } from "../lib/api.js";
-import { h, clear } from "../lib/dom.js";
+import { h, clear, toast } from "../lib/dom.js";
 import { formDialog, confirmBox, alertBox } from "../lib/dialog.js";
 import { applyChanges, isConnected, onSessionChange, session } from "../lib/session.js";
 import { registerView, welcome, loadingPage, showView } from "../lib/views.js";
@@ -18,6 +18,7 @@ import {
 } from "../lib/switches.js";
 import { quickSetup } from "./wireguard.js";
 import { dnsServerUrl, dnsCall } from "./technitium.js";
+import { failoverStatus, failoverLines, failoverOn, failoverOff, backupCandidates } from "../lib/failover.js";
 import { loadDoctor, renderDoctor } from "./doctor.js";
 
 async function loadState() {
@@ -29,11 +30,25 @@ async function loadState() {
     defaultPassword: !!session.info?.defaultPassword,
     user: session.info?.profile?.sshUser || "vyos",
   };
-  const [dns, watch] = await Promise.all([
+  const [dns, watch, routes] = await Promise.all([
     dnsServerUrl().then((url) => (url ? dnsCall("settings/get") : null)).catch(() => null),
     isDesktop ? null : api.watchGet().catch(() => null),
+    api.routes(4, "default").catch(() => []),
   ]);
-  return { cfg, env, wan: w.wan, nets: readNetworks(cfg, w.wan), dns, watch };
+  const def = routes.find((r) => r.dst === "default");
+  const wanGateway = def?.gateway || (def?.nexthops || [])[0]?.gateway || "";
+  return { cfg, env, wan: w.wan, wanGateway, nets: readNetworks(cfg, w.wan), dns, watch };
+}
+
+// The update check downloads a version list: once an hour per router is plenty.
+const updateCache = new Map(); // profileId -> { at, info | error }
+async function checkUpdate(force = false) {
+  const key = session.info?.profileId;
+  const c = updateCache.get(key);
+  if (!force && c && Date.now() - c.at < 3600_000) return c;
+  const r = await api.updateCheck().then((info) => ({ info }), (e) => ({ error: errorText(e) }));
+  updateCache.set(key, { ...r, at: Date.now() });
+  return updateCache.get(key);
 }
 
 /** Upload speed (Mbit/s) from the last Dashboard speed test, or "". */
@@ -69,7 +84,7 @@ export function initSimple() {
     clear(root).append(h("div.page",
       h("div.page-head", h("div.hint", "The common things, as simple switches. VyGi checks each change for conflicts and shows what it will change first. Anything you set up by hand in Advanced is left alone.")),
       h("section.card", h("h3", "Health check"), health),
-      h("div.rule-grid", switches(st).map(card))));
+      h("div.rule-grid", updateCard(), ...switches(st).map(card))));
     loadDoctor().then((f) => my === seq && renderDoctor(health, f, render)).catch((e) => clear(health).append(h("div.err-box", errorText(e))));
   }
 
@@ -169,6 +184,7 @@ export function initSimple() {
         extra: vpnStatus(cfg) === "on" ? h("button", { on: { click: () => showView("vpn") } }, "Devices…") : null,
       },
       guestCard(st, guest),
+      failoverCard(st),
       adblockCard(st),
       ...(st.watch ? [watchCard(st)] : []),
       {
@@ -207,6 +223,103 @@ export function initSimple() {
         await applyChanges(deleteNetworkCommands(cfg, guest.net, env), "remove the guest network");
       },
     };
+  }
+
+  function failoverCard(st) {
+    const { cfg, wan } = st;
+    const status = failoverStatus(cfg);
+    const lines = failoverLines(cfg);
+    const ports = backupCandidates(cfg, wan);
+    return {
+      icon: "globe",
+      title: "Backup internet line",
+      text: "Plug a second internet line (another modem, or a phone hotspot with a USB/ethernet adapter) into a spare port. When the main line stops answering, everything switches to the backup within about a minute, and back when it recovers.",
+      status: status === "off" && !ports.length ? "unavailable" : status,
+      unavailableText: "Needs a spare port for the second line",
+      detail: lines ? `On: ${lines.main} main, ${lines.backup} backup` : "On",
+      on: async () => {
+        let cmds = null;
+        await formDialog("Backup internet line", [
+          { name: "backup", label: "Backup line is plugged into", type: "select", value: ports[0], options: ports },
+          { name: "mode", label: "It gets its address", type: "select", value: "dhcp", options: [
+            { value: "dhcp", label: "automatically (most modems and hotspots)" },
+            { value: "static", label: "a fixed address I enter" },
+          ] },
+          { name: "cidr", label: "Address", placeholder: "192.168.8.2/24" },
+          { name: "gateway", label: "Gateway", placeholder: "192.168.8.1", hint: "The backup modem's own address." },
+        ], (v) => {
+          cmds = failoverOn(cfg, { wan, wanGateway: st.wanGateway, ...v });
+          return true;
+        }, {
+          okLabel: "Turn on",
+          intro: `Your main line is ${wan}. Both lines are checked with a ping every few seconds (1.1.1.1 on the main, 9.9.9.9 on the backup). The backup port also gets the same protection from the internet as the main line.`,
+          initChange: true,
+          onChange(_f, v, set) {
+            set.show("cidr", v.mode === "static");
+            set.show("gateway", v.mode === "static");
+          },
+        });
+        if (!cmds) throw new Error("Cancelled");
+        await applyChanges(cmds, "backup internet line");
+      },
+      off: async () => {
+        if (!(await confirmBox("Turn off the backup line?", "The router then only uses the main line.", "Turn off"))) throw new Error("Cancelled");
+        await applyChanges(failoverOff(cfg), "stop using the backup internet line");
+      },
+    };
+  }
+
+  /** VyOS updates: checked when the page opens (cached), installed on request. */
+  function updateCard() {
+    const status = h("div.badges", h("span.badge", "Checking…"));
+    const note = h("div.hint", { hidden: true });
+    const actions = h("div.card-actions");
+    const el = h("div.rule-card", { style: { cursor: "default" } },
+      h("div.rule-top", h("span.rule-icon", icon("router", 18)), h("div.grow", h("div.rule-name", "VyOS updates"))),
+      h("div.hint", "New VyOS versions bring fixes and security patches. VyGi checks the same list the router uses and can install the update for you."),
+      status, note, actions);
+    const fill = (c) => {
+      if (c.error) {
+        clear(status).append(h("span.badge", `Couldn't check: ${c.error}`));
+      } else if (c.info.unsupported) {
+        clear(status).append(h("span.badge", c.info.local ? `Running ${c.info.local}` : "Unknown version"));
+        note.textContent = c.info.unsupported;
+        note.hidden = false;
+      } else if (c.info.available) {
+        clear(status).append(h("span.badge.warn", `Update: ${c.info.remote}`), h("span.badge", `running ${c.info.local}`));
+        clear(actions).append(h("button.primary", { on: { click: () => install(c.info) } }, "Update now"));
+        return;
+      } else {
+        clear(status).append(h("span.badge.ok", `Up to date (${c.info.local})`));
+      }
+      clear(actions).append(h("button", { on: { click: async () => fill(await checkUpdate(true)) } }, "Check again"));
+    };
+    checkUpdate().then(fill);
+    return el;
+  }
+
+  async function install(info) {
+    const ok = await confirmBox("Update VyOS",
+      `VyGi saves your settings, then the router downloads VyOS ${info.remote} (about 600 MB) and installs it next to the current version. Your settings are copied to the new version. The internet keeps working while it downloads.\n\nAfterwards the router restarts into the new version (about 2 minutes without internet). If something is wrong with it, choose the old version under Advanced → System → Images (Upgrade) and restart.`,
+      "Download and install");
+    if (!ok) return;
+    try {
+      await api.saveConfig();
+    } catch (e) {
+      return alertBox("Update VyOS", `Couldn't save the settings first, so nothing was installed: ${errorText(e)}`);
+    }
+    toast(`Downloading and installing VyOS ${info.remote}: this can take 10 minutes or more…`, { timeout: 30 * 60_000 });
+    try {
+      await api.imageAdd(info.url);
+    } catch (e) {
+      toast("Update failed.", { error: true });
+      return alertBox("Update VyOS", `The install failed, nothing changed: ${errorText(e)}`);
+    }
+    updateCache.delete(session.info?.profileId);
+    toast(`VyOS ${info.remote} installed.`);
+    if (await confirmBox("Restart now?", `VyOS ${info.remote} is installed and will be used after a restart. Restart the router now? (About 2 minutes without internet; VyGi reconnects when it's back.)`, "Restart now")) {
+      await api.power("reboot").catch((e) => alertBox("Restart", errorText(e)));
+    }
   }
 
   function adblockCard(st) {

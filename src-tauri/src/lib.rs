@@ -13,6 +13,7 @@ pub mod technitium;
 pub mod tls;
 pub mod torch;
 pub mod transactions;
+pub mod updates;
 pub mod vyos_api;
 pub mod wireguard;
 
@@ -89,6 +90,7 @@ pub fn run() {
             sysinfo::ip_scan,
             sysinfo::processes,
             sysinfo::image_list,
+            updates::update_check,
             sysinfo::image_add,
             sysinfo::image_set_default,
             sysinfo::image_delete,

@@ -9,8 +9,9 @@ export const KINDS = {
   reboot: "Router restarted",
   vpn: "VPN device connected",
   watch: "Watched device or server down / back",
+  update: "VyOS update available (24/7 watching only)",
 };
-export const DEFAULT_ON = { internet: true, device: true, ddns: true, reboot: true, vpn: false, watch: true };
+export const DEFAULT_ON = { internet: true, device: true, ddns: true, reboot: true, vpn: false, watch: true, update: true };
 
 const DDNS_BAD = /fail|bad|abuse|noconnect|nohost|notfqdn|error|911|dnserr/i;
 const FAILS_FOR_DOWN = 2; // checks in a row before "internet down" (one lost ping isn't an outage)

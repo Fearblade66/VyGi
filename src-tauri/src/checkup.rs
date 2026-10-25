@@ -284,6 +284,13 @@ async fn take_snapshot(
     Ok((saved, dir, count, changes, boot))
 }
 
+/// Saves a backup snapshot when the config changed since the last one (24/7 watching).
+/// Returns whether a new snapshot was written.
+pub async fn backup_if_changed(dirs: &Dirs, conn: &Connection) -> AppResult<bool> {
+    let mut problems = Vec::new();
+    Ok(take_snapshot(dirs, conn, &mut problems).await?.0)
+}
+
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn connect_checkup(app: St, state: Win) -> AppResult<Checkup> {
     let conn = state.conn().await?;
