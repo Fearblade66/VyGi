@@ -587,3 +587,21 @@ button.danger { color: var(--bad); }
 .review h4 { margin: 10px 0 6px; }
 .review-item { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; line-height: 1.4; }
 .review-item input { margin-top: 3px; }
+
+/* Settings page: setting rows (title + explanation left, value/control right) */
+.settings .page-head { margin-bottom: 4px; }
+.set-section { display: flex; flex-direction: column; gap: 0; padding-bottom: 4px; }
+.set-row { display: flex; align-items: center; gap: 16px; padding: 10px 0; border-top: 1px solid var(--border); }
+.set-section h3 + .set-row, .set-section h3 + div > .set-row:first-child { border-top: none; }
+.set-text { flex: 1; min-width: 0; }
+.set-title { font-weight: 600; }
+.set-ctl { flex: none; display: flex; align-items: center; gap: 8px; max-width: 60%; }
+.set-inline { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.set-value { color: var(--muted); font-variant-numeric: tabular-nums; }
+.set-note { padding: 0 0 6px; }
+.set-ctl select, .set-ctl input[type="text"] { max-width: 220px; }
+@media (max-width: 700px) {
+  .set-row { flex-direction: column; align-items: stretch; gap: 8px; }
+  .set-ctl { max-width: none; }
+  .set-inline { justify-content: flex-start; }
+}

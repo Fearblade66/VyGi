@@ -1,12 +1,11 @@
-// Simple switches: plain on/off options that each manage a set of VyOS
-// settings. A switch is "on", "off", or "manual" when the same thing was set
-// up by hand (Advanced, the CLI): then VyGi shows it but leaves it alone.
-// Pure: status and commands from the config; dialogs live in simple_view.js.
+// Settings that VyGi manages as a whole: each is "on", "off", or "manual"
+// when the same thing was set up by hand (Advanced, the CLI); then VyGi shows
+// it but leaves it alone. Pure: status and commands from the config; the
+// Settings page (settings_view.js) has the dialogs.
 import { toArray } from "./vyos.js";
 import { securityFindings, WAN_BLOCK_DESC } from "./secure.js";
 
 export const SMOOTH_POLICY = "VYGI-SMOOTH";
-const ACCT = ["system", "sysctl", "parameter", "net.netfilter.nf_conntrack_acct"];
 
 // ---- keep the internet out of the router
 
@@ -31,15 +30,7 @@ export function protectOff(cfg) {
   return cmds;
 }
 
-// ---- count data per device (connection accounting)
-
-export function countingStatus(cfg) {
-  return String(cfg?.system?.sysctl?.parameter?.["net.netfilter.nf_conntrack_acct"]?.value) === "1" ? "on" : "off";
-}
-export const countingOn = () => [{ op: "set", path: [...ACCT, "value"], value: "1" }];
-export const countingOff = () => [{ op: "delete", path: ACCT }];
-
-// ---- smooth gaming and video calls (CAKE on the internet port's upload)
+// ---- Smart Queues (CAKE on the internet port's upload)
 
 export function smoothStatus(cfg, wan) {
   const egress = cfg?.qos?.interface?.[wan]?.egress;
@@ -59,7 +50,7 @@ export function smoothOn(cfg, wan, uploadMbit) {
   return [
     ...(cfg?.qos?.policy?.cake?.[SMOOTH_POLICY] ? [{ op: "delete", path: p }] : []),
     { op: "set", path: [...p, "bandwidth"], value: `${mbit}mbit` },
-    { op: "set", path: [...p, "description"], value: "VyGi: smooth gaming and video calls" },
+    { op: "set", path: [...p, "description"], value: "VyGi: Smart Queues" },
     { op: "set", path: ["qos", "interface", wan, "egress"], value: SMOOTH_POLICY },
   ];
 }
@@ -86,39 +77,6 @@ export function smoothOff(cfg) {
 
 export function smoothBandwidth(cfg) {
   return cfg?.qos?.policy?.cake?.[SMOOTH_POLICY]?.bandwidth || "";
-}
-
-// ---- remote access (WireGuard VPN)
-
-const VPN_DESC = "WireGuard VPN"; // set by Quick Setup
-const ourVpns = (cfg) => Object.entries(cfg?.interfaces?.wireguard || {}).filter(([, c]) => c?.description === VPN_DESC).map(([i]) => i);
-
-/** "on" when Quick Setup made a VPN, "manual" when only hand-made ones exist. */
-export function vpnStatus(cfg) {
-  if (ourVpns(cfg).length) return "on";
-  return Object.keys(cfg?.interfaces?.wireguard || {}).length ? "manual" : "off";
-}
-
-/** Removes the VPNs Quick Setup made: the interfaces and the rules it added. Hand-made ones stay. */
-export function vpnOff(cfg) {
-  const cmds = [];
-  for (const iface of ourVpns(cfg)) {
-    cmds.push({ op: "delete", path: ["interfaces", "wireguard", iface] });
-    const mine = (d) => d === `WireGuard ${iface}` || d === `WireGuard ${iface} to internet` || d === `VyGi: WireGuard ${iface}`;
-    for (const [n, r] of Object.entries(cfg?.firewall?.ipv4?.input?.filter?.rule || {})) if (mine(String(r?.description || ""))) cmds.push({ op: "delete", path: ["firewall", "ipv4", "input", "filter", "rule", n] });
-    for (const [n, r] of Object.entries(cfg?.nat?.source?.rule || {})) if (mine(String(r?.description || ""))) cmds.push({ op: "delete", path: ["nat", "source", "rule", n] });
-  }
-  return cmds;
-}
-
-// ---- guest network
-
-/** The guest network, if any: { net, ours } (ours = made by VyGi, so it can be removed). */
-export function guestNetwork(nets, cfg) {
-  const net = nets.find((n) => /guest/i.test(n.name));
-  if (!net) return null;
-  const ours = Object.values(cfg?.firewall?.ipv4?.forward?.filter?.rule || {}).some((r) => String(r?.description || "").startsWith(`VyGi net ${net.iface}:`));
-  return { net, ours };
 }
 
 // ---- ad blocking (Technitium)

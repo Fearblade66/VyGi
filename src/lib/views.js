@@ -6,7 +6,6 @@ import { icon, logo } from "./icons.js";
 
 const VIEWS = {
   dashboard: { title: "Dashboard", icon: "dashboard", el: "dashboard" },
-  simple: { title: "Simple", icon: "check", el: "simple" },
   clients: { title: "Clients", icon: "clients", el: "clients" },
   networks: { title: "Networks", icon: "networks", el: "networks" },
   rules: { title: "Traffic Rules", icon: "rules", el: "rules" },
@@ -14,6 +13,7 @@ const VIEWS = {
   vpn: { title: "VPN", icon: "vpn", el: "vpnpage" },
   history: { title: "History", icon: "clock", el: "history" },
   insights: { title: "Insights", icon: "dashboard", el: "insights" },
+  settings: { title: "Settings", icon: "gear", el: "settings" },
   windows: { title: "Advanced", icon: "advanced", el: "workspace" },
 };
 const listeners = new Map(); // view -> { show(), hide() }

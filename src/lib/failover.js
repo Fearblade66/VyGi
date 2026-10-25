@@ -132,3 +132,18 @@ export function failoverOff(cfg) {
   }
   return cmds;
 }
+
+/** `show wan-load-balance` -> [{ iface, up, failures }]. */
+export function parseLbStatus(text) {
+  const out = [];
+  let cur = null;
+  for (const line of String(text || "").split("\n")) {
+    const m = line.match(/^\s*([A-Za-z ]+):\s*(.*)$/);
+    if (!m) continue;
+    const [, k, v] = m;
+    if (k === "Interface") out.push((cur = { iface: v.trim(), up: false, failures: 0 }));
+    else if (cur && k === "Status") cur.up = /active|up/i.test(v);
+    else if (cur && k === "Interface Failures") cur.failures = Number(v) || 0;
+  }
+  return out;
+}

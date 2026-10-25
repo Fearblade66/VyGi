@@ -38,7 +38,7 @@ import { initInsights } from "./components/insights.js";
 import { openApiAccess } from "./components/apiaccess.js";
 import { openClaudeReport } from "./components/report.js";
 import { initDashboard } from "./components/dashboard.js";
-import { initSimple } from "./components/simple_view.js";
+import { initSettings } from "./components/settings_view.js";
 import { initClients } from "./components/clients.js";
 import { openBackup } from "./components/backup.js";
 import { openQueues } from "./components/queues.js";
@@ -207,7 +207,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initToolbar();
   initViews();
   initDashboard();
-  initSimple();
+  initSettings();
   initClients();
   initNetworks();
   initRules();

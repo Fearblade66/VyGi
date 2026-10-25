@@ -21,7 +21,6 @@
         <button id="btn-connect" class="tb-btn">Connect</button>
         <nav id="view-switch" class="nav">
           <button data-view="dashboard">Dashboard</button>
-          <button data-view="simple">Simple</button>
           <button data-view="clients">Clients</button>
           <button data-view="networks">Networks</button>
           <button data-view="rules">Traffic Rules</button>
@@ -29,6 +28,7 @@
           <button data-view="vpn">VPN</button>
           <button data-view="history">History</button>
           <button data-view="insights" class="web-only" hidden>Insights</button>
+          <button data-view="settings">Settings</button>
           <button data-view="windows">Advanced</button>
         </nav>
         <div class="nav-label" id="menu-label">Advanced tools</div>
@@ -65,7 +65,6 @@
         </header>
         <div id="body">
           <section id="dashboard" class="view" hidden></section>
-          <section id="simple" class="view" hidden></section>
           <section id="clients" class="view" hidden></section>
           <section id="networks" class="view" hidden></section>
           <section id="rules" class="view" hidden></section>
@@ -73,6 +72,7 @@
           <section id="vpnpage" class="view" hidden></section>
           <section id="history" class="view" hidden></section>
           <section id="insights" class="view" hidden></section>
+          <section id="settings" class="view" hidden></section>
           <main id="workspace" class="view"></main>
         </div>
         <footer id="statusbar"><span id="status-text">Ready</span></footer>

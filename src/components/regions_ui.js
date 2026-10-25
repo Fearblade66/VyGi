@@ -22,7 +22,7 @@ export function regionCard(cfg, refresh) {
       h("span.badge" + (countries.length ? ".bad" : ""), countries.length ? "On" : "Off")));
 }
 
-async function editRegions(cfg, refresh) {
+export async function editRegions(cfg, refresh) {
   const chosen = new Set(parseRegions(cfg).countries);
   const all = COUNTRY_CODES.map((c) => ({ c, name: countryName(c.toUpperCase()) })).sort((a, b) => a.name.localeCompare(b.name));
   const search = h("input", { type: "search", placeholder: "Search countries" });
