@@ -121,6 +121,28 @@ The builds are not code-signed, so Windows SmartScreen or macOS Gatekeeper will 
    npm run tauri build   # make an installer in src-tauri/target/release/bundle/
    ```
 
+## Run VyGi in Docker (in a browser)
+
+The same app also runs as a web server, so you can use VyGi from any browser (phone included) without installing anything. Put it on an always-on machine at home (a NAS, a mini PC, a Raspberry Pi 4/5 with a 64-bit OS, or the router's neighbour).
+
+```
+docker compose up -d          # with the docker-compose.yml from this repository
+docker compose logs vygi      # first start only: shows the web password
+```
+
+Then open `https://<that machine>:8443`, accept the certificate warning once (VyGi makes its own self-signed certificate), and log in.
+
+- **Image:** `ghcr.io/fearblade66/vygi:latest`, built by CI from this repository. If the package is private on GitHub, either make it public (repository → Packages → vygi → Package settings) or build it yourself: `docker build -t vygi .`
+- **Settings** (environment variables):
+  - `VYGI_PASSWORD`: the web password (at least 10 characters). Without it, VyGi makes one on first start and prints it in the log; you can change it in VyGi (**Web password** at the bottom of the sidebar).
+  - `VYGI_HOSTNAMES`: extra names or addresses for the self-signed certificate, e.g. `vygi.lan,192.168.1.10`. Or replace `tls/cert.pem` and `tls/key.pem` in the data volume with your own.
+  - `VYGI_TLS=off`: plain HTTP on port 8080, only for running behind your own HTTPS reverse proxy.
+  - `VYGI_LISTEN`: address and port (default `0.0.0.0:8443`).
+- **Data:** everything lives in the `/data` volume: saved routers, their passwords and API keys (in a file readable only by the container's user; there is no OS keychain on a server), Technitium links, config backups, GeoIP data, site icons, the TLS certificate and the web password hash.
+- **Each browser tab** has its own router connection, like the desktop app's windows. A tab that has been closed (or silent for 10 minutes) is disconnected.
+- **Security:** whoever can log in to VyGi controls your routers. Use a long password, keep port 8443 inside your home network (reach it from outside through the WireGuard VPN, not a port forward), and keep the data volume private. Logins are limited to 10 wrong passwords per 5 minutes. Sessions last 30 days and end when the server restarts.
+- **Differences from the desktop app:** backups download to the browser and restore from an upload; alerts and notifications only run while a VyGi tab is open (the server doesn't watch the router on its own yet).
+
 ## 3. Use it
 
 1. Click **Connect**. Fill in the router address, login (usually `vyos`), the SSH password and the API key, then click Connect.
@@ -195,7 +217,8 @@ index.html, src/              UI (plain JavaScript + Vite)
                               history.js (change history), regions.js (region blocking), searchindex.js (search),
                               flowrates.js, sites.js, ddns.js (pure logic, tested with npm test)
   components/                 one file per window
-src-tauri/src/                Rust backend
+src-tauri/src/                Rust backend (the desktop app, or with --features server the web server)
+  server/                     web server: login, HTTPS, /api/invoke, WebSocket streams
   vyos_api.rs                 HTTPS API client
   tls.rs                      certificate pinning
   ssh.rs                      SSH terminal / commands / streams, host-key pinning
@@ -216,7 +239,7 @@ src-tauri/src/                Rust backend
 e2e/                          end-to-end tests against a real VyOS router in Docker
 ```
 
-Run the backend tests with `cd src-tauri && cargo test`, and the UI logic tests with `npm test`.
+Run the backend tests with `cd src-tauri && cargo test` (and `cargo test --no-default-features --features server` for the web server), and the UI logic tests with `npm test`. To run the web server from a checkout: `npm run build`, then `cd src-tauri && VYGI_DATA=./webdata VYGI_WEB=../dist cargo run --no-default-features --features server --bin vygi-server`.
 
 ## Credits and license
 

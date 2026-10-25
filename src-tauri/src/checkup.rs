@@ -8,12 +8,11 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
-use tauri::{AppHandle, Manager};
 
 use crate::backup::running_boot;
 use crate::connection::path;
 use crate::error::{AppError, AppResult};
-use crate::state::{Connection, Win};
+use crate::state::{Connection, Dirs, St, Win};
 use crate::transactions::{commit, record_commit, status, TxStatus};
 
 /// Snapshots kept per router; older ones are deleted.
@@ -81,7 +80,7 @@ fn now_secs() -> u64 {
         .unwrap_or(0)
 }
 
-fn router_dir(app: &AppHandle, profile_id: &str) -> AppResult<PathBuf> {
+fn router_dir(dirs: &Dirs, profile_id: &str) -> AppResult<PathBuf> {
     let safe: String = profile_id
         .chars()
         .map(|c| {
@@ -92,12 +91,7 @@ fn router_dir(app: &AppHandle, profile_id: &str) -> AppResult<PathBuf> {
             }
         })
         .collect();
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| AppError::Io(e.to_string()))?
-        .join("backups")
-        .join(safe);
+    let dir = dirs.data.join("backups").join(safe);
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
 }
@@ -236,11 +230,11 @@ fn parse_health(out: &str) -> Health {
 }
 
 async fn take_snapshot(
-    app: &AppHandle,
+    dirs: &Dirs,
     conn: &Connection,
     problems: &mut Vec<String>,
 ) -> AppResult<(bool, PathBuf, usize, Option<Changes>, Option<String>)> {
-    let dir = router_dir(app, &conn.profile_id)?;
+    let dir = router_dir(dirs, &conn.profile_id)?;
     let commands = conn.api.show(&path(&["configuration", "commands"])).await?;
     if command_lines(&commands).is_empty() {
         return Err(AppError::Api(
@@ -290,13 +284,13 @@ async fn take_snapshot(
     Ok((saved, dir, count, changes, boot))
 }
 
-#[tauri::command]
-pub async fn connect_checkup(app: AppHandle, state: Win) -> AppResult<Checkup> {
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn connect_checkup(app: St, state: Win) -> AppResult<Checkup> {
     let conn = state.conn().await?;
     let mut problems = Vec::new();
 
     let (backup_saved, dir, snapshot_count, changes, boot) =
-        take_snapshot(&app, &conn, &mut problems).await?;
+        take_snapshot(&app.dirs, &conn, &mut problems).await?;
 
     // Unsaved = running config differs from what the router boots with.
     let unsaved = match (
@@ -333,10 +327,10 @@ pub async fn connect_checkup(app: AppHandle, state: Win) -> AppResult<Checkup> {
     })
 }
 
-#[tauri::command]
-pub async fn history_list(app: AppHandle, state: Win) -> AppResult<Vec<Snapshot>> {
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn history_list(app: St, state: Win) -> AppResult<Vec<Snapshot>> {
     let conn = state.conn().await?;
-    let dir = router_dir(&app, &conn.profile_id)?;
+    let dir = router_dir(&app.dirs, &conn.profile_id)?;
     let mut out: Vec<Snapshot> = snapshot_ids(&dir)?
         .into_iter()
         .map(|id| Snapshot {
@@ -351,10 +345,10 @@ pub async fn history_list(app: AppHandle, state: Win) -> AppResult<Vec<Snapshot>
 }
 
 /// What changed between snapshot `id` and the one before it.
-#[tauri::command]
-pub async fn history_diff(app: AppHandle, state: Win, id: u64) -> AppResult<Changes> {
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn history_diff(app: St, state: Win, id: u64) -> AppResult<Changes> {
     let conn = state.conn().await?;
-    let dir = router_dir(&app, &conn.profile_id)?;
+    let dir = router_dir(&app.dirs, &conn.profile_id)?;
     let ids = snapshot_ids(&dir)?;
     let pos = ids
         .iter()
@@ -377,15 +371,15 @@ pub async fn history_diff(app: AppHandle, state: Win, id: u64) -> AppResult<Chan
 }
 
 /// Loads snapshot `id` (config.boot) as the running config.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn history_restore(
-    app: AppHandle,
+    app: St,
     state: Win,
     id: u64,
     confirm_minutes: u32,
 ) -> AppResult<TxStatus> {
     let conn = state.conn().await?;
-    let file = router_dir(&app, &conn.profile_id)?.join(format!("{id}{BOOT_EXT}"));
+    let file = router_dir(&app.dirs, &conn.profile_id)?.join(format!("{id}{BOOT_EXT}"));
     let text = std::fs::read_to_string(&file).map_err(|_| {
         AppError::Invalid("this snapshot has no config.boot copy to restore".into())
     })?;

@@ -2,7 +2,7 @@
 // Flow adapted from VyManager's QuickSetupWizard; keys are generated locally so a
 // client's private key never reaches the router.
 import QRCode from "qrcode";
-import { save } from "@tauri-apps/plugin-dialog";
+import { saveText } from "../lib/platform.js";
 import { api, errorText } from "../lib/api.js";
 import { h, setStatus } from "../lib/dom.js";
 import { modal, formDialog, alertBox, confirmBox } from "../lib/dialog.js";
@@ -158,11 +158,8 @@ export async function showClientConfig(peerName, text) {
       return false;
     }
     if (v === "save") {
-      const file = await save({ title: "Save WireGuard client config", defaultPath: `${peerName}.conf`, filters: [{ name: "WireGuard config", extensions: ["conf"] }] });
-      if (file) {
-        await api.saveTextFile(file, text).catch((e) => alertBox("Save failed", errorText(e)));
-        setStatus(`Saved ${file}`);
-      }
+      const file = await saveText(`${peerName}.conf`, text, [{ name: "WireGuard config", extensions: ["conf"] }]).catch((e) => alertBox("Save failed", errorText(e)));
+      if (file) setStatus(`Saved ${file}`);
       return false;
     }
     return true;

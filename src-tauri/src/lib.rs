@@ -1,41 +1,55 @@
-mod backup;
-mod checkup;
-mod connection;
-mod error;
-mod geoip;
-mod monitor;
-mod security;
-mod siteicons;
-mod ssh;
-mod state;
-mod sysinfo;
-mod technitium;
-mod tls;
-mod torch;
-mod transactions;
-mod vyos_api;
-mod wireguard;
+pub mod backup;
+pub mod checkup;
+pub mod connection;
+pub mod error;
+pub mod geoip;
+pub mod monitor;
+pub mod security;
+pub mod siteicons;
+pub mod ssh;
+pub mod state;
+pub mod sysinfo;
+pub mod technitium;
+pub mod tls;
+pub mod torch;
+pub mod transactions;
+pub mod vyos_api;
+pub mod wireguard;
 
-use tauri::Manager;
+#[cfg(feature = "server")]
+pub mod server;
 
+#[cfg(feature = "desktop")]
 use crate::security::ProfileStore;
-use crate::state::AppState;
+#[cfg(feature = "desktop")]
+use crate::state::{AppState, Dirs};
 
+#[cfg(feature = "desktop")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    use std::sync::Arc;
+    use tauri::Manager;
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
-            let dir = app.path().app_config_dir()?;
-            app.manage(AppState::new(ProfileStore::new(dir)));
+            let path = app.path();
+            let dirs = Dirs {
+                data: path.app_data_dir()?,
+                cache: path.app_cache_dir()?,
+            };
+            let profiles = ProfileStore::new(path.app_config_dir()?);
+            app.manage(Arc::new(AppState::new(profiles, dirs)));
             Ok(())
         })
         .on_window_event(|window, event| {
             // A closed window takes its router connection with it.
             if let tauri::WindowEvent::Destroyed = event {
-                if let Some(ws) = window.state::<AppState>().remove_window(window.label()) {
-                    tauri::async_runtime::spawn(async move { ws.disconnect().await });
+                if let Some(ws) = window
+                    .state::<Arc<AppState>>()
+                    .remove_window(window.label())
+                {
+                    tokio::spawn(async move { ws.disconnect().await });
                 }
             }
         })

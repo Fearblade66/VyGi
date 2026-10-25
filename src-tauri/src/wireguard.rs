@@ -34,13 +34,13 @@ fn keypair_from(mut secret: [u8; 32]) -> KeyPair {
     }
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn wireguard_keypair() -> AppResult<KeyPair> {
     Ok(keypair_from(random_32()?))
 }
 
 /// Same as `wg genpsk`.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn wireguard_psk() -> AppResult<String> {
     Ok(STANDARD.encode(random_32()?))
 }

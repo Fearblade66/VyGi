@@ -1,5 +1,5 @@
 // Thin wrappers around the Rust commands (src-tauri/src/*.rs).
-import { invoke, Channel } from "@tauri-apps/api/core";
+import { call as invoke, stream, newWindow } from "./platform.js";
 
 export function errorText(e) {
   if (e && typeof e === "object" && e.message) return e.message;
@@ -12,7 +12,7 @@ export const api = {
   forgetRouter: (id) => invoke("forget_router", { id }),
   connect: (req) => invoke("connect", { req }),
   disconnect: () => invoke("disconnect"),
-  newWindow: () => invoke("new_window"),
+  newWindow,
   changeLoginPassword: (newPassword) => invoke("change_login_password", { newPassword }),
   ddnsStatus: () => invoke("ddns_status"),
   routerTime: () => invoke("router_time"),
@@ -65,23 +65,13 @@ export const api = {
   historyRestore: (id, confirmMinutes) => invoke("history_restore", { id, confirmMinutes }),
   exportConfig: (file, format) => invoke("export_config", { file, format }),
   importConfig: (file, confirmMinutes) => invoke("import_config", { file, confirmMinutes }),
+  exportConfigText: (format) => invoke("export_config_text", { format }),
+  importConfigText: (text, confirmMinutes) => invoke("import_config_text", { text, confirmMinutes }),
 
   /** Opens a streaming SSH command. `onEvent` gets {event:"data"|"closed", data}. */
-  async openStream(kind, onEvent) {
-    const ch = new Channel();
-    ch.onmessage = onEvent;
-    return invoke("open_stream", { kind, onData: ch });
-  },
-  async openTorch(iface, filter, hidePort, onEvent) {
-    const ch = new Channel();
-    ch.onmessage = onEvent;
-    return invoke("open_torch", { interface: iface, filter, hidePort, onData: ch });
-  },
-  async openTerminal(cols, rows, onEvent) {
-    const ch = new Channel();
-    ch.onmessage = onEvent;
-    return invoke("open_terminal", { cols, rows, onData: ch });
-  },
+  openStream: (kind, onEvent) => stream("open_stream", { kind }, onEvent),
+  openTorch: (iface, filter, hidePort, onEvent) => stream("open_torch", { interface: iface, filter, hidePort }, onEvent),
+  openTerminal: (cols, rows, onEvent) => stream("open_terminal", { cols, rows }, onEvent),
   termWrite: (id, data) => invoke("term_write", { id, data }),
   termResize: (id, cols, rows) => invoke("term_resize", { id, cols, rows }),
   closeSession: (id) => invoke("close_session", { id }),

@@ -10,11 +10,29 @@ rust-version = "1.80"
 name = "vygi_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# Two ways to run the same backend: the desktop app (Tauri), or a web server
+# for Docker that serves the same UI to browsers (`--no-default-features
+# --features server`).
+[features]
+default = ["desktop"]
+desktop = ["dep:tauri", "dep:tauri-plugin-dialog", "dep:tauri-plugin-notification"]
+server = ["dep:axum", "dep:axum-server", "dep:tower-http", "dep:rcgen", "dep:argon2", "dep:futures-util"]
+
+[[bin]]
+name = "vygi"
+path = "src/main.rs"
+required-features = ["desktop"]
+
+[[bin]]
+name = "vygi-server"
+path = "src/bin/server.rs"
+required-features = ["server"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = [], optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
@@ -26,8 +44,14 @@ flate2 = "1"
 tar = "0.4"
 russh = "0.64"
 keyring = "4"
-tauri-plugin-dialog = "2"
-tauri-plugin-notification = "2"
+tauri-plugin-dialog = { version = "2", optional = true }
+tauri-plugin-notification = { version = "2", optional = true }
+axum = { version = "0.8", features = ["ws"], optional = true }
+axum-server = { version = "0.7", features = ["tls-rustls-no-provider"], optional = true }
+tower-http = { version = "0.6", features = ["fs"], optional = true }
+rcgen = { version = "0.13", optional = true }
+argon2 = { version = "0.5", optional = true }
+futures-util = { version = "0.3", optional = true }
 x25519-dalek = { version = "3", features = ["static_secrets"] }
 getrandom = "0.4"
 base64 = "0.23"

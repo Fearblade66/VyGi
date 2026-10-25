@@ -6,10 +6,10 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use base64::Engine;
-use tauri::{AppHandle, Manager};
 use tokio::task::JoinSet;
 
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
+use crate::state::St;
 use crate::tls::public_client;
 
 const MAX_ICON: usize = 100 * 1024;
@@ -177,12 +177,8 @@ async fn fetch_icon(client: reqwest::Client, domain: String) -> (Option<(String,
     (None, reached)
 }
 
-fn cache_dir(app: &AppHandle) -> AppResult<PathBuf> {
-    Ok(app
-        .path()
-        .app_cache_dir()
-        .map_err(|e| AppError::Invalid(format!("no cache dir: {e}")))?
-        .join("site-icons"))
+fn cache_dir(state: &St) -> PathBuf {
+    state.dirs.cache.join("site-icons")
 }
 
 fn data_url(mime: &str, data: &[u8]) -> String {
@@ -208,12 +204,12 @@ fn cached(dir: &Path, domain: &str) -> Option<Option<String>> {
 
 /// Icons as data: URLs (null where a site has none). Unknown ones are fetched
 /// from the sites, a few at a time.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn site_icons(
-    app: AppHandle,
+    state: St,
     domains: Vec<String>,
 ) -> AppResult<HashMap<String, Option<String>>> {
-    let dir = cache_dir(&app)?;
+    let dir = cache_dir(&state);
     std::fs::create_dir_all(&dir)?;
     let mut out = HashMap::new();
     let mut todo = Vec::new();

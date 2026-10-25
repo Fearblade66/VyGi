@@ -16,10 +16,9 @@ use maxminddb::Reader;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha512};
-use tauri::{AppHandle, Manager, State};
 
 use crate::error::{AppError, AppResult};
-use crate::state::AppState;
+use crate::state::{AppState, St};
 use crate::tls::public_client;
 
 /// (npm package, file inside it, local file name)
@@ -65,12 +64,8 @@ pub struct GeoStatus {
     updated_at: Option<u64>,
 }
 
-fn dir(app: &AppHandle) -> AppResult<PathBuf> {
-    Ok(app
-        .path()
-        .app_data_dir()
-        .map_err(|e| AppError::Invalid(format!("no app data dir: {e}")))?
-        .join("geoip"))
+fn dir(state: &AppState) -> AppResult<PathBuf> {
+    Ok(state.dirs.data.join("geoip"))
 }
 
 fn read_status(dir: &Path) -> GeoStatus {
@@ -198,7 +193,7 @@ async fn download(
     }
     let tgz = data.to_vec();
     let file = file.to_string();
-    let mmdb = tauri::async_runtime::spawn_blocking(move || extract(&tgz, &file))
+    let mmdb = tokio::task::spawn_blocking(move || extract(&tgz, &file))
         .await
         .map_err(|e| AppError::Invalid(e.to_string()))??;
     Reader::from_source(mmdb.as_slice())
@@ -206,11 +201,11 @@ async fn download(
     Ok((version, mmdb))
 }
 
-fn loaded(app: &AppHandle, state: &AppState) -> AppResult<Option<Arc<GeoDb>>> {
+fn loaded(state: &AppState) -> AppResult<Option<Arc<GeoDb>>> {
     if let Some(db) = state.geo.lock().ok().and_then(|g| g.clone()) {
         return Ok(Some(db));
     }
-    let dir = dir(app)?;
+    let dir = dir(state)?;
     if !read_status(&dir).installed {
         return Ok(None);
     }
@@ -221,15 +216,15 @@ fn loaded(app: &AppHandle, state: &AppState) -> AppResult<Option<Arc<GeoDb>>> {
     Ok(Some(db))
 }
 
-#[tauri::command]
-pub fn geoip_status(app: AppHandle) -> AppResult<GeoStatus> {
-    Ok(read_status(&dir(&app)?))
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub fn geoip_status(state: St) -> AppResult<GeoStatus> {
+    Ok(read_status(&dir(&state)?))
 }
 
 /// Downloads (or refreshes) both databases.
-#[tauri::command]
-pub async fn geoip_update(app: AppHandle, state: State<'_, AppState>) -> AppResult<GeoStatus> {
-    let dir = dir(&app)?;
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn geoip_update(state: St) -> AppResult<GeoStatus> {
+    let dir = dir(&state)?;
     std::fs::create_dir_all(&dir)?;
     let client = public_client(Duration::from_secs(300))?;
     let mut st = read_status(&dir);
@@ -254,13 +249,9 @@ pub async fn geoip_update(app: AppHandle, state: State<'_, AppState>) -> AppResu
 
 /// Country and network owner for each address. Empty map if the databases
 /// aren't downloaded yet.
-#[tauri::command]
-pub fn geoip_lookup(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    ips: Vec<String>,
-) -> AppResult<HashMap<String, GeoInfo>> {
-    let Some(db) = loaded(&app, &state)? else {
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub fn geoip_lookup(state: St, ips: Vec<String>) -> AppResult<HashMap<String, GeoInfo>> {
+    let Some(db) = loaded(&state)? else {
         return Ok(HashMap::new());
     };
     Ok(ips

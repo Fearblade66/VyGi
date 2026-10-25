@@ -67,13 +67,8 @@ pub(crate) fn strip_noise(text: &str) -> String {
     out
 }
 
-/// Writes the running config to `file` (a path the user picked in a save dialog).
-#[tauri::command]
-pub async fn export_config(
-    state: Win,
-    file: PathBuf,
-    format: ExportFormat,
-) -> AppResult<ExportResult> {
+/// The running config as text, in either format.
+pub async fn export_config_text(state: Win, format: ExportFormat) -> AppResult<String> {
     let conn = state.conn().await?;
     let text = match format {
         ExportFormat::Boot => running_boot(&conn).await?,
@@ -84,6 +79,17 @@ pub async fn export_config(
             "router returned an empty configuration".into(),
         ));
     }
+    Ok(text)
+}
+
+/// Writes the running config to `file` (a path the user picked in a save dialog).
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn export_config(
+    state: Win,
+    file: PathBuf,
+    format: ExportFormat,
+) -> AppResult<ExportResult> {
+    let text = export_config_text(state, format).await?;
     std::fs::write(&file, &text)?;
     Ok(ExportResult {
         bytes: text.len(),
@@ -92,14 +98,14 @@ pub async fn export_config(
 }
 
 /// Writes text the UI produced (e.g. a WireGuard client config) to a file the user picked.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn save_text_file(file: PathBuf, contents: String) -> AppResult<()> {
     std::fs::write(file, contents)?;
     Ok(())
 }
 
 /// Replaces the running config with the contents of a config.boot file.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn import_config(state: Win, file: PathBuf, confirm_minutes: u32) -> AppResult<TxStatus> {
     if std::fs::metadata(&file)?.len() > MAX_IMPORT_BYTES {
         return Err(AppError::Invalid(
@@ -107,6 +113,20 @@ pub async fn import_config(state: Win, file: PathBuf, confirm_minutes: u32) -> A
         ));
     }
     let text = std::fs::read_to_string(&file)?;
+    import_config_text(state, text, confirm_minutes).await
+}
+
+/// Replaces the running config with config.boot text (uploaded in a browser).
+pub async fn import_config_text(
+    state: Win,
+    text: String,
+    confirm_minutes: u32,
+) -> AppResult<TxStatus> {
+    if text.len() as u64 > MAX_IMPORT_BYTES {
+        return Err(AppError::Invalid(
+            "file is too large to be a VyOS config".into(),
+        ));
+    }
     check_boot_format(&text)?;
     let conn = state.conn().await?;
     let minutes = confirm_minutes.min(60);

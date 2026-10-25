@@ -1,0 +1,21 @@
+# VyGi web server. Start with: docker compose up -d
+# Then open https://<this machine>:8443 and log in with the password from
+# `docker compose logs vygi` (first start only), or the one set below.
+services:
+  vygi:
+    image: ghcr.io/fearblade66/vygi:latest
+    # build: .            # or build it yourself from this repository
+    container_name: vygi
+    restart: unless-stopped
+    ports:
+      - "8443:8443"
+    volumes:
+      - vygi-data:/data
+    environment:
+      VYGI_LISTEN: "0.0.0.0:8443"
+      # VYGI_PASSWORD: "choose-a-long-password"   # at least 10 characters
+      # VYGI_HOSTNAMES: "vygi.lan,192.168.1.10"   # names for the self-signed certificate
+      # VYGI_TLS: "off"                            # only behind your own HTTPS reverse proxy
+
+volumes:
+  vygi-data:

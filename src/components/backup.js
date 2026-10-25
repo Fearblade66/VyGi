@@ -2,6 +2,7 @@
 // automatic snapshot history taken at each connect (see checkup.js).
 import { save, open } from "@tauri-apps/plugin-dialog";
 import { api, errorText } from "../lib/api.js";
+import { isDesktop, saveText, pickText } from "../lib/platform.js";
 import { h, setStatus } from "../lib/dom.js";
 import { openWindow, tabs } from "../lib/mdi.js";
 import { makeTable } from "../lib/table.js";
@@ -29,6 +30,20 @@ export function openBackup(startTab = "Backup") {
 
   async function exportAs(format) {
     const isBoot = format === "boot";
+    if (!isDesktop) {
+      // browser: the server sends the text, the browser downloads it
+      try {
+        const text = await api.exportConfigText(format);
+        const name = await saveText(`${host()}-${stamp()}${isBoot ? ".config.boot" : "-commands.txt"}`, text);
+        setStatus(`Downloaded ${name} (${text.length} bytes).`);
+        if (isBoot && !text.includes("vyos-config-version")) {
+          alertBox("Backup saved (no version info)", "The router's commit archive was not available, so this backup has no VyOS version footer. It restores fine on the same VyOS version, but may not migrate correctly to a different one.");
+        }
+      } catch (e) {
+        alertBox("Backup failed", errorText(e));
+      }
+      return;
+    }
     const file = await save({
       title: "Save configuration backup",
       defaultPath: `${host()}-${stamp()}${isBoot ? ".config.boot" : "-commands.txt"}`,
@@ -47,7 +62,16 @@ export function openBackup(startTab = "Backup") {
   }
 
   async function restore() {
-    const file = await open({ title: "Choose a config.boot backup", multiple: false, directory: false });
+    let file;
+    let text = null;
+    if (isDesktop) {
+      file = await open({ title: "Choose a config.boot backup", multiple: false, directory: false });
+    } else {
+      const picked = await pickText();
+      if (picked?.tooBig) return alertBox("Restore", "That file is too large to be a VyOS config.");
+      file = picked?.name;
+      text = picked?.text;
+    }
     if (!file) return;
     const safe = document.getElementById("safe-mode").checked;
     const minutes = safe ? Number(document.getElementById("safe-minutes").value) : 0;
@@ -61,7 +85,7 @@ export function openBackup(startTab = "Backup") {
     if (!ok) return;
     try {
       setStatus("Restoring configuration…");
-      applyTxStatus(await api.importConfig(file, minutes));
+      applyTxStatus(await (isDesktop ? api.importConfig(file, minutes) : api.importConfigText(text, minutes)));
       setStatus(safe ? "Configuration loaded. Check access, then press Confirm." : "Configuration loaded.");
     } catch (e) {
       alertBox("Restore failed", errorText(e));
@@ -77,7 +101,7 @@ export function openBackup(startTab = "Backup") {
 
   t.pages.Backup.style.overflow = "auto";
   t.pages.Backup.append(
-    section("Backup", "Saves the router's current running configuration to a file on this computer.",
+    section("Backup", isDesktop ? "Saves the router's current running configuration to a file on this computer." : "Downloads the router's current running configuration to this device.",
       h("button", { on: { click: () => exportAs("boot") } }, "Save as config.boot…"),
       h("button", { on: { click: () => exportAs("commands") } }, "Save as set-commands…")),
     section("Restore", "Loads a config.boot backup as the running configuration (live, no reboot). Press Save afterwards to keep it across reboots.",

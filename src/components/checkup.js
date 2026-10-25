@@ -1,5 +1,6 @@
 // Router check-up, run after each connect: local backup, changes since last visit, health.
 import { api, errorText } from "../lib/api.js";
+import { isDesktop } from "../lib/platform.js";
 import { toast, h, setStatus, formatBytes } from "../lib/dom.js";
 import { openWindow } from "../lib/mdi.js";
 import { refreshTx, session } from "../lib/session.js";
@@ -65,7 +66,7 @@ export async function runCheckup({ alwaysShow = false } = {}) {
   const changed = c.changes && (c.changes.added.length || c.changes.removed.length);
   const summary = [
     c.backupSaved ? (c.changes ? "Config changed: new backup saved" : "First visit: backup history started") : "Config unchanged since last visit",
-    `${c.snapshotCount} backup(s) on this computer`,
+    `${c.snapshotCount} backup(s) on ${isDesktop ? "this computer" : "the VyGi server"}`,
     warnings.length ? `${warnings.length} warning(s)` : "no warnings",
   ].join(" · ");
   const msg = `Check-up: ${summary}`;
@@ -112,9 +113,9 @@ function showWindow(c, warnings) {
       ? section(`Changes since ${fmtDate(c.changes.since)} (${c.changes.added.length} added, ${c.changes.removed.length} removed)`,
           changesPre(c.changes.added, c.changes.removed),
           h("div.hint", "Includes changes made by anyone, from any tool (CLI, API, other apps). Secrets are masked."))
-      : section("Changes", h("div.hint", "First visit to this router from this computer — nothing to compare yet.")),
+      : section("Changes", h("div.hint", `First visit to this router from ${isDesktop ? "this computer" : "the VyGi server"} — nothing to compare yet.`)),
     section("Backups",
-      h("div.hint", `${c.snapshotCount} snapshot(s) kept in ${c.backupDir}. They contain secrets (keys, password hashes); keep this computer secure.`),
+      h("div.hint", `${c.snapshotCount} snapshot(s) kept in ${c.backupDir}. They contain secrets (keys, password hashes); keep ${isDesktop ? "this computer" : "the VyGi server"} secure.`),
       h("button", { style: { marginTop: "4px" }, on: { click: () => openBackup("History") } }, "Open backup history…")),
     c.problems.length ? section("Could not check", h("div.err-box", c.problems.map((p) => h("div", p)))) : null,
   );

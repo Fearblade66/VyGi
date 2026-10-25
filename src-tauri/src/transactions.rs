@@ -113,12 +113,12 @@ pub(crate) async fn record_commit(state: &WindowState, confirm_minutes: u32) {
     };
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn tx_status(state: Win) -> AppResult<TxStatus> {
     Ok(status(&state, String::new()).await)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn get_config(state: Win, path: Vec<String>) -> AppResult<Value> {
     let conn = state.conn().await?;
     match conn.api.show_config(&path).await {
@@ -132,13 +132,13 @@ pub async fn get_config(state: Win, path: Vec<String>) -> AppResult<Value> {
 }
 
 /// Runs an operational `show ...` command through the API.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn run_show(state: Win, path: Vec<String>) -> AppResult<String> {
     state.conn().await?.api.show(&path).await
 }
 
 /// Applies set/delete commands. `confirm_minutes > 0` = Safe Mode.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn apply_changes(
     state: Win,
     commands: Vec<ConfigCommand>,
@@ -211,7 +211,7 @@ async fn undo_partial(
 }
 
 /// Keeps the pending Safe Mode commit.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn confirm_commit(state: Win) -> AppResult<TxStatus> {
     let conn = state.conn().await?;
     let msg = conn.api.confirm().await?;
@@ -219,7 +219,7 @@ pub async fn confirm_commit(state: Win) -> AppResult<TxStatus> {
     Ok(status(&state, msg).await)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn save_config(state: Win) -> AppResult<TxStatus> {
     let conn = state.conn().await?;
     let msg = conn.api.save().await?;
@@ -228,7 +228,7 @@ pub async fn save_config(state: Win) -> AppResult<TxStatus> {
 }
 
 /// Text of `show system commit` (the revision list).
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn list_revisions(state: Win) -> AppResult<String> {
     state
         .conn()
@@ -239,7 +239,7 @@ pub async fn list_revisions(state: Win) -> AppResult<String> {
 }
 
 /// Diff between revision `rev` and the one before it (or `rev2` if given).
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn revision_diff(state: Win, rev: u32, rev2: Option<u32>) -> AppResult<String> {
     let mut p = path(&["system", "commit", "diff"]);
     p.push(rev.to_string());
@@ -251,7 +251,7 @@ pub async fn revision_diff(state: Win, rev: u32, rev2: Option<u32>) -> AppResult
 }
 
 /// Loads revision `rev` as the running config, without rebooting.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn rollback_to(state: Win, rev: u32, confirm_minutes: u32) -> AppResult<TxStatus> {
     let minutes = check_minutes(confirm_minutes)?;
     let conn = state.conn().await?;
@@ -271,7 +271,7 @@ pub async fn rollback_to(state: Win, rev: u32, confirm_minutes: u32) -> AppResul
 }
 
 /// Sets what the router does when Safe Mode times out ("reload" is the gentle one).
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn set_revert_action(state: Win, action: String) -> AppResult<TxStatus> {
     if action != "reload" && action != "reboot" {
         return Err(AppError::Invalid("action must be reload or reboot".into()));

@@ -1,5 +1,6 @@
 // Login window: saved routers, credentials, and "trust this router?" prompts.
 import { api, errorText } from "../lib/api.js";
+import { isDesktop } from "../lib/platform.js";
 import { h, clear, setStatus } from "../lib/dom.js";
 import { modal, confirmBox, alertBox } from "../lib/dialog.js";
 import { setConnected, refreshTx } from "../lib/session.js";
@@ -36,7 +37,7 @@ export async function showConnectDialog() {
     const has = await api.hasSavedSecrets(`${p.sshUser}@${p.host}`).catch(() => false);
     savedFor = has ? `${p.sshUser}@${p.host}` : null;
     f.sshPassword.placeholder = f.apiKey.placeholder = has ? "•••••••• (saved)" : "";
-    savedHint.textContent = has ? "Password and API key are saved on this computer. Just press Connect, or type new ones to replace them." : "";
+    savedHint.textContent = has ? `Password and API key are saved on ${isDesktop ? "this computer" : "the VyGi server"}. Just press Connect, or type new ones to replace them.` : "";
   };
   const renderList = () => {
     clear(list);
@@ -83,7 +84,7 @@ export async function showConnectDialog() {
       h("span"), savedHint,
       h("label", "HTTPS Port"), f.apiPort,
       h("label", "SSH Port"), f.sshPort,
-      h("span"), h("label", { style: { textAlign: "left" } }, f.remember, " Remember password and API key on this computer"),
+      h("span"), h("label", { style: { textAlign: "left" } }, f.remember, isDesktop ? " Remember password and API key on this computer" : " Remember password and API key on the VyGi server"),
     ),
     h("div.hint", { style: { marginTop: "8px" } },
       "The router needs SSH turned on (`set service ssh`). Leave the API key empty and VyGi turns on the API for you."),

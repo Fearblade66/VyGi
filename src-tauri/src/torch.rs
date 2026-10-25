@@ -9,12 +9,11 @@ use std::time::{Duration, Instant};
 
 use russh::ChannelMsg;
 use serde::Serialize;
-use tauri::ipc::Channel;
 use tokio::sync::mpsc;
 
 use crate::error::{AppError, AppResult};
 use crate::ssh::{shell_quote, validate_name, TermInput};
-use crate::state::Win;
+use crate::state::{Out, Win};
 
 /// Bytes of the Linux "cooked v2" capture header included in tcpdump's length.
 const SLL2_HEADER: u64 = 20;
@@ -195,13 +194,13 @@ fn snapshot(table: &mut HashMap<Key, Counter>, secs: f64) -> TorchEvent {
     }
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn open_torch(
     state: Win,
     interface: String,
     filter: String,
     hide_port: Option<u16>,
-    on_data: Channel<TorchEvent>,
+    on_data: Out<TorchEvent>,
 ) -> AppResult<u32> {
     let iface = validate_name(&interface)?.to_string();
     let conn = state.conn().await?;
@@ -231,7 +230,7 @@ pub async fn open_torch(
     let id = state.next_session_id();
     state.sessions.lock().await.insert(id, tx);
 
-    tauri::async_runtime::spawn(async move {
+    tokio::spawn(async move {
         let mut table: HashMap<Key, Counter> = HashMap::new();
         let mut buf = String::new();
         let mut tick = tokio::time::interval(Duration::from_secs(1));

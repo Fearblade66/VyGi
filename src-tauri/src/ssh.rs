@@ -7,11 +7,11 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use crate::state::Out;
 use russh::client::{self, Handle};
 use russh::keys::{HashAlg, PublicKeyOrCertificate};
 use russh::{ChannelMsg, Disconnect};
 use serde::Serialize;
-use tauri::ipc::Channel;
 use tokio::sync::mpsc;
 
 use crate::error::{AppError, AppResult};
@@ -185,7 +185,7 @@ impl SshClient {
         &self,
         cols: u32,
         rows: u32,
-        on_data: Channel<StreamEvent>,
+        on_data: Out<StreamEvent>,
     ) -> AppResult<mpsc::Sender<TermInput>> {
         let channel = self.handle.channel_open_session().await?;
         channel
@@ -199,7 +199,7 @@ impl SshClient {
     pub async fn open_stream(
         &self,
         command: &str,
-        on_data: Channel<StreamEvent>,
+        on_data: Out<StreamEvent>,
     ) -> AppResult<mpsc::Sender<TermInput>> {
         let channel = self.handle.channel_open_session().await?;
         channel.exec(true, command).await?;
@@ -217,10 +217,10 @@ impl SshClient {
 /// One task owns the SSH channel: it forwards output to the UI and input to the router.
 fn spawn_pump(
     mut channel: russh::Channel<client::Msg>,
-    on_data: Channel<StreamEvent>,
+    on_data: Out<StreamEvent>,
 ) -> mpsc::Sender<TermInput> {
     let (tx, mut rx) = mpsc::channel::<TermInput>(256);
-    tauri::async_runtime::spawn(async move {
+    tokio::spawn(async move {
         let mut exit = None;
         loop {
             tokio::select! {

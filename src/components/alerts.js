@@ -1,7 +1,7 @@
 // Alerts while VyGi is open: checks the router every minute (also when
 // minimized) and reports changes as a pop-up, a desktop notification when
 // VyGi isn't in front, and in the bell list in the top bar.
-import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
+import { notify } from "../lib/platform.js";
 import { api } from "../lib/api.js";
 import { h, clear, toast } from "../lib/dom.js";
 import { icon } from "../lib/icons.js";
@@ -81,15 +81,7 @@ async function snapshot(on) {
   };
 }
 
-async function notifyDesktop(title, body) {
-  try {
-    let ok = await isPermissionGranted();
-    if (!ok) ok = (await requestPermission()) === "granted";
-    if (ok) sendNotification({ title, body });
-  } catch {
-    /* no notification support: the pop-up and bell list still have it */
-  }
-}
+const notifyDesktop = notify;
 
 export function initAlerts() {
   const btn = document.getElementById("btn-alerts");

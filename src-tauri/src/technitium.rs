@@ -13,10 +13,9 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tauri::State;
 
 use crate::error::{AppError, AppResult};
-use crate::state::{AppState, Win};
+use crate::state::{AppState, St, Win};
 use crate::tls::pinned_client_config;
 
 const KEYCHAIN_SERVICE: &str = "vygi-technitium";
@@ -249,6 +248,36 @@ fn token_entry(profile_id: &str) -> AppResult<keyring::Entry> {
     Ok(keyring::Entry::new(KEYCHAIN_SERVICE, profile_id)?)
 }
 
+/// On the web server (no keychain) tokens live in a file only its user can read.
+fn token_file(state: &AppState) -> std::path::PathBuf {
+    state.profiles.dir().join("dns-tokens.json")
+}
+
+fn read_token_file(state: &AppState) -> HashMap<String, String> {
+    std::fs::read_to_string(token_file(state))
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+fn write_token_file(state: &AppState, all: &HashMap<String, String>) -> AppResult<()> {
+    use std::io::Write;
+    let path = token_file(state);
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    opts.open(&path)?
+        .write_all(serde_json::to_string(all)?.as_bytes())?;
+    Ok(())
+}
+
 fn load_token(state: &AppState, profile_id: &str) -> Option<String> {
     if let Some(t) = state
         .dns_tokens
@@ -258,14 +287,24 @@ fn load_token(state: &AppState, profile_id: &str) -> Option<String> {
     {
         return Some(t);
     }
+    if !crate::security::HAS_KEYCHAIN {
+        return read_token_file(state).remove(profile_id);
+    }
     token_entry(profile_id).ok()?.get_password().ok()
 }
 
-/// Stores the token in the keychain; falls back to memory. Returns whether it was saved.
+/// Stores the token in the keychain (or the server's file); falls back to memory.
+/// Returns whether it was saved.
 fn store_token(state: &AppState, profile_id: &str, token: &str) -> bool {
-    let saved = token_entry(profile_id)
-        .and_then(|e| e.set_password(token).map_err(AppError::from))
-        .is_ok();
+    let saved = if crate::security::HAS_KEYCHAIN {
+        token_entry(profile_id)
+            .and_then(|e| e.set_password(token).map_err(AppError::from))
+            .is_ok()
+    } else {
+        let mut all = read_token_file(state);
+        all.insert(profile_id.to_string(), token.to_string());
+        write_token_file(state, &all).is_ok()
+    };
     if let Ok(mut m) = state.dns_tokens.lock() {
         if saved {
             m.remove(profile_id);
@@ -302,11 +341,8 @@ pub struct LinkStatus {
 }
 
 /// The DNS server linked to this router, or null when none is set up.
-#[tauri::command]
-pub async fn dns_server_link(
-    state: State<'_, AppState>,
-    win: Win,
-) -> AppResult<Option<LinkStatus>> {
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn dns_server_link(state: St, win: Win) -> AppResult<Option<LinkStatus>> {
     let id = profile_id(&win).await?;
     Ok(load_links(&state)?.remove(&id).map(|l| LinkStatus {
         url: l.url,
@@ -316,10 +352,10 @@ pub async fn dns_server_link(
 
 /// Links a Technitium server to the connected router. Give either an API
 /// token, or a username and password from which VyGi creates a named token.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 #[allow(clippy::too_many_arguments)]
 pub async fn dns_server_setup(
-    state: State<'_, AppState>,
+    state: St,
     win: Win,
     url: String,
     token: Option<String>,
@@ -392,8 +428,8 @@ pub async fn dns_server_setup(
 }
 
 /// Unlinks the DNS server from this router and forgets its token.
-#[tauri::command]
-pub async fn dns_server_forget(state: State<'_, AppState>, win: Win) -> AppResult<()> {
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn dns_server_forget(state: St, win: Win) -> AppResult<()> {
     let id = profile_id(&win).await?;
     let mut links = load_links(&state)?;
     links.remove(&id);
@@ -401,16 +437,23 @@ pub async fn dns_server_forget(state: State<'_, AppState>, win: Win) -> AppResul
     if let Ok(mut m) = state.dns_tokens.lock() {
         m.remove(&id);
     }
-    if let Ok(e) = token_entry(&id) {
-        let _ = e.delete_credential();
+    if crate::security::HAS_KEYCHAIN {
+        if let Ok(e) = token_entry(&id) {
+            let _ = e.delete_credential();
+        }
+    } else {
+        let mut all = read_token_file(&state);
+        if all.remove(&id).is_some() {
+            write_token_file(&state, &all)?;
+        }
     }
     Ok(())
 }
 
 /// Calls one of the allowed Technitium endpoints with the given parameters.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn dns_server_call(
-    state: State<'_, AppState>,
+    state: St,
     win: Win,
     endpoint: String,
     params: HashMap<String, String>,

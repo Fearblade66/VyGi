@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Permissions for all VyGi windows",
   "windows": ["*"],
-  "permissions": ["core:default", "dialog:default", "notification:default"]
+  "permissions": ["core:default", "core:window:allow-set-title", "dialog:default", "notification:default"]
 }

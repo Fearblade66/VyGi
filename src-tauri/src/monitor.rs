@@ -2,17 +2,16 @@
 
 use serde::Deserialize;
 use serde_json::Value;
-use tauri::ipc::Channel;
 
 use crate::error::{AppError, AppResult};
 use crate::ssh::{shell_quote, validate_name, StreamEvent, TermInput};
-use crate::state::{Win, WindowState};
+use crate::state::{Out, Win, WindowState};
 
 const SPLIT_MARK: &str = "@@VYGI@@";
 
 /// Link state, type and byte/packet counters (`links`) plus addresses (`addrs`)
 /// for every interface. The UI polls this and computes rates from counter deltas.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn interface_stats(state: Win) -> AppResult<Value> {
     let cmd = format!("ip -j -s -d link show && echo {SPLIT_MARK} && ip -j addr show");
     let out = state.conn().await?.ssh.exec_ok(&cmd).await?;
@@ -26,7 +25,7 @@ pub async fn interface_stats(state: Win) -> AppResult<Value> {
 }
 
 /// Kernel routing table, optionally for one VRF.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn routes(state: Win, family: u8, vrf: Option<String>) -> AppResult<Value> {
     if family != 4 && family != 6 {
         return Err(AppError::Invalid("family must be 4 or 6".into()));
@@ -44,7 +43,7 @@ pub async fn routes(state: Win, family: u8, vrf: Option<String>) -> AppResult<Va
 }
 
 /// `wg show all dump`: tab-separated interface and peer lines.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn wireguard_dump(state: Win) -> AppResult<String> {
     state
         .conn()
@@ -113,11 +112,11 @@ fn check_target(t: &str) -> AppResult<&str> {
     Ok(t)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn open_stream(
     state: Win,
     kind: StreamKind,
-    on_data: Channel<StreamEvent>,
+    on_data: Out<StreamEvent>,
 ) -> AppResult<u32> {
     let cmd = stream_command(&kind)?;
     let conn = state.conn().await?;
@@ -127,12 +126,12 @@ pub async fn open_stream(
     Ok(id)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn open_terminal(
     state: Win,
     cols: u32,
     rows: u32,
-    on_data: Channel<StreamEvent>,
+    on_data: Out<StreamEvent>,
 ) -> AppResult<u32> {
     let conn = state.conn().await?;
     let tx = conn
@@ -157,17 +156,17 @@ async fn send_input(state: &WindowState, id: u32, input: TermInput) -> AppResult
         .map_err(|_| AppError::Ssh(format!("session {id} has ended")))
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn term_write(state: Win, id: u32, data: String) -> AppResult<()> {
     send_input(&state, id, TermInput::Data(data.into_bytes())).await
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn term_resize(state: Win, id: u32, cols: u32, rows: u32) -> AppResult<()> {
     send_input(&state, id, TermInput::Resize { cols, rows }).await
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn close_session(state: Win, id: u32) -> AppResult<()> {
     if let Some(tx) = state.sessions.lock().await.remove(&id) {
         let _ = tx.send(TermInput::Close).await;

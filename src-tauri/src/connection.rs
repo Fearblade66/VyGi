@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 use crate::error::{AppError, AppResult};
 use crate::security::{self, RouterProfile, Secrets};
 use crate::ssh::SshClient;
-use crate::state::{AppState, Connection, TxState, Win};
+use crate::state::{Connection, St, TxState, Win};
 use crate::vyos_api::VyosApi;
 
 #[derive(Deserialize)]
@@ -48,19 +47,19 @@ pub struct ConnectInfo {
     keychain_error: Option<String>,
 }
 
-#[tauri::command]
-pub fn list_routers(state: State<'_, AppState>) -> AppResult<Vec<RouterProfile>> {
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub fn list_routers(state: St) -> AppResult<Vec<RouterProfile>> {
     state.profiles.load()
 }
 
-#[tauri::command]
-pub fn has_saved_secrets(state: State<'_, AppState>, id: String) -> AppResult<bool> {
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub fn has_saved_secrets(state: St, id: String) -> AppResult<bool> {
     let profile = state.profiles.find(&id)?;
     Ok(security::load_secrets(&state.profiles.dir(), &profile)?.is_some())
 }
 
-#[tauri::command]
-pub fn forget_router(state: State<'_, AppState>, id: String) -> AppResult<()> {
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub fn forget_router(state: St, id: String) -> AppResult<()> {
     if let Some(profile) = state.profiles.remove(&id)? {
         security::delete_secrets(&state.profiles.dir(), &profile)?;
     }
@@ -71,15 +70,9 @@ fn non_empty(s: Option<String>) -> Option<String> {
     s.filter(|v| !v.trim().is_empty())
 }
 
-#[tauri::command]
-pub async fn connect(
-    state: State<'_, AppState>,
-    win: Win,
-    window: WebviewWindow,
-    req: ConnectRequest,
-) -> AppResult<ConnectInfo> {
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn connect(state: St, win: Win, req: ConnectRequest) -> AppResult<ConnectInfo> {
     win.disconnect().await;
-    let _ = window.set_title("VyGi");
     let mut profile = req.profile;
     if profile.host.trim().is_empty() {
         return Err(AppError::Invalid("router address is empty".into()));
@@ -201,7 +194,6 @@ pub async fn connect(
 
     *win.tx.lock().await = TxState::default();
     let profile_id = profile.id();
-    let _ = window.set_title(&format!("{hostname} ({}) - VyGi", profile.host));
     win.set_conn(Some(Arc::new(Connection {
         profile_id: profile_id.clone(),
         api,
@@ -222,12 +214,8 @@ pub async fn connect(
 /// Changes the connected user's login password, saves it to the boot config
 /// right away (no Safe Mode: a revert would leave the saved password wrong),
 /// and updates the password VyGi remembers.
-#[tauri::command]
-pub async fn change_login_password(
-    state: State<'_, AppState>,
-    win: Win,
-    new_password: String,
-) -> AppResult<()> {
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn change_login_password(state: St, win: Win, new_password: String) -> AppResult<()> {
     if new_password.chars().count() < 8 {
         return Err(AppError::Invalid("Use at least 8 characters".into()));
     }
@@ -309,16 +297,18 @@ async fn prepare_api(ssh: &SshClient, key: &str) -> AppResult<()> {
     Ok(())
 }
 
-#[tauri::command]
-pub async fn disconnect(win: Win, window: WebviewWindow) -> AppResult<()> {
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn disconnect(win: Win) -> AppResult<()> {
     win.disconnect().await;
-    let _ = window.set_title("VyGi");
     Ok(())
 }
 
 /// Opens another app window with its own connection (one router per window).
+/// (In a browser, the UI opens a new tab instead.)
+#[cfg(feature = "desktop")]
 #[tauri::command]
-pub async fn new_window(app: AppHandle) -> AppResult<()> {
+pub async fn new_window(app: tauri::AppHandle) -> AppResult<()> {
+    use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
     let n = (1..)
         .find(|i| app.get_webview_window(&format!("router{i}")).is_none())
         .unwrap_or(1);

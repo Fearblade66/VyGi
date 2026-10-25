@@ -57,7 +57,13 @@ pub struct Secrets {
     pub ssh_password: String,
 }
 
+/// The web server (Docker) has no OS keychain: secrets go to the file there.
+pub const HAS_KEYCHAIN: bool = cfg!(feature = "desktop");
+
 fn entry(profile: &RouterProfile) -> AppResult<keyring::Entry> {
+    if !HAS_KEYCHAIN {
+        return Err(AppError::Keyring("no OS keychain".into()));
+    }
     Ok(keyring::Entry::new(KEYCHAIN_SERVICE, &profile.id())?)
 }
 
@@ -137,6 +143,10 @@ pub fn store_secrets(
             secrets,
             "the keychain returned something else".into(),
         ),
+        // expected on the server: not worth a warning
+        Err(_) if !HAS_KEYCHAIN => {
+            store_in_file(dir, file, id, secrets, String::new()).map(|_| None)
+        }
         Err(e) => store_in_file(dir, file, id, secrets, e.to_string()),
     }
 }

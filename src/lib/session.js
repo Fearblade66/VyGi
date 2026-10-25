@@ -1,5 +1,6 @@
 // Connection state, the Safe Mode / Save toolbar, and the shared "apply" helper.
 import { api, errorText } from "./api.js";
+import { setTitle } from "./platform.js";
 import { setStatus, toast } from "./dom.js";
 import { confirmBox } from "./dialog.js";
 import { addEntry, updateEntry, settlePending, parseRevisions } from "./history.js";
@@ -20,7 +21,7 @@ export function setConnected(info) {
   session.info = info;
   session.confirmDeadline = null;
   session.unsaved = false;
-  document.title = info ? `${info.hostname} (${info.profile?.host}) - VyGi` : "VyGi";
+  setTitle(info ? `${info.hostname} (${info.profile?.host}) - VyGi` : "VyGi");
   listeners.forEach((fn) => fn(session));
   renderToolbar();
 }

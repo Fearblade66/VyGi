@@ -2,7 +2,8 @@ import "./styles.css";
 import { api, errorText } from "./lib/api.js";
 import { h, clear, setStatus } from "./lib/dom.js";
 import { closeAllWindows } from "./lib/mdi.js";
-import { modal } from "./lib/dialog.js";
+import { modal, formDialog, alertBox } from "./lib/dialog.js";
+import { isDesktop, setLoginHandler, webSession, webLogin, webLogout, webChangePassword } from "./lib/platform.js";
 import { initToolbar, isConnected, setConnected, session, saveNow } from "./lib/session.js";
 import { showConnectDialog } from "./components/connect.js";
 import { openInterfaces } from "./components/interfaces.js";
@@ -155,7 +156,44 @@ async function toggleConnect() {
   }
 }
 
-window.addEventListener("DOMContentLoaded", () => {
+/** Web version: the VyGi server's own password, before anything else. */
+let loginOpen = false;
+async function webLoginDialog() {
+  if (loginOpen) return;
+  loginOpen = true;
+  await formDialog("Log in to VyGi", [
+    { name: "password", label: "Password", type: "password", hint: "The VyGi web password (shown in the server's log on first start, or set with VYGI_PASSWORD)." },
+  ], async (v) => {
+    await webLogin(v.password);
+    return true;
+  }, { okLabel: "Log in" });
+  loginOpen = false;
+  if (!(await webSession().catch(() => false))) return webLoginDialog();
+}
+
+function initWebAccount() {
+  document.getElementById("web-account").hidden = false;
+  document.getElementById("web-logout").addEventListener("click", (e) => {
+    e.preventDefault();
+    webLogout();
+  });
+  document.getElementById("web-password").addEventListener("click", async (e) => {
+    e.preventDefault();
+    const ok = await formDialog("Change the VyGi web password", [
+      { name: "current", label: "Current password", type: "password" },
+      { name: "pw", label: "New password", type: "password", hint: "At least 10 characters." },
+      { name: "pw2", label: "Again", type: "password" },
+    ], async (v) => {
+      if (v.pw !== v.pw2) throw new Error("The new passwords don't match");
+      await webChangePassword(v.current, v.pw);
+      return true;
+    }, { okLabel: "Change" });
+    if (ok) alertBox("Password changed", "Use the new password next time you log in. If VYGI_PASSWORD is set in your Docker setup, it replaces this one when the server restarts.");
+  });
+  setLoginHandler(() => webLoginDialog().then(() => location.reload()));
+}
+
+window.addEventListener("DOMContentLoaded", async () => {
   initToolbar();
   initViews();
   initDashboard();
@@ -172,5 +210,9 @@ window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-connect").addEventListener("click", toggleConnect);
   document.getElementById("btn-new-window").addEventListener("click", () => api.newWindow().catch((e) => setStatus(errorText(e), true)));
   document.getElementById("btn-terminal").addEventListener("click", () => openTerminal());
+  if (!isDesktop) {
+    initWebAccount();
+    if (!(await webSession().catch(() => false))) await webLoginDialog();
+  }
   showConnectDialog();
 });
