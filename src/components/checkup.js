@@ -1,6 +1,6 @@
 // Router check-up, run after each connect: local backup, changes since last visit, health.
 import { api, errorText } from "../lib/api.js";
-import { h, setStatus, formatBytes } from "../lib/dom.js";
+import { toast, h, setStatus, formatBytes } from "../lib/dom.js";
 import { openWindow } from "../lib/mdi.js";
 import { refreshTx, session } from "../lib/session.js";
 import { flattenInterfaces, has } from "../lib/vyos.js";
@@ -68,9 +68,21 @@ export async function runCheckup({ alwaysShow = false } = {}) {
     `${c.snapshotCount} backup(s) on this computer`,
     warnings.length ? `${warnings.length} warning(s)` : "no warnings",
   ].join(" · ");
-  setStatus(`Check-up: ${summary}`, warnings.length > 0);
+  const msg = `Check-up: ${summary}`;
+  const modern = document.documentElement.dataset.ui === "modern";
+  const nothing = !warnings.length && !changed && !c.problems.length;
+  if (modern && !alwaysShow) {
+    // Modern look: a pop-up with Details instead of a window over everything.
+    setStatus(msg, false, { silent: true });
+    toast(nothing ? msg : `${msg}${changed ? " · config changed since last visit" : ""}`, {
+      warn: warnings.length > 0,
+      action: nothing ? null : { label: "Details", fn: () => { showView("windows"); showWindow(c, warnings, down); } },
+    });
+    return false;
+  }
+  setStatus(msg, warnings.length > 0);
 
-  if (!alwaysShow && !warnings.length && !changed && !c.problems.length) return false;
+  if (!alwaysShow && nothing) return false;
   showView("windows");
   showWindow(c, warnings, down);
   return true;

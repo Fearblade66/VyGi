@@ -8,46 +8,62 @@
   </head>
   <body>
     <div id="app">
-      <header id="toolbar">
+      <aside id="sidebar">
+        <div id="brand"><span id="brand-logo"></span><span class="brand-name">VyGi</span></div>
+        <div id="router-card">
+          <span id="conn-dot" class="dot"></span>
+          <div class="router-text">
+            <div id="conn-label">Not connected</div>
+            <div id="conn-sub" class="hint"></div>
+          </div>
+          <button id="btn-new-window" class="icon-btn" title="New window: manage another router at the same time"></button>
+        </div>
         <button id="btn-connect" class="tb-btn">Connect</button>
-        <button id="btn-new-window" class="tb-btn" title="Open another window to manage another router at the same time">+ Window</button>
-        <span class="tb-sep"></span>
-        <label class="tb-check" title="Changes auto-revert unless you press Confirm (VyOS commit-confirm)">
-          <input type="checkbox" id="safe-mode" checked /> Safe Mode
-        </label>
-        <select id="safe-minutes" title="Minutes before an unconfirmed change is reverted">
-          <option value="1">1 min</option>
-          <option value="2" selected>2 min</option>
-          <option value="5">5 min</option>
-          <option value="10">10 min</option>
-        </select>
-        <button id="btn-confirm" class="tb-btn badge-warn" hidden>Confirm</button>
-        <button id="btn-save" class="tb-btn" disabled title="Write running config to the boot config">Save</button>
-        <span class="tb-sep"></span>
-        <button id="btn-terminal" class="tb-btn" disabled>New Terminal</button>
-        <span class="tb-sep"></span>
-        <span class="view-switch" id="view-switch">
+        <nav id="view-switch" class="nav">
           <button data-view="dashboard">Dashboard</button>
           <button data-view="clients">Clients</button>
-          <button data-view="windows">Windows</button>
-        </span>
-        <span class="tb-spacer"></span>
-        <select id="theme" title="Look">
-          <option value="classic">Classic</option>
-          <option value="modern-auto">Modern (auto)</option>
-          <option value="modern-light">Modern (light)</option>
-          <option value="modern-dark">Modern (dark)</option>
-        </select>
-        <span id="conn-label">Not connected</span>
-      </header>
-      <div id="body">
-        <div id="brand"><span>VyGi</span></div>
+          <button data-view="networks">Networks</button>
+          <button data-view="rules">Traffic Rules</button>
+          <button data-view="windows">Advanced</button>
+        </nav>
+        <div class="nav-label" id="menu-label">Advanced tools</div>
         <nav id="menu"></nav>
-        <section id="dashboard" class="view" hidden></section>
-        <section id="clients" class="view" hidden></section>
-        <main id="workspace" class="view"></main>
+        <div id="sidebar-foot">
+          <select id="theme" title="Look">
+            <option value="modern-auto">Modern (follow system)</option>
+            <option value="modern-light">Modern light</option>
+            <option value="modern-dark">Modern dark</option>
+            <option value="classic">Classic (Winbox)</option>
+          </select>
+        </div>
+      </aside>
+      <div id="main-col">
+        <header id="toolbar">
+          <h1 id="page-title">Dashboard</h1>
+          <span class="tb-spacer"></span>
+          <span class="safe-group" title="Safe Mode: changes revert by themselves unless you press Confirm (VyOS commit-confirm)">
+            <label class="switch tb-check"><input type="checkbox" id="safe-mode" checked /><span class="switch-ui"></span> Safe Mode</label>
+            <select id="safe-minutes" title="Minutes before an unconfirmed change is reverted">
+              <option value="1">1 min</option>
+              <option value="2" selected>2 min</option>
+              <option value="5">5 min</option>
+              <option value="10">10 min</option>
+            </select>
+          </span>
+          <button id="btn-confirm" class="tb-btn badge-warn" hidden>Confirm</button>
+          <button id="btn-save" class="tb-btn" disabled title="Write running config to the boot config">Save</button>
+          <button id="btn-terminal" class="tb-btn" disabled title="Open an SSH terminal">Terminal</button>
+        </header>
+        <div id="body">
+          <section id="dashboard" class="view" hidden></section>
+          <section id="clients" class="view" hidden></section>
+          <section id="networks" class="view" hidden></section>
+          <section id="rules" class="view" hidden></section>
+          <main id="workspace" class="view"></main>
+        </div>
+        <footer id="statusbar"><span id="status-text">Ready</span></footer>
       </div>
-      <footer id="statusbar"><span id="status-text">Ready</span></footer>
+      <div id="toasts" aria-live="polite"></div>
     </div>
     <script type="module" src="/src/main.js"></script>
   </body>

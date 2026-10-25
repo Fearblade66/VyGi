@@ -37,10 +37,43 @@ export function clear(el) {
   return el;
 }
 
-export function setStatus(text, isError = false) {
+/** Status bar text (Classic) + a toast (Modern). silent: status bar only. */
+export function setStatus(text, isError = false, { silent = false } = {}) {
   const bar = document.getElementById("statusbar");
   document.getElementById("status-text").textContent = text;
   bar.classList.toggle("error", isError);
+  if (!silent) toast(text, { error: isError });
+}
+
+let lastToast = null;
+
+/**
+ * Pop-up message (Modern look; Classic uses the status bar).
+ * opts: { error, action: { label, fn }, timeout ms }
+ * A message ending in "…" is progress: the next message replaces it.
+ */
+export function toast(text, { error = false, warn = false, action = null, timeout } = {}) {
+  const box = document.getElementById("toasts");
+  if (!box || !text) return null;
+  const progress = /…$/.test(text);
+  if (lastToast?.isConnected && (lastToast.dataset.progress === "1" || lastToast.dataset.text === text)) lastToast.remove();
+  const close = () => {
+    el.classList.add("leaving");
+    setTimeout(() => el.remove(), 200);
+  };
+  const el = h(`div.toast${error ? ".bad" : warn ? ".warn" : progress ? ".busy" : ""}`,
+    h("span.toast-dot"),
+    h("span.toast-text", text),
+    action ? h("button.toast-action", { on: { click: () => { close(); action.fn(); } } }, action.label) : null,
+    h("button.toast-close", { title: "Dismiss", on: { click: close } }, "×"));
+  el.dataset.text = text;
+  el.dataset.progress = progress ? "1" : "0";
+  box.append(el);
+  while (box.children.length > 4) box.firstChild.remove();
+  lastToast = el;
+  const ms = timeout ?? (progress ? 60000 : error ? 9000 : action ? 12000 : 4500);
+  setTimeout(() => el.isConnected && close(), ms);
+  return el;
 }
 
 export function formatBits(bitsPerSec) {

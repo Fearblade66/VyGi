@@ -11,12 +11,16 @@ Targets current VyOS (1.5 / rolling). The API calls were checked against `vyos-1
 
 ## Two ways to work
 
-- **Dashboard and Clients** (UniFi-style). The **Dashboard** shows internet status and latency, a live WAN traffic graph, CPU and memory, clients online, networks with DHCP pool use, the most active clients, VPN devices and alerts. **Clients** lists every device the router knows about (from ARP, DHCP, fixed IPs, local DNS names and WireGuard). Click a device for details and to **Rename** it, give it a **Fixed IP**, **Limit speed**, **Block** it from the internet, or **Ping** it.
-  - **Per-device speeds**: live download/upload per device (Clients and the Dashboard). This needs per-connection traffic counting, which VyOS leaves off; Clients has a one-click **Turn on traffic counting** (sets `system sysctl parameter net.netfilter.nf_conntrack_acct value 1`).
-  - **Sites**: where each device's traffic goes, with site icons, the network owner and the country, UniFi-style. The Dashboard shows **Top sites now** and **Traffic by country**. Site names (e.g. YouTube, github.com) come from Technitium's query log. Without it, traffic is grouped by network owner (e.g. Google, Fastly). Countries and owners come from DB-IP Lite (IP data by DB-IP, db-ip.com, CC BY 4.0), downloaded once (about 18 MB) and looked up locally. Icons are downloaded from each site itself and cached; they can be turned off in Clients.
-- **Windows** (Winbox-style): every feature as a draggable window, opened from the menu on the left.
+- **Pages** (UniFi-style), in the sidebar:
+  - **Dashboard:** internet status and latency, live WAN traffic, CPU and memory, clients online, networks with DHCP pool use, the busiest clients, top sites and countries, VPN devices and alerts.
+  - **Clients:** every device the router knows about (from ARP, DHCP, fixed IPs, local DNS names and WireGuard). Click a device for details and to **Rename** it, give it a **Fixed IP**, **Limit speed**, **Block** it, or **Ping** it.
+    - **Per-device speeds:** live download/upload per device, here and on the Dashboard. This needs per-connection traffic counting, which VyOS leaves off; Clients has a one-click **Turn on traffic counting** (sets `system sysctl parameter net.netfilter.nf_conntrack_acct value 1`).
+    - **Sites:** where each device's traffic goes, with site icons, the network owner and the country. Site names (e.g. YouTube, github.com) come from Technitium's query log. Without it, traffic is grouped by network owner (e.g. Google, Fastly). Countries and owners come from DB-IP Lite (IP data by DB-IP, db-ip.com, CC BY 4.0), downloaded once (about 18 MB) and looked up locally. Icons are downloaded from each site itself and cached; they can be turned off in Clients.
+  - **Networks:** every local network as a card (subnet, gateway, VLAN, devices online, DHCP pool use). **New network** sets up a VLAN or a spare port with gateway, DHCP, DNS, internet access (NAT) and optional **isolation** in one go. Presets are **Standard**, **Guest** (internet only, can't reach your devices or the router's settings) and **IoT** (isolated, no internet). Isolation, and internet on/off for a network, are firewall rules VyGi labels "VyGi net …"; editing or deleting a network updates them.
+  - **Traffic Rules:** block the internet, or specific sites, for chosen devices or networks, always or on a schedule (e.g. the kids' tablet, Sun–Thu 22:00–07:00). Every rule has an on/off switch and shows whether it is blocking right now.
+- **Advanced** (Winbox-style): every feature as a draggable window, opened from the tool list in the sidebar.
 
-Switch with the **Dashboard / Clients / Windows** buttons in the toolbar. **+ Window** opens another app window, so you can manage several routers at once (like several Winbox sessions). Each window has its own connection, Safe Mode timer and terminals, and closing a window disconnects its router. The **look** menu next to them picks **Classic** (Winbox gray) or **Modern** (light, dark, or following your OS).
+The sidebar shows the connected router, with a button to open **another window for a second router**. The top bar has the page title, **Safe Mode**, **Confirm** (while a change is waiting), **Save** and **Terminal**. In the Modern look, messages pop up in the corner. The theme menu at the bottom of the sidebar switches between **Modern** (light, dark, or following your OS) and **Classic** (Winbox gray).
 
 ## What it does
 
@@ -50,6 +54,7 @@ Switch with the **Dashboard / Clients / Windows** buttons in the toolbar. **+ Wi
 | Log | Live system journal with severity and text filters. |
 | System → Revisions | Commit history, a colored diff of each commit, and rollback to any revision **without rebooting**. |
 | New Terminal | A full SSH terminal (xterm.js). |
+| Failed changes | VyOS commits a change section by section, so when one part fails (e.g. an interface the hardware can't create), the parts before it stay applied. VyGi checks the running config after a failure and, if anything changed, puts back the config from just before, so a failed change never leaves half its pieces behind. |
 | Safe Mode | Every change is applied with VyOS `commit-confirm`. If you don't press **Confirm** in time, the router reverts it, so a change that cuts you off undoes itself. VyOS allows only one pending confirm at a time, so when you make another change while one is pending, VyGi confirms the earlier one first (you're evidently still connected) and starts a new timer. |
 | Save | Commits are live but are lost on reboot until you press **Save**. The button turns red while changes are unsaved. |
 
@@ -151,6 +156,9 @@ Testing on the real router found and fixed several things mocks didn't show: VyO
 - Clients only shows what the router can see (ARP, DHCP, WireGuard). Per-client traffic needs connection accounting, which VyOS leaves off, so Activity counts open connections instead.
 - Blocking a client drops its forwarded traffic by MAC address (IPv4 forward chain). Devices with private, changing MAC addresses can get around it.
 - Simple Queues limit IPv4 only, and match the device's IP address, so give it a fixed IP. The download shaper assumes a 1 Gbit/s LAN port as its total. Upload limiting drops packets above the limit (policing) instead of queueing them, so TCP uploads can look bursty. The queues were checked against VyOS's config validation in the test container, but that container's kernel can't run the actual traffic control, so the real speed limiting has not been measured yet.
+- Traffic Rules block sites by the addresses those names point to (VyOS domain groups, refreshed periodically). Big services that share servers (YouTube and Google) can't be told apart, and apps may use other names. For reliable site blocking, use Technitium. Schedules use the router's clock and time zone.
+- Network isolation and Traffic Rules use low firewall rule numbers (1–99) so they run before your own allow rules; VyGi's "internet allowed" rules use 900–999. If you renumber rules by hand, keep VyGi's blocking rules first.
+- Creating VLAN networks was checked against VyOS's config validation, but the test container's kernel can't create VLAN interfaces, so a VLAN network has not been created end to end yet. Networks on a separate port were tested end to end.
 - Sites only cover connections open right now (the app isn't always running, so there's no history). CDNs can make a site show up under the CDN's name when no Technitium query log is available.
 - Technitium: the query log was written to Technitium's API documentation but not tested, because the test setup couldn't download the query-log app. Everything else was tested against Technitium 15.6. Devices only show up by name in Technitium if they query it directly (use **Use for LAN**). If they go through the router's DNS forwarding, Technitium only sees the router.
 - Log, Torch, Packet Sniffer and DHCP Leases use `sudo` over SSH. That works by default for VyOS admin users.
@@ -162,7 +170,9 @@ index.html, src/              UI (plain JavaScript + Vite)
   main.js                     menu and app startup
   lib/                        windows (mdi.js), tables, dialogs, charts, session/Safe Mode,
                               rules.js (shared firewall/NAT rule editor),
-                              netdata.js (client list), views.js (views and themes)
+                              netdata.js (client list), views.js (pages and themes),
+                              icons.js, netplan.js (Networks), trafficrules.js (Traffic Rules),
+                              flowrates.js, sites.js, ddns.js (pure logic, tested with npm test)
   components/                 one file per window
 src-tauri/src/                Rust backend
   vyos_api.rs                 HTTPS API client

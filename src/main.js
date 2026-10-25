@@ -25,6 +25,8 @@ import { openDns } from "./components/dns.js";
 import { openUsers } from "./components/users.js";
 import { runCheckup } from "./components/checkup.js";
 import { initViews, showView } from "./lib/views.js";
+import { initNetworks } from "./components/networks.js";
+import { initRules } from "./components/rules_view.js";
 import { initDashboard } from "./components/dashboard.js";
 import { initClients } from "./components/clients.js";
 import { openBackup } from "./components/backup.js";
@@ -124,7 +126,7 @@ function renderMenu() {
 
 async function toggleConnect() {
   if (isConnected()) {
-    showView("windows");
+    showView("dashboard", { remember: false });
     closeAllWindows();
     try {
       await api.disconnect();
@@ -143,7 +145,9 @@ window.addEventListener("DOMContentLoaded", () => {
   initViews();
   initDashboard();
   initClients();
-  showView("windows");
+  initNetworks();
+  initRules();
+  showView("dashboard", { remember: false }); // the welcome screen until a router is connected
   renderMenu();
   document.getElementById("btn-connect").addEventListener("click", toggleConnect);
   document.getElementById("btn-new-window").addEventListener("click", () => api.newWindow().catch((e) => setStatus(errorText(e), true)));

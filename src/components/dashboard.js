@@ -2,7 +2,7 @@
 import { api, errorText } from "../lib/api.js";
 import { h, clear, formatBits, formatBytes } from "../lib/dom.js";
 import { liveChart } from "../lib/chart.js";
-import { registerView, showView } from "../lib/views.js";
+import { registerView, showView, welcome } from "../lib/views.js";
 import { session, isConnected } from "../lib/session.js";
 import { collectClients } from "../lib/netdata.js";
 import { ipv4InCidr, flattenInterfaces, has } from "../lib/vyos.js";
@@ -321,7 +321,7 @@ export function initDashboard() {
 
   function start() {
     if (!isConnected()) {
-      clear(root).append(h("div.dash", h("div.card.span-12", h("h3", "Not connected"), h("div", "Connect to a router to see its dashboard."))));
+      clear(root).append(welcome(() => document.getElementById("btn-connect").click()));
       return;
     }
     stop();

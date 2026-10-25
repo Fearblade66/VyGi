@@ -3,7 +3,7 @@
 import { api, errorText } from "../lib/api.js";
 import { h, clear, setStatus, formatBytes, formatAge, formatBits } from "../lib/dom.js";
 import { makeTable } from "../lib/table.js";
-import { registerView, showView } from "../lib/views.js";
+import { registerView, showView, welcome } from "../lib/views.js";
 import { formDialog, confirmBox, alertBox } from "../lib/dialog.js";
 import { applyChanges, isConnected } from "../lib/session.js";
 import { collectClients, BLOCK_GROUP } from "../lib/netdata.js";
@@ -100,9 +100,11 @@ export function initClients() {
   );
   table.wrap.style.flex = "1";
 
+  const welcomeEl = welcome(() => document.getElementById("btn-connect").click());
+  root.append(welcomeEl);
   root.append(h("div.clients",
     h("div.clients-main",
-      h("div.clients-bar", h("h2", { style: { margin: "0 8px 0 0", fontSize: "18px" } }, "Clients"), searchEl, h("button", { on: { click: load } }, "⟳ Refresh"), summary, h("span.grow"),
+      h("div.clients-bar", searchEl, h("button", { on: { click: load } }, "⟳ Refresh"), summary, h("span.grow"),
         h("label.hint", { title: "Site icons are downloaded from each site itself (no third-party service) and cached on this computer." },
           h("input", { type: "checkbox", checked: iconsEnabled(), on: { change: (e) => { setIconsEnabled(e.target.checked); sitesFor = null; renderSide(); } } }), " Site icons")),
       acctBanner, chipsEl, table.wrap),
@@ -178,6 +180,7 @@ export function initClients() {
   }
 
   async function load() {
+    welcomeEl.hidden = isConnected();
     if (!isConnected()) {
       clients = [];
       summary.textContent = "Not connected.";

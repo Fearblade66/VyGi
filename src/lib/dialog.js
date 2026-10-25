@@ -9,7 +9,7 @@ import { h } from "./dom.js";
 export function modal(title, content, buttons, onButton) {
   return new Promise((resolve) => {
     const btnEls = buttons.map((b) =>
-      h("button", { on: { click: () => press(b.value) }, style: b.primary ? { fontWeight: "bold" } : {} }, b.label),
+      h(`button${b.primary ? ".primary" : ""}${b.danger ? ".danger" : ""}${b.left ? ".left" : ""}`, { on: { click: () => press(b.value) } }, b.label),
     );
     const dialog = h("div.dialog", h("div.mdi-title", h("span", title)), h("div.dialog-body", content), h("div.dialog-buttons", btnEls));
     const back = h("div.modal-back", dialog);
@@ -69,7 +69,7 @@ export async function confirmBox(title, message, okLabel = "OK") {
  * `submit(values)` runs on OK; throw or return false to keep the dialog open.
  * Resolves to the values, or null on cancel.
  */
-export async function formDialog(title, fields, submit, { intro, okLabel = "OK", onChange, initChange = false } = {}) {
+export async function formDialog(title, fields, submit, { intro, okLabel = "OK", onChange, initChange = false, extra = null } = {}) {
   const inputs = {};
   const parts = {}; // field -> its grid elements (for show/hide)
   const hints = {};
@@ -85,7 +85,8 @@ export async function formDialog(title, fields, submit, { intro, okLabel = "OK",
       input = h("input", { type: "checkbox", checked: !!f.value });
     } else if (f.type === "multicheck") {
       const chosen = new Set(f.value || []);
-      input = h("span", (f.options || []).map((o) => h("label", { style: { marginRight: "10px", whiteSpace: "nowrap" } }, h("input", { type: "checkbox", value: o, checked: chosen.has(o) }), " ", o)));
+      const opts = f.options || [];
+      input = h(`span.multicheck${opts.length > 7 ? ".long" : ""}`, opts.map((o) => h("label", h("input", { type: "checkbox", value: o, checked: chosen.has(o) }), " ", o)));
     } else {
       input = h("input", { type: f.type || "text", value: f.value ?? "", placeholder: f.placeholder || "" });
     }
@@ -130,10 +131,14 @@ export async function formDialog(title, fields, submit, { intro, okLabel = "OK",
     if (initChange) onChange(null, read(), set);
   }
   let result = null;
+  // extra: { label, onClick } adds a left-aligned danger button (e.g. Delete) that closes the form.
   const r = await modal(title, h("div", intro ? h("div.warn-box", intro) : null, errBox, grid), [
     { label: "Cancel", value: "cancel" },
     { label: okLabel, value: "ok", primary: true },
-  ], async () => {
+    // last in the DOM (Cancel stays the first button), shown on the left by CSS
+    ...(extra ? [{ label: extra.label, value: "extra", danger: true, left: true }] : []),
+  ], async (value) => {
+    if (value === "extra") return true;
     errBox.hidden = true;
     try {
       const values = read();
@@ -146,5 +151,6 @@ export async function formDialog(title, fields, submit, { intro, okLabel = "OK",
       return false;
     }
   });
+  if (r === "extra") await extra.onClick();
   return r === "ok" ? result : null;
 }

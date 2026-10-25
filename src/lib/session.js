@@ -95,7 +95,7 @@ export function renderToolbar() {
   document.getElementById("btn-terminal").disabled = !connected;
   btnSave.disabled = !connected;
   btnSave.classList.toggle("badge-unsaved", connected && session.unsaved);
-  btnSave.textContent = connected && session.unsaved ? "Save ●" : "Save";
+  btnSave.textContent = connected && session.unsaved ? "Save ●" : connected ? "Saved" : "Save";
   btnSave.title = connected && session.unsaved ? "Unsaved changes: write the running config to the boot config" : "Write running config to the boot config";
 
   const left = session.confirmDeadline ? session.confirmDeadline - Date.now() : 0;
@@ -111,13 +111,20 @@ export function renderToolbar() {
     }
   }
 
+  const sub = document.getElementById("conn-sub");
   if (connected) {
     const i = session.info;
-    label.textContent = `${i.profile.sshUser}@${i.hostname} (${i.profile.host}) — VyOS ${i.version}`;
+    label.textContent = i.hostname;
+    label.title = `${i.profile.sshUser}@${i.hostname} (${i.profile.host}) — VyOS ${i.version}`;
+    sub.textContent = `${i.profile.host} · VyOS ${i.version}`;
   } else {
     label.textContent = "Not connected";
+    label.title = "";
+    sub.textContent = "Connect to manage a router";
   }
   label.classList.toggle("on", connected);
+  document.getElementById("conn-dot").classList.toggle("on", connected);
+  document.getElementById("app").classList.toggle("connected", connected);
 }
 
 export function initToolbar() {
