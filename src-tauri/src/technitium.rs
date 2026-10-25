@@ -25,7 +25,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("dashboard/stats/get", &["type", "utc"]),
     ("dashboard/stats/getTop", &["type", "statsType", "limit"]),
     ("settings/get", &[]),
-    ("settings/set", &["enableBlocking"]),
+    ("settings/set", &["enableBlocking", "blockListUrls"]),
     ("settings/temporaryDisableBlocking", &["minutes"]),
     ("blocked/add", &["domain"]),
     ("blocked/delete", &["domain"]),

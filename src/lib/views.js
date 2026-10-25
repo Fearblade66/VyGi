@@ -6,6 +6,7 @@ import { icon, logo } from "./icons.js";
 
 const VIEWS = {
   dashboard: { title: "Dashboard", icon: "dashboard", el: "dashboard" },
+  simple: { title: "Simple", icon: "check", el: "simple" },
   clients: { title: "Clients", icon: "clients", el: "clients" },
   networks: { title: "Networks", icon: "networks", el: "networks" },
   rules: { title: "Traffic Rules", icon: "rules", el: "rules" },
