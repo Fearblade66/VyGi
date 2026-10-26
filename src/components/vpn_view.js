@@ -9,6 +9,7 @@ import { registerView, welcome, loadingPage } from "../lib/views.js";
 import { icon } from "../lib/icons.js";
 import { toArray } from "../lib/vyos.js";
 import { wanInfo, wanProblem } from "../lib/wan.js";
+import { wanNotice } from "./wan_notice.js";
 import { parseWgDump } from "./vpn.js";
 import { countryName } from "../lib/sites.js";
 import { flag } from "../lib/activity.js";
@@ -76,7 +77,7 @@ export function initVpnPage() {
           h("div", h("b", "No VPN yet"), h("div.hint", "Set up a WireGuard VPN server on the router and get a QR code for your first device.")),
           h("button.primary", { on: { click: () => quickSetup(render) } }, "Set up VPN"))];
     clear(root).append(h("div.page", head,
-      problem ? h("div.warn-box", problem.text) : null,
+      wanNotice(problem, st.wanIp),
       st.servers.length && !st.ddns ? h("div.hint", "Tip: set up Dynamic DNS (Advanced → IP → Dynamic DNS) so devices still find the router when your internet address changes.") : null,
       ...body,
       clientSection()));

@@ -2,11 +2,12 @@
 // Changes made outside VyGi (the CLI, other tools) show up as router revisions.
 import { api, errorText } from "../lib/api.js";
 import { h, clear, setStatus } from "../lib/dom.js";
-import { confirmBox, alertBox } from "../lib/dialog.js";
+import { confirmBox, alertBox, modal } from "../lib/dialog.js";
 import { isConnected, onSessionChange, rollbackTo, session } from "../lib/session.js";
 import { registerView, welcome, loadingPage } from "../lib/views.js";
 import { icon } from "../lib/icons.js";
-import { historyList, parseRevisions, undoPlan, updateEntry } from "../lib/history.js";
+import { historyList, parseRevisions, undoPlan, updateEntry, describeRevision, revisionDate } from "../lib/history.js";
+import { renderDiff } from "./system.js";
 
 const when = (ms) => {
   const d = new Date(ms);
@@ -36,8 +37,14 @@ export function initHistory() {
       ? h("div.hist-list", entries.map((e) => row(e, entries, revisions)))
       : h("div.empty-state", h("span.net-icon", icon("clock", 20)), h("div", h("b", "No changes yet"), h("div.hint", "Everything you change with VyGi shows up here, so you can see what changed and undo it.")));
     clear(root).append(h("div.page", head, list,
-      outside.length ? h("div", h("h4", "Changes made outside VyGi"), h("div.hint", "From the command line or other tools. Undo them in Advanced → System → Revisions."),
-        h("div.hist-list", outside.map((r) => h("div.hist-item", h("span.hist-when", r.stamp), h("span.grow", `Revision ${r.rev} by ${r.by}${r.via ? ` via ${r.via}` : ""}`))))) : null));
+      outside.length ? h("div", h("h4", "Changes made outside VyGi"), h("div.hint", "From the router's command line, other tools or the router itself. To undo one, use Advanced → System → Revisions."),
+        h("div.hist-list", outside.map((r) => {
+          const d = revisionDate(r.stamp);
+          return h("div.hist-item",
+            h("span.hist-when", { title: `${r.stamp} on the router's clock` }, d ? when(d.getTime()) : r.stamp),
+            h("span.grow", { title: `Revision ${r.rev} by ${r.by}${r.via ? ` via ${r.via}` : ""}` }, describeRevision(r)),
+            h("button", { on: { click: () => showRevision(r) } }, "What changed"));
+        }))) : null));
   }
 
   function row(e, entries, revisions) {
@@ -74,3 +81,13 @@ export function initHistory() {
   });
   registerView("history", { show: render, hide: () => {} });
 }
+
+/** The changes one router revision made (lines starting + were added, - removed). */
+async function showRevision(r) {
+  const pre = h("pre.out.diff", "Loading…");
+  api.revisionDiff(r.rev).then((t) => renderDiff(pre, t)).catch((e) => (pre.textContent = errorText(e)));
+  await modal(describeRevision(r), h("div", { style: { width: "640px", maxWidth: "100%" } },
+    h("div.hint", { style: { marginBottom: "6px" } }, "Lines starting with + were added, lines with - were removed."), pre),
+  [{ label: "Close", value: "ok", primary: true }]);
+}
+

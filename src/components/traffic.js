@@ -12,7 +12,7 @@ export function openTraffic(ifname) {
       { label: "Rx", color: "#2b6cb0" },
       { label: "Tx", color: "#c05621" },
     ],
-    { points: 120, format: formatBits, height: 200 },
+    { points: 120, format: formatBits, minTop: 1000, height: 200 },
   );
   const totals = h("div.hint", { style: { padding: "4px 10px" } });
   win.body.style.overflow = "auto";

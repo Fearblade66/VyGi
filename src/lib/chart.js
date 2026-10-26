@@ -3,10 +3,11 @@ import { h } from "./dom.js";
 
 /**
  * series: [{ label, color, fill? }]
- * opts: { points: history length, format(value) -> label, min?, max? }
+ * opts: { points: history length, format(value) -> label, max?, minTop? (smallest axis top,
+ *   so an idle chart doesn't label 0.25 / 0.5 / 0.75 all as "1") }
  * Returns { el, push(values[]), reset(points?), resize() }.
  */
-export function liveChart(series, { points = 60, format = String, max = null, height = 160 } = {}) {
+export function liveChart(series, { points = 60, format = String, max = null, minTop = 1, height = 160 } = {}) {
   const canvas = h("canvas", { style: { width: "100%", height: `${height}px`, display: "block" } });
   const legend = h("div.chart-legend");
   const el = h("div.chart", canvas, legend);
@@ -33,7 +34,7 @@ export function liveChart(series, { points = 60, format = String, max = null, he
     const plotW = w - padL - 4;
     const plotH = hgt - padT - padB;
     const all = data.flat().filter(Number.isFinite);
-    const top = max ?? niceMax(Math.max(1, ...all));
+    const top = max ?? niceMax(Math.max(minTop, ...all));
 
     // grid + y labels
     ctx.font = `11px ${css("--font", "sans-serif")}`;
@@ -130,4 +131,22 @@ export function niceMax(v) {
   const p = Math.pow(10, Math.floor(Math.log10(v)));
   for (const m of [1, 2, 5, 10]) if (v <= m * p) return m * p;
   return 10 * p;
+}
+
+/** Points split where the time to the next one is far longer than usual. */
+export function splitAtGaps(points) {
+  points = [...points].sort((a, b) => a[0] - b[0]);
+  const steps = points.slice(1).map((p, i) => p[0] - points[i][0]).sort((a, b) => a - b);
+  const usual = steps[Math.floor(steps.length / 2)] || 0;
+  const runs = [];
+  let run = [];
+  points.forEach((p, i) => {
+    if (i && p[0] - points[i - 1][0] > Math.max(3 * usual, 5 * 60_000)) {
+      runs.push(run);
+      run = [];
+    }
+    run.push(p);
+  });
+  if (run.length) runs.push(run);
+  return runs;
 }

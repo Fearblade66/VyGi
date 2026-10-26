@@ -56,7 +56,7 @@ export function initDashboard() {
     dns.el.hidden = true;
     if (!chart || chartRouter !== session.info?.profileId) {
       chart?.dispose();
-      chart = liveChart([{ label: "Download", color: "#006fff" }, { label: "Upload", color: "#12a150" }], { points: 150, format: formatBits, height: 190 });
+      chart = liveChart([{ label: "Download", color: "#006fff" }, { label: "Upload", color: "#12a150" }], { points: 150, format: formatBits, minTop: 1000, height: 190 });
       chartRouter = session.info?.profileId;
     }
     traffic.body.append(chart.el);
@@ -366,7 +366,7 @@ export function initDashboard() {
       const f = await loadDoctor();
       if (!ui) return;
       ui.securityCard.hidden = !f.some((x) => x.level !== "info" || x.fix);
-      renderDoctor(ui.security, f, pollSecurity);
+      renderDoctor(ui.security, f, pollSecurity, { compact: true });
     } catch {
       /* not critical */
     }

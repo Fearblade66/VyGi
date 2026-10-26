@@ -33,3 +33,12 @@ test("undoPlan rolls back to the revision before, listing later changes", () => 
   const withCli = [{ ...entries[0], stamp: "2026-10-25 04:34:46" }, entries[2]];
   assert.equal(undoPlan(withCli, entries[2], revs).foreign, 1);
 });
+
+test("router revisions in plain words", async () => {
+  const { describeRevision, revisionDate } = await import("../src/lib/history.js");
+  assert.match(describeRevision({ by: "root", via: "vyos-boot-config-loader" }), /saved settings while starting/);
+  assert.match(describeRevision({ by: "vyos", via: "cli" }), /command line by vyos/);
+  assert.match(describeRevision({ by: "vyos", via: "" }), /command line/);
+  assert.equal(revisionDate("2026-10-25 23:15:25").getMinutes(), 15);
+  assert.equal(revisionDate("garbage"), null);
+});

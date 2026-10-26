@@ -6,7 +6,7 @@ import { h, clear, formatBits, formatBytes } from "../lib/dom.js";
 import { isConnected, onSessionChange } from "../lib/session.js";
 import { registerView, welcome, loadingPage } from "../lib/views.js";
 import { icon } from "../lib/icons.js";
-import { niceMax } from "../lib/chart.js";
+import { niceMax, splitAtGaps } from "../lib/chart.js";
 import { collectClients } from "../lib/netdata.js";
 
 const RANGES = [
@@ -26,12 +26,17 @@ function trafficChart(points) {
   const H = 220;
   const PAD = { l: 64, r: 10, t: 10, b: 26 };
   if (points.length < 2) return h("div.empty", "Not enough data yet. The server records a point every minute.");
+  points = [...points].sort((a, b) => a[0] - b[0]);
   const t0 = points[0][0];
   const t1 = points[points.length - 1][0];
-  const max = niceMax(Math.max(1, ...points.map((p) => Math.max(p[1], p[2]))));
+  const max = niceMax(Math.max(1000, ...points.map((p) => Math.max(p[1], p[2]))));
   const x = (t) => PAD.l + ((t - t0) / Math.max(1, t1 - t0)) * (W - PAD.l - PAD.r);
   const y = (v) => PAD.t + (1 - v / max) * (H - PAD.t - PAD.b);
-  const line = (i) => points.map((p) => `${x(p[0]).toFixed(1)},${y(p[i]).toFixed(1)}`).join(" ");
+  // no line across times nothing was recorded (server or router off): break it at gaps
+  const runs = splitAtGaps(points);
+  const lines = (i, cls) => runs.map((run) => el(run.length === 1 ? "circle" : "polyline", run.length === 1
+    ? { cx: x(run[0][0]).toFixed(1), cy: y(run[0][i]).toFixed(1), r: 1.5, class: `${cls} dot` }
+    : { points: run.map((p) => `${x(p[0]).toFixed(1)},${y(p[i]).toFixed(1)}`).join(" "), class: cls }));
   const ns = "http://www.w3.org/2000/svg";
   const el = (tag, attrs, text) => {
     const n = document.createElementNS(ns, tag);
@@ -52,8 +57,7 @@ function trafficChart(points) {
     const label = span > 2 * 86_400_000 ? d.toLocaleDateString([], { month: "short", day: "numeric" }) : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     svg.append(el("text", { x: x(t), y: H - 6, "text-anchor": i === 0 ? "start" : i === 4 ? "end" : "middle", class: "axis" }, label));
   }
-  svg.append(el("polyline", { points: line(1), class: "down" }));
-  svg.append(el("polyline", { points: line(2), class: "up" }));
+  svg.append(...lines(1, "down"), ...lines(2, "up"));
   const peak = points.reduce((a, p) => (p[1] > a[1] ? p : a));
   const avg = (i) => points.reduce((s, p) => s + p[i], 0) / points.length;
   return h("div",

@@ -25,20 +25,43 @@ export async function loadDoctor() {
   }).sort((a, b) => ORDER[a.level] - ORDER[b.level]);
 }
 
-/** Renders findings into `el`; `reload` runs after a fix. */
-export function renderDoctor(el, findings, reload) {
+const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * Renders findings into `el`; `reload` runs after a fix. compact (Dashboard):
+ * one line per finding with its explanation a click away, and a summary
+ * line when there are several.
+ */
+export function renderDoctor(el, findings, reload, { compact = false } = {}) {
   if (!findings.length) {
     clear(el).append(h("div.empty", h("span.pill.ok", "all good"), " No problems or conflicts found."));
     return;
   }
   const tidy = findings.filter((f) => f.id.startsWith("leftover-") && f.fix);
-  clear(el).append(h("div.sec-list",
-    findings.filter((f) => !f.id.startsWith("leftover-")).map((f) => h(`div.sec-item.${f.level}`,
-      h("div.grow",
-        h("div.sec-title", h(`span.pill.${f.level === "bad" ? "bad" : f.level === "warn" ? "warn" : "muted"}`, f.level === "bad" ? "problem" : f.level === "warn" ? "advice" : "note"), " ", f.title),
-        h("div.hint", f.text),
-        f.manual ? h("div.hint", { style: { fontStyle: "italic" } }, "The fix changes settings made by hand, so VyGi asks first.") : null),
-      f.fix || f.needs ? h("button", { on: { click: () => fix(f, reload) } }, f.fixLabel || "Fix") : null)),
+  const main = findings.filter((f) => !f.id.startsWith("leftover-"));
+  const bad = main.filter((f) => f.level === "bad").length;
+  const warn = main.filter((f) => f.level === "warn").length;
+  const summary = compact && main.length > 2
+    ? h("div.sec-summary", [bad ? count(bad, "problem", "problems") : "", warn ? count(warn, "piece of advice", "pieces of advice") : ""].filter(Boolean).join(", ") + ". Click one for details.")
+    : null;
+  clear(el).append(...(summary ? [summary] : []), h(`div.sec-list${compact ? ".compact" : ""}`,
+    main.map((f) => {
+      const more = h("div.sec-more", h("div.hint", f.text),
+        f.manual ? h("div.hint", { style: { fontStyle: "italic" } }, "The fix changes settings made by hand, so VyGi asks first.") : null);
+      more.hidden = compact;
+      const title = h("div.sec-title", h(`span.pill.${f.level === "bad" ? "bad" : f.level === "warn" ? "warn" : "muted"}`, f.level === "bad" ? "problem" : f.level === "warn" ? "advice" : "note"), " ", f.title);
+      if (compact) {
+        title.classList.add("toggle");
+        title.title = "Show or hide the details";
+        title.addEventListener("click", () => {
+          more.hidden = !more.hidden;
+          title.classList.toggle("open", !more.hidden);
+        });
+      }
+      return h(`div.sec-item.${f.level}`,
+        h("div.grow", title, more),
+        f.fix || f.needs ? h("button", { on: { click: () => fix(f, reload) } }, f.fixLabel || "Fix") : null);
+    }),
     tidy.length ? h("div.sec-item.info",
       h("div.grow", h("div.sec-title", h("span.pill.muted", "tidy"), ` ${tidy.length} leftover${tidy.length === 1 ? "" : "s"} from deleted VyGi settings`),
         h("div.hint", tidy.map((f) => f.text).join(" "))),

@@ -1,5 +1,49 @@
 // Thin wrappers around the Rust commands (src-tauri/src/*.rs).
-import { call as invoke, stream, newWindow } from "./platform.js";
+import { call, stream, newWindow } from "./platform.js";
+
+// Pages often ask for the same thing at once (the whole config was read 35
+// times in one tour of the pages, and the router answers one at a time).
+// These reads share one router call for a few seconds; anything that can
+// change the router clears them. Live counters (traffic, connections) are
+// never shared: their speeds come from the difference between two reads.
+const SHARED_MS = { get_config: 5000, routes: 5000, dhcp_leases: 5000, neighbors: 3000 };
+const CHANGES = new Set(["connect", "disconnect", "apply_changes", "confirm_commit", "rollback_to", "set_revert_action",
+  "history_restore", "import_config", "import_config_text", "change_login_password", "image_add", "image_set_default",
+  "image_delete", "power", "term_write", "accounting_sync"]);
+const shared = new Map(); // "cmd args" -> { at, promise }
+
+export function clearShared() {
+  shared.clear();
+}
+
+function invoke(cmd, args) {
+  const ttl = SHARED_MS[cmd];
+  if (!ttl) {
+    if (CHANGES.has(cmd)) shared.clear();
+    const p = call(cmd, args);
+    // the router may have changed even if the call failed
+    if (CHANGES.has(cmd)) p.finally(() => shared.clear()).catch(() => {});
+    return p;
+  }
+  const key = `${cmd} ${JSON.stringify(args ?? null)}`;
+  // part of the config: take it from a fresh copy of the whole config if there is one
+  const whole = cmd === "get_config" && args?.path?.length ? shared.get(`get_config ${JSON.stringify({ path: [] })}`) : null;
+  if (whole && Date.now() - whole.at <= ttl) {
+    return whole.promise.then((cfg) => {
+      let node = cfg;
+      for (const k of args.path) node = node && typeof node === "object" ? node[k] : undefined;
+      return node === undefined ? {} : structuredClone(node);
+    });
+  }
+  let hit = shared.get(key);
+  if (!hit || Date.now() - hit.at > ttl) {
+    hit = { at: Date.now(), promise: call(cmd, args) };
+    shared.set(key, hit);
+    hit.promise.catch(() => shared.get(key) === hit && shared.delete(key));
+  }
+  // each caller gets its own copy, so one page can't change another's data
+  return hit.promise.then((v) => (v && typeof v === "object" ? structuredClone(v) : v));
+}
 
 export function errorText(e) {
   if (e && typeof e === "object" && e.message) return e.message;

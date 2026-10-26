@@ -18,7 +18,7 @@ export function parseRevisions(text) {
   return out;
 }
 
-function renderDiff(pre, text) {
+export function renderDiff(pre, text) {
   clear(pre);
   for (const line of (text || "(no differences)").split("\n")) {
     const cls = /^\s*\+/.test(line) ? "diff-add" : /^\s*-/.test(line) ? "diff-del" : null;

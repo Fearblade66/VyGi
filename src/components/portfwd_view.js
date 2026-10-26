@@ -10,6 +10,7 @@ import { collectClients } from "../lib/netdata.js";
 import { readNetworks } from "../lib/netplan.js";
 import { ipv4InCidr } from "../lib/vyos.js";
 import { wanInfo, wanProblem } from "../lib/wan.js";
+import { wanNotice } from "./wan_notice.js";
 import { parseForwards, forwardCommands, deleteForwardCommands, toggleForwardCommands, SERVICES } from "../lib/portfwd.js";
 
 const IP_IN = /(\d{1,3}(?:\.\d{1,3}){3})\s*$/;
@@ -62,7 +63,7 @@ export function initPortForwards() {
         h("div", h("b", "No port forwards"), h("div.hint", "Only open ports you need: anything forwarded can be reached by anyone on the internet.")),
         h("button", { on: { click: () => edit(null) } }, "Forward a port")));
     }
-    clear(root).append(h("div.page", head, problem ? h("div.warn-box", problem.text) : null, grid));
+    clear(root).append(h("div.page", head, wanNotice(problem, st.wanIp), grid));
   }
 
   function card(f) {

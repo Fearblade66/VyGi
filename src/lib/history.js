@@ -15,6 +15,22 @@ export function parseRevisions(text) {
   return out;
 }
 
+/** A router revision in plain words (who changed it, and how). */
+export function describeRevision(r) {
+  const via = (r.via || "").toLowerCase();
+  if (/boot-config-loader|^init/.test(via)) return "The router loaded its saved settings while starting up";
+  if (/rollback|revert|commit-confirm/.test(via)) return "Settings were rolled back (an unconfirmed Safe Mode change, or a rollback)";
+  if (!via || via === "cli") return `Changed on the router's command line by ${r.by}`;
+  if (/http-api/.test(via)) return `Changed through the router's API by ${r.by}`;
+  return `Changed by ${r.by} (${r.via})`;
+}
+
+/** "2026-10-25 23:15:25" (the router's clock) as a Date, or null. */
+export function revisionDate(stamp) {
+  const d = new Date(String(stamp || "").replace(" ", "T"));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 /**
  * How to undo entry `e`: roll back to the revision just before its commit.
  * Returns { rev, later: [entries after it that also get undone] } or { error }.
