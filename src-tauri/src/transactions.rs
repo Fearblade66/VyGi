@@ -177,8 +177,48 @@ pub async fn apply_changes(
         Ok(msg) => msg,
         Err(e) => return Err(undo_partial(&state, &conn, before, e).await),
     };
+    if msg.contains("in the background") {
+        wait_for_background(&conn, &commands).await;
+    }
     record_commit(&state, minutes).await;
     Ok(status(&state, msg).await)
+}
+
+/// Whether `c` shows in `cfg` (the config tree from showConfig).
+fn in_config(cfg: &Value, c: &ConfigCommand) -> bool {
+    let mut node = cfg;
+    for p in &c.path {
+        match node.get(p) {
+            Some(n) => node = n,
+            None => return c.op == "delete",
+        }
+    }
+    let has = match (&c.value, node) {
+        (None, _) => true,
+        (Some(v), Value::String(s)) => s == v,
+        (Some(v), Value::Array(a)) => a.iter().any(|x| x.as_str() == Some(v)),
+        _ => false,
+    };
+    has == (c.op == "set")
+}
+
+/// VyOS commits changes to its own HTTPS API in the background and then
+/// restarts the API (about 30-50 s). Waits until the change shows, so the
+/// next request doesn't run into the restart.
+async fn wait_for_background(conn: &Connection, commands: &[ConfigCommand]) {
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(120) {
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        if let Ok(cfg) = conn.api.show_config(&[]).await {
+            if commands
+                .iter()
+                .filter(|c| c.op != "comment")
+                .all(|c| in_config(&cfg, c))
+            {
+                return;
+            }
+        }
+    }
 }
 
 /// After a failed commit: if the running config changed anyway (partially
@@ -291,4 +331,38 @@ pub async fn set_revert_action(state: Win, action: String) -> AppResult<TxStatus
     let msg = commit(&state, &conn, || Box::pin(conn.api.configure(&cmds, 0))).await?;
     record_commit(&state, 0).await;
     Ok(status(&state, msg).await)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn cmd(op: &str, path: &[&str], value: Option<&str>) -> ConfigCommand {
+        ConfigCommand {
+            op: op.into(),
+            path: path.iter().map(|s| s.to_string()).collect(),
+            value: value.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn change_shows_in_config() {
+        let cfg = json!({ "service": { "https": { "allow-client": { "address": ["10.0.0.0/24", "172.17.0.1/32"] } }, "ssh": { "dynamic-protection": {} } } });
+        let a = ["service", "https", "allow-client", "address"];
+        assert!(in_config(&cfg, &cmd("set", &a, Some("172.17.0.1/32"))));
+        assert!(!in_config(&cfg, &cmd("set", &a, Some("192.168.1.0/24"))));
+        assert!(in_config(
+            &cfg,
+            &cmd("set", &["service", "ssh", "dynamic-protection"], None)
+        ));
+        assert!(!in_config(
+            &cfg,
+            &cmd("delete", &["service", "https", "allow-client"], None)
+        ));
+        assert!(in_config(
+            &cfg,
+            &cmd("delete", &["service", "https", "api"], None)
+        ));
+    }
 }

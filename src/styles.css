@@ -626,3 +626,14 @@ button.danger { color: var(--bad); }
 .launch-items { display: flex; flex-direction: column; gap: 2px; }
 .launch-item { text-align: left; border: none; background: transparent; padding: 5px 8px; border-radius: 6px; cursor: pointer; color: var(--text); }
 .launch-item:hover { background: var(--select); }
+
+/* Activity log (web) */
+.activity-list { max-height: 60vh; overflow: auto; margin: 8px 0; border: 1px solid var(--border); }
+.activity-row { padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.activity-row[title^="Click"] { cursor: pointer; }
+.activity-row.bad .activity-action { color: var(--bad); }
+.activity-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.activity-when { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.activity-action { font-weight: bold; }
+.activity-first { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-detail { margin: 6px 0 0; padding: 6px; white-space: pre-wrap; word-break: break-all; font-size: 12px; background: var(--panel); }

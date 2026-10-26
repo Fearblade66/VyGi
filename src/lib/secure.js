@@ -1,7 +1,9 @@
 // Security check: common ways a home router ends up exposed, each with a
 // plain explanation and, where it's safe, the commands that fix it.
 // Pure: no API calls.
-import { toArray, ipv4InCidr } from "./vyos.js";
+import { toArray, ipv4InCidr, flattenInterfaces, parseIpv4Cidr } from "./vyos.js";
+
+const PRIVATE = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"];
 
 export const WAN_BLOCK_DESC = "VyGi: block new connections from the internet";
 const WAN_BLOCK_RULE = "9900"; // late, so the user's own allow rules (e.g. WireGuard) still run first
@@ -22,7 +24,8 @@ export function wanBlocked(chain, wan) {
 }
 
 /**
- * cfg: full config. ctx: { wan, wanCidr, mgmtHost, defaultPassword, user }.
+ * cfg: full config. ctx: { wan, wanCidr, mgmtHost, defaultPassword, user, vygiAddr }.
+ * vygiAddr: the address the router sees VyGi connecting from.
  * Returns [{ id, level: "bad"|"warn", title, text, fix: [commands] | null, fixLabel, needs }].
  * needs: "password" when the fix needs a new password from the user.
  */
@@ -86,6 +89,48 @@ export function securityFindings(cfg, ctx) {
       text: "DNS forwarding allows every address (0.0.0.0/0). If the internet can reach it, your router can be abused in attacks on others. Only your own networks need it.",
       fix: openAllow.map((a) => ({ op: "delete", path: ["service", "dns", "forwarding", "allow-from", a] })), fixLabel: "Allow only my networks",
       ...(toArray(fwd["allow-from"]).length === openAllow.length ? { fix: null, text: "DNS forwarding allows every address (0.0.0.0/0) and no other network is listed, so removing it would stop DNS for your devices. Add your networks in Advanced → IP → DNS, then remove 0.0.0.0/0." } : {}),
+    });
+  }
+
+  // ---- the router's HTTPS API (what VyGi uses) open to every address
+  const https = cfg?.service?.https;
+  if (https && !toArray(https["allow-client"]?.address).length) {
+    const lans = [];
+    for (const [name, c] of flattenInterfaces(cfg?.interfaces)) {
+      if (name === ctx.wan || c.type === "loopback") continue;
+      for (const a of toArray(c.cfg.address)) {
+        const p = parseIpv4Cidr(a);
+        if (p && PRIVATE.some((x) => ipv4InCidr(p.ip, x)) && !lans.includes(p.network)) lans.push(p.network);
+      }
+    }
+    // VyGi's own address must stay allowed, or the fix locks VyGi out
+    const me = ctx.vygiAddr && /^\d{1,3}(\.\d{1,3}){3}$/.test(ctx.vygiAddr) ? ctx.vygiAddr : null;
+    const allow = [...lans];
+    if (me && !lans.some((n) => ipv4InCidr(me, n))) allow.push(`${me}/32`);
+    out.push({
+      id: "api-open", level: "warn", title: "The router's API accepts every address",
+      text: me
+        ? `Any address that can reach the router can try API keys against it. The fix only lets in your own networks (${allow.join(", ")}), which includes VyGi at ${me}. If you also use VyGi from elsewhere (another network or a VPN), add that address afterwards. The API restarts, so VyGi pauses for about 30 seconds, and Safe Mode can't undo this change (a VyOS limit).`
+        : "Any address that can reach the router can try API keys against it. VyGi couldn't tell which address it connects from, so it won't limit this for you (it could lock itself out). Set Advanced → Services → HTTPS → allow-client to your networks.",
+      fix: me ? allow.map((a) => ({ op: "set", path: ["service", "https", "allow-client", "address"], value: a })) : null,
+      fixLabel: "Allow only my networks",
+    });
+  }
+  const shortKey = Object.entries(https?.api?.keys?.id || {}).find(([, k]) => String(k?.key || "").length < 16);
+  if (shortKey) {
+    out.push({
+      id: "api-key-short", level: "warn", title: "A short API key",
+      text: `The API key "${shortKey[0]}" has fewer than 16 characters, so it's easy to guess. Make a long random one in Advanced → Services → HTTPS (and update it in VyGi's connection settings).`,
+    });
+  }
+
+  // ---- SSH without brute-force protection
+  const ssh = cfg?.service?.ssh;
+  if (ssh && !("dynamic-protection" in ssh) && !("disable-password-authentication" in ssh)) {
+    out.push({
+      id: "ssh-guess", level: "warn", title: "SSH allows unlimited password guesses",
+      text: "Anyone who can reach SSH can keep trying passwords. Brute-force protection blocks an address for a while after repeated failed logins.",
+      fix: [{ op: "set", path: ["service", "ssh", "dynamic-protection"] }], fixLabel: "Turn on protection",
     });
   }
 

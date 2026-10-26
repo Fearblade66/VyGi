@@ -20,16 +20,55 @@ const MIN_PASSWORD: usize = 10;
 const LOCKED: &str = "Too many wrong passwords. Wait 5 minutes, or restart VyGi (e.g. docker restart vygi) to clear it.";
 
 #[derive(Serialize, Deserialize, Default)]
+#[serde(default)]
 struct Stored {
     password_hash: String,
+    /// addresses that have logged in before (a login from a new one is reported)
+    known_ips: Vec<String>,
+}
+
+/// A logged-in browser.
+struct Session {
+    expires: Instant,
+    created: u64,
+    last_seen: u64,
+    ip: String,
+    agent: String,
+}
+
+/// What the session list shows (never the token itself).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionInfo {
+    pub id: String,
+    pub created: u64,
+    pub last_seen: u64,
+    pub ip: String,
+    pub agent: String,
+    pub current: bool,
 }
 
 pub struct Auth {
     file: PathBuf,
     hash: StdMutex<String>,
-    sessions: StdMutex<HashMap<String, Instant>>,
+    known_ips: StdMutex<Vec<String>>,
+    sessions: StdMutex<HashMap<String, Session>>,
     fails: StdMutex<Vec<Instant>>,
     secure: bool,
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// A short, stable id for a session (shown in lists and the activity log;
+/// it can't be turned back into the cookie).
+pub fn session_id(token: &str) -> String {
+    use sha2::{Digest, Sha256};
+    hex::encode(Sha256::digest(token.as_bytes()))[..10].to_string()
 }
 
 /// Writes a file only the owner can read (secrets, keys).
@@ -106,6 +145,7 @@ impl Auth {
         let auth = Auth {
             file,
             hash: StdMutex::new(hash),
+            known_ips: StdMutex::new(stored.known_ips),
             sessions: StdMutex::new(HashMap::new()),
             fails: StdMutex::new(Vec::new()),
             secure,
@@ -117,6 +157,11 @@ impl Auth {
     fn save(&self) -> Result<(), String> {
         let stored = Stored {
             password_hash: self.hash.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+            known_ips: self
+                .known_ips
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone(),
         };
         write_private(
             &self.file,
@@ -147,15 +192,78 @@ impl Auth {
             .filter_map(|kv| kv.trim().split_once('='))
             .find(|(k, _)| *k == COOKIE)
             .map(|(_, v)| v.to_string())?;
-        let sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
-        match sessions.get(&token) {
-            Some(exp) if *exp > Instant::now() => Some(token),
+        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        match sessions.get_mut(&token) {
+            Some(s) if s.expires > Instant::now() => {
+                s.last_seen = now_ms();
+                Some(token)
+            }
             _ => None,
         }
     }
 
-    /// Checks the password; returns the Set-Cookie value for a new session.
-    pub async fn login(&self, password: &str) -> Result<String, String> {
+    /// Logged-in browsers, newest first; `current` marks the asking one.
+    pub fn sessions(&self, current: &str) -> Vec<SessionInfo> {
+        let now = Instant::now();
+        let mut out: Vec<SessionInfo> = self
+            .sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .filter(|(_, s)| s.expires > now)
+            .map(|(t, s)| SessionInfo {
+                id: session_id(t),
+                created: s.created,
+                last_seen: s.last_seen,
+                ip: s.ip.clone(),
+                agent: s.agent.clone(),
+                current: t == current,
+            })
+            .collect();
+        out.sort_by_key(|s| std::cmp::Reverse(s.last_seen));
+        out
+    }
+
+    /// Ends the session with this id (from [`Auth::sessions`]); true if found.
+    pub fn end_session(&self, id: &str) -> bool {
+        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        let before = sessions.len();
+        sessions.retain(|t, _| session_id(t) != id);
+        before != sessions.len()
+    }
+
+    /// Notes a successful login's address; true when it's one never seen before.
+    pub fn new_ip(&self, ip: &str) -> bool {
+        let fresh = {
+            let mut known = self.known_ips.lock().unwrap_or_else(|e| e.into_inner());
+            if known.iter().any(|k| k == ip) {
+                false
+            } else {
+                known.push(ip.to_string());
+                if known.len() > 200 {
+                    known.remove(0);
+                }
+                true
+            }
+        };
+        if fresh {
+            let _ = self.save();
+        }
+        fresh
+    }
+
+    /// Whether logins are refused right now (too many wrong passwords).
+    pub fn is_locked(&self) -> bool {
+        self.locked()
+    }
+
+    /// Checks the password; returns the Set-Cookie value and the new session's token.
+    pub async fn login(
+        &self,
+        password: &str,
+        ip: &str,
+        agent: &str,
+    ) -> Result<(String, String), String> {
         if self.locked() {
             return Err(LOCKED.into());
         }
@@ -170,11 +278,21 @@ impl Auth {
             return Err("Wrong password".into());
         }
         let token = random_token(32);
+        let now = now_ms();
         self.sessions
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .insert(token.clone(), Instant::now() + SESSION_TTL);
-        Ok(self.cookie(&token, SESSION_TTL.as_secs()))
+            .insert(
+                token.clone(),
+                Session {
+                    expires: Instant::now() + SESSION_TTL,
+                    created: now,
+                    last_seen: now,
+                    ip: ip.to_string(),
+                    agent: agent.chars().take(160).collect(),
+                },
+            );
+        Ok((self.cookie(&token, SESSION_TTL.as_secs()), token))
     }
 
     pub fn logout(&self, headers: &HeaderMap) {
@@ -242,7 +360,7 @@ impl Auth {
         self.sessions
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .retain(|_, exp| *exp > now);
+            .retain(|_, s| s.expires > now);
     }
 }
 
@@ -258,14 +376,25 @@ mod tests {
         assert!(!verify("x", "not a hash"));
     }
 
+    fn sess(expires: Instant) -> Session {
+        Session {
+            expires,
+            created: 0,
+            last_seen: 0,
+            ip: String::new(),
+            agent: String::new(),
+        }
+    }
+
     #[test]
     fn session_cookie_parsing() {
         let auth = Auth {
             file: PathBuf::new(),
             hash: StdMutex::new(String::new()),
+            known_ips: StdMutex::new(Vec::new()),
             sessions: StdMutex::new(HashMap::from([
-                ("abc".into(), Instant::now() + SESSION_TTL),
-                ("old".into(), Instant::now() - Duration::from_secs(1)),
+                ("abc".into(), sess(Instant::now() + SESSION_TTL)),
+                ("old".into(), sess(Instant::now() - Duration::from_secs(1))),
             ])),
             fails: StdMutex::new(Vec::new()),
             secure: true,
@@ -299,8 +428,16 @@ mod tests {
                 .1
                 .to_string()
         };
-        let mine = tok(auth.login("first password 1").await.unwrap());
-        let other = tok(auth.login("first password 1").await.unwrap());
+        let mine = tok(auth
+            .login("first password 1", "1.2.3.4", "test")
+            .await
+            .unwrap()
+            .0);
+        let other = tok(auth
+            .login("first password 1", "1.2.3.4", "test")
+            .await
+            .unwrap()
+            .0);
         assert!(auth
             .change_password(&mine, "wrong", "second password 2")
             .await
@@ -310,7 +447,23 @@ mod tests {
             .unwrap();
         let has = |t: &str| auth.sessions.lock().unwrap().contains_key(t);
         assert!(has(&mine) && !has(&other));
-        assert!(auth.login("first password 1").await.is_err());
-        assert!(auth.login("second password 2").await.is_ok());
+        assert!(auth
+            .login("first password 1", "1.2.3.4", "test")
+            .await
+            .is_err());
+        assert!(auth
+            .login("second password 2", "1.2.3.4", "test")
+            .await
+            .is_ok());
+        // session list and ending one
+        let list = auth.sessions(&mine);
+        assert_eq!(list.len(), 2);
+        assert!(list.iter().any(|s| s.current && s.ip == "1.2.3.4"));
+        let other_id = list.iter().find(|s| !s.current).unwrap().id.clone();
+        assert!(auth.end_session(&other_id));
+        assert_eq!(auth.sessions(&mine).len(), 1);
+        // new addresses are noticed once
+        assert!(auth.new_ip("10.0.0.9"));
+        assert!(!auth.new_ip("10.0.0.9"));
     }
 }

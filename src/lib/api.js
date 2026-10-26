@@ -40,7 +40,8 @@ export const api = {
   txStatus: () => invoke("tx_status"),
   getConfig: (path) => invoke("get_config", { path }),
   runShow: (path) => invoke("run_show", { path }),
-  applyChanges: (commands, confirmMinutes) => invoke("apply_changes", { commands, confirmMinutes }),
+  // what: a plain description for the web version's activity log
+  applyChanges: (commands, confirmMinutes, what = "") => invoke("apply_changes", { commands, confirmMinutes, what }),
   confirmCommit: () => invoke("confirm_commit"),
   saveConfig: () => invoke("save_config"),
   listRevisions: () => invoke("list_revisions"),
@@ -67,6 +68,7 @@ export const api = {
   imageAdd: (url) => invoke("image_add", { url }),
   updateCheck: () => invoke("update_check"),
   accountingSync: () => invoke("accounting_sync"),
+  clientAddress: () => invoke("client_address"),
   imageSetDefault: (name) => invoke("image_set_default", { name }),
   imageDelete: (name) => invoke("image_delete", { name }),
   power: (action) => invoke("power", { action }),

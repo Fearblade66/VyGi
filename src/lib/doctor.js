@@ -94,7 +94,7 @@ function freeRule(rules, from, to) {
 /**
  * All problems: [{ id, level: "bad"|"warn"|"info", title, text, fix: [commands] | null, manual }].
  * `id` is stable for the same problem, so a check can tell new problems from old ones.
- * env: { wan, wanCidr, mgmtHost, defaultPassword, user }
+ * env: { wan, wanCidr, mgmtHost, defaultPassword, user, vygiAddr }
  */
 export function diagnose(cfg, env = {}) {
   const out = [];

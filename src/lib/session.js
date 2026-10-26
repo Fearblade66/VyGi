@@ -55,11 +55,19 @@ function applyTx(tx) {
  */
 export async function applyChanges(commands, what = "Changes", { check = true } = {}) {
   if (check) commands = await reviewChange(commands, what);
-  const minutes = safeMinutes();
+  let minutes = safeMinutes();
+  // VyOS commits changes to its own HTTPS API in the background and its
+  // commit-confirm then undoes them, so Safe Mode can't be used for these.
+  if (minutes && commands.some((c) => c.path[0] === "service" && c.path[1] === "https")) {
+    if (!(await confirmBox("Apply without Safe Mode?",
+      "This changes the router's HTTPS API, the connection VyGi uses. VyOS undoes such changes when they're made with Safe Mode, so this one is applied directly: there's no automatic undo.\n\nThe API restarts, so VyGi pauses for about 30 seconds. If VyGi can't reach the router afterwards, SSH still works: log in and run \"configure\", \"delete service https allow-client\", \"commit\".",
+      "Apply"))) throw new Error("Cancelled: nothing was changed.");
+    minutes = 0;
+  }
   setStatus(`Applying: ${what}…`);
   let tx;
   try {
-    tx = await withForeignPending(() => api.applyChanges(commands, minutes));
+    tx = await withForeignPending(() => api.applyChanges(commands, minutes, what));
   } catch (e) {
     setStatus(`${what} failed: ${errorText(e).split("\n")[0]}`, true);
     throw e;

@@ -39,3 +39,29 @@ test("default password, open DNS", () => {
   const only = securityFindings({ service: { dns: { forwarding: { "allow-from": "0.0.0.0/0" } } } }, ctx).find((x) => x.id === "dns-open");
   assert.equal(only.fix, null);
 });
+
+test("API open to every address: allow only my networks plus VyGi", () => {
+  const cfg = {
+    interfaces: { ethernet: { eth0: { address: ["dhcp"] }, eth1: { address: ["192.168.1.1/24"] } }, loopback: { lo: {} } },
+    service: { https: { api: { keys: { id: { vygi: { key: "short" } } } } }, ssh: { port: "22" } },
+  };
+  const f = securityFindings(cfg, { ...ctx, vygiAddr: "10.8.0.5" });
+  const api = f.find((x) => x.id === "api-open");
+  assert.deepEqual(api.fix.map((c) => c.value), ["192.168.1.0/24", "10.8.0.5/32"]);
+  assert.ok(api.fix.every((c) => c.path.join(" ") === "service https allow-client address"));
+  // VyGi already inside a LAN: no extra /32
+  assert.deepEqual(securityFindings(cfg, { ...ctx, vygiAddr: "192.168.1.20" }).find((x) => x.id === "api-open").fix.map((c) => c.value), ["192.168.1.0/24"]);
+  // unknown VyGi address: advice only
+  assert.equal(securityFindings(cfg, ctx).find((x) => x.id === "api-open").fix, null);
+  assert.ok(f.some((x) => x.id === "api-key-short" && !x.fix));
+  assert.deepEqual(f.find((x) => x.id === "ssh-guess").fix, [{ op: "set", path: ["service", "ssh", "dynamic-protection"] }]);
+});
+
+test("API limited, long key, SSH protected: no API/SSH findings", () => {
+  const cfg = { service: {
+    https: { "allow-client": { address: "192.168.1.0/24" }, api: { keys: { id: { vygi: { key: "a-very-long-random-key-123" } } } } },
+    ssh: { "dynamic-protection": {} },
+  } };
+  assert.ok(!securityFindings(cfg, ctx).some((x) => ["api-open", "api-key-short", "ssh-guess"].includes(x.id)));
+  assert.ok(!securityFindings({ service: { ssh: { "disable-password-authentication": {} } } }, ctx).some((x) => x.id === "ssh-guess"));
+});

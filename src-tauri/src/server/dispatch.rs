@@ -130,6 +130,7 @@ pub async fn call(
 
         "connect_checkup" => json(checkup::connect_checkup(st(), w()).await),
         "accounting_sync" => json(checkup::accounting_sync(w()).await),
+        "client_address" => json(checkup::client_address(w()).await),
         "history_list" => json(checkup::history_list(st(), w()).await),
         "history_diff" => json(checkup::history_diff(st(), w(), arg(&a, "id")?).await),
         "history_restore" => json(
@@ -249,5 +250,68 @@ async fn watch_call(
             )))
         }
         _ => Err(AppError::Invalid(format!("unknown command `watch_{cmd}`"))),
+    }
+}
+
+/// Commands that change something, as (action, detail) for the activity log;
+/// None for reads. Secrets are left out.
+pub fn audit_entry(cmd: &str, a: &Value) -> Option<(String, String)> {
+    let s = |k: &str| a.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+    let n = |k: &str| a.get(k).and_then(Value::as_u64).unwrap_or(0);
+    let entry = |action: &str, detail: String| Some((action.to_string(), detail));
+    match cmd {
+        "apply_changes" => {
+            let cmds = super::audit::commands_from(a.get("commands"));
+            let mins = n("confirmMinutes");
+            let mut d = super::audit::change_detail(a.get("what").and_then(Value::as_str), &cmds);
+            if mins > 0 {
+                d = format!("(Safe Mode, {mins} min)\n{d}");
+            }
+            entry("change", d)
+        }
+        "confirm_commit" => entry("confirmed Safe Mode changes", String::new()),
+        "rollback_to" => entry("rollback", format!("to revision {}", n("rev"))),
+        "history_restore" => entry("restored a backup", format!("snapshot {}", n("id"))),
+        "import_config_text" => entry("restored a backup", "uploaded file".into()),
+        "export_config_text" => entry("downloaded a backup", s("format")),
+        "set_revert_action" => entry("change", format!("Safe Mode undoes by {}", s("action"))),
+        "power" => entry(&format!("router {}", s("action")), String::new()),
+        "image_add" => entry("VyOS update installed", s("url")),
+        "image_set_default" => entry("VyOS default image set", s("name")),
+        "image_delete" => entry("VyOS image deleted", s("name")),
+        "change_login_password" => entry("router password changed", String::new()),
+        "connect" => {
+            let p = a.pointer("/req/profile").cloned().unwrap_or(Value::Null);
+            let host = p.get("host").and_then(Value::as_str).unwrap_or("");
+            let user = p.get("sshUser").and_then(Value::as_str).unwrap_or("vyos");
+            entry("connected", format!("{user}@{host}"))
+        }
+        "forget_router" => entry("removed a saved router", s("id")),
+        "dns_server_setup" => entry("linked a DNS server", s("url")),
+        "dns_server_forget" => entry("unlinked the DNS server", String::new()),
+        "dns_server_call" => {
+            let ep = s("endpoint");
+            if ep.ends_with("/get")
+                || ep.contains("/list")
+                || ep.contains("export")
+                || ep.contains("query")
+                || ep.starts_with("dashboard")
+            {
+                return None;
+            }
+            let params = a.get("params").map(|p| p.to_string()).unwrap_or_default();
+            entry("DNS server change", format!("{ep} {params}"))
+        }
+        "watch_set" => entry(
+            "24/7 watching changed",
+            match a.get("enabled").and_then(Value::as_bool) {
+                Some(true) => "on".into(),
+                Some(false) => "off".into(),
+                None => "settings".into(),
+            },
+        ),
+        "watch_notify_set" => entry("notification settings changed", String::new()),
+        "wake_on_lan" => entry("wake-on-LAN", s("mac")),
+        _ => None,
     }
 }

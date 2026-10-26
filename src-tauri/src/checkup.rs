@@ -319,6 +319,18 @@ pub async fn accounting_sync(state: Win) -> AppResult<bool> {
     sync_accounting(&*state.conn().await?).await
 }
 
+/// The address the router sees VyGi connecting from (SSH and the API use the
+/// same route), so a lock-down of the API can keep VyGi in.
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn client_address(state: Win) -> AppResult<String> {
+    let out = state.conn().await?.ssh.exec_ok("echo $SSH_CLIENT").await?;
+    Ok(out
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .to_string())
+}
+
 /// Saves a backup snapshot when the config changed since the last one (24/7 watching).
 /// Returns whether a new snapshot was written.
 pub async fn backup_if_changed(dirs: &Dirs, conn: &Connection) -> AppResult<bool> {

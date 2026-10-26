@@ -8,13 +8,14 @@ import { securityFindings } from "../lib/secure.js";
 import { wanInfo } from "../lib/wan.js";
 
 export async function loadFindings() {
-  const [cfg, w] = await Promise.all([api.getConfig([]), wanInfo()]);
+  const [cfg, w, vygiAddr] = await Promise.all([api.getConfig([]), wanInfo(), api.clientAddress().catch(() => "")]);
   return securityFindings(cfg || {}, {
     wan: w.wan,
     wanCidr: w.wanCidr,
     mgmtHost: session.info?.profile?.host,
     defaultPassword: !!session.info?.defaultPassword,
     user: session.info?.profile?.sshUser || "vyos",
+    vygiAddr,
   });
 }
 

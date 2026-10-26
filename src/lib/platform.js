@@ -183,5 +183,10 @@ async function tokenFetch(path, opts = {}) {
   return body;
 }
 export const webTokens = () => tokenFetch("/api/tokens");
-export const webTokenCreate = (name, scope) => tokenFetch("/api/tokens", { method: "POST", body: JSON.stringify({ name, scope }) });
+export const webTokenCreate = (name, scope, days = null) => tokenFetch("/api/tokens", { method: "POST", body: JSON.stringify({ name, scope, days }) });
 export const webTokenRevoke = (id) => tokenFetch(`/api/tokens/${encodeURIComponent(id)}/revoke`, { method: "POST" });
+
+// ---- web only: activity log and logged-in browsers
+export const webAudit = ({ before = 0, q = "", limit = 200 } = {}) => tokenFetch(`/api/audit?before=${before}&limit=${limit}&q=${encodeURIComponent(q)}`);
+export const webSessions = () => tokenFetch("/api/sessions");
+export const webSessionEnd = (id) => tokenFetch(`/api/sessions/${encodeURIComponent(id)}/end`, { method: "POST" });

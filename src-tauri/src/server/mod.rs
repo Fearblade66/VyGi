@@ -10,6 +10,7 @@
 //! router connection, like the desktop app's windows.
 
 mod alerts;
+mod audit;
 mod auth;
 mod dispatch;
 mod history;
@@ -25,7 +26,7 @@ use std::time::{Duration, Instant};
 
 use axum::body::Bytes;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Path, Query, State};
+use axum::extract::{ConnectInfo, Path, Query, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -53,6 +54,10 @@ pub struct Server {
     watch: Arc<watch::Watcher>,
     /// window label -> last request
     tabs: StdMutex<HashMap<String, Instant>>,
+    audit: audit::Audit,
+    /// plain HTTP behind the user's own reverse proxy: take the client
+    /// address from X-Forwarded-For
+    behind_proxy: bool,
 }
 
 pub struct Config {
@@ -120,6 +125,8 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         cert_path: cfg.tls.then(|| cfg.data.join("tls").join("cert.pem")),
         watch,
         tabs: StdMutex::new(HashMap::new()),
+        audit: audit::Audit::new(&cfg.data),
+        behind_proxy: !cfg.tls,
     });
 
     // Disconnect tabs that went away without saying so.
@@ -159,6 +166,9 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         .route("/api/stream", get(stream))
         .route("/api/tokens", get(tokens_list).post(token_create))
         .route("/api/tokens/{id}/revoke", post(token_revoke))
+        .route("/api/audit", get(audit_list))
+        .route("/api/sessions", get(sessions_list))
+        .route("/api/sessions/{id}/end", post(session_end))
         .route("/api/cert", get(cert))
         .route("/mcp", post(mcp_post).get(mcp_get).delete(mcp_get))
         .fallback_service(ServeDir::new(&cfg.web).fallback(ServeFile::new(index)))
@@ -172,7 +182,7 @@ pub async fn run(cfg: Config) -> Result<(), String> {
             cfg.listen
         );
         axum_server::bind_rustls(cfg.listen, tls)
-            .serve(router.into_make_service())
+            .serve(router.into_make_service_with_connect_info::<SocketAddr>())
             .await
             .map_err(|e| e.to_string())
     } else {
@@ -183,9 +193,12 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         let listener = tokio::net::TcpListener::bind(cfg.listen)
             .await
             .map_err(|e| format!("{}: {e}", cfg.listen))?;
-        axum::serve(listener, router)
-            .await
-            .map_err(|e| e.to_string())
+        axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .map_err(|e| e.to_string())
     }
 }
 
@@ -284,6 +297,52 @@ impl Server {
     }
 }
 
+impl Server {
+    /// The client's address (from X-Forwarded-For behind the user's own proxy).
+    fn client_ip(&self, addr: SocketAddr, headers: &HeaderMap) -> String {
+        if self.behind_proxy {
+            if let Some(f) = headers
+                .get("x-forwarded-for")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.split(',').next())
+            {
+                return f.trim().to_string();
+            }
+        }
+        addr.ip().to_string()
+    }
+
+    fn log(&self, who: &str, ip: &str, action: &str, router: &str, detail: String, ok: bool) {
+        self.audit.log(audit::Entry {
+            at: watch::now_ms(),
+            who: who.to_string(),
+            ip: ip.to_string(),
+            action: action.to_string(),
+            router: router.to_string(),
+            detail,
+            ok,
+        });
+    }
+
+    /// A security notice to the user's phone (if notifications are set up).
+    fn alert(self: &Arc<Self>, text: String) {
+        let me = self.clone();
+        tokio::spawn(async move {
+            let a = alerts::Alert {
+                kind: "security".into(),
+                text,
+                level: "warn".into(),
+                at: watch::now_ms(),
+            };
+            let _ = me.watch.notify("VyGi", &[a]).await;
+        });
+    }
+}
+
+fn web_who(session: &str) -> String {
+    format!("web session {}", auth::session_id(session))
+}
+
 async fn session(State(s): State<Arc<Server>>, headers: HeaderMap) -> Response {
     Json(json!({ "loggedIn": s.auth.session(&headers).is_some() })).into_response()
 }
@@ -293,14 +352,68 @@ struct LoginReq {
     password: String,
 }
 
-async fn login(State(s): State<Arc<Server>>, Json(req): Json<LoginReq>) -> Response {
-    match s.auth.login(&req.password).await {
-        Ok(cookie) => ([(header::SET_COOKIE, cookie)], Json(json!({ "ok": true }))).into_response(),
-        Err(msg) => plain_error(StatusCode::UNAUTHORIZED, &msg),
+async fn login(
+    State(s): State<Arc<Server>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(req): Json<LoginReq>,
+) -> Response {
+    let ip = s.client_ip(addr, &headers);
+    let agent = headers
+        .get(header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let was_locked = s.auth.is_locked();
+    match s.auth.login(&req.password, &ip, agent).await {
+        Ok((cookie, token)) => {
+            s.log(
+                &web_who(&token),
+                &ip,
+                "login",
+                "",
+                agent.chars().take(120).collect(),
+                true,
+            );
+            if s.auth.new_ip(&ip) {
+                s.alert(format!("Someone logged in to VyGi from an address not seen before: {ip}. If that wasn't you, change the web password (it logs out everyone else)."));
+            }
+            ([(header::SET_COOKIE, cookie)], Json(json!({ "ok": true }))).into_response()
+        }
+        Err(msg) => {
+            if !was_locked {
+                s.log("", &ip, "login failed", "", msg.clone(), false);
+                if s.auth.is_locked() {
+                    s.log(
+                        "",
+                        &ip,
+                        "logins locked",
+                        "",
+                        "too many wrong passwords".into(),
+                        false,
+                    );
+                    s.alert(format!("VyGi refused logins for 5 minutes after too many wrong passwords (last from {ip})."));
+                }
+            }
+            plain_error(StatusCode::UNAUTHORIZED, &msg)
+        }
     }
 }
 
-async fn logout(State(s): State<Arc<Server>>, headers: HeaderMap) -> Response {
+async fn logout(
+    State(s): State<Arc<Server>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+) -> Response {
+    if let Some(t) = s.auth.session(&headers) {
+        s.log(
+            &web_who(&t),
+            &s.client_ip(addr, &headers),
+            "logout",
+            "",
+            String::new(),
+            true,
+        );
+    }
     s.auth.logout(&headers);
     (
         [(header::SET_COOKIE, s.auth.clear_cookie())],
@@ -318,6 +431,7 @@ struct PasswordReq {
 
 async fn change_password(
     State(s): State<Arc<Server>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     Json(req): Json<PasswordReq>,
 ) -> Response {
@@ -329,8 +443,28 @@ async fn change_password(
         .change_password(&session, &req.current, &req.new_password)
         .await
     {
-        Ok(()) => Json(json!({ "ok": true })).into_response(),
-        Err(msg) => plain_error(StatusCode::BAD_REQUEST, &msg),
+        Ok(()) => {
+            s.log(
+                &web_who(&session),
+                &s.client_ip(addr, &headers),
+                "web password changed",
+                "",
+                "other sessions logged out".into(),
+                true,
+            );
+            Json(json!({ "ok": true })).into_response()
+        }
+        Err(msg) => {
+            s.log(
+                &web_who(&session),
+                &s.client_ip(addr, &headers),
+                "web password change failed",
+                "",
+                msg.clone(),
+                false,
+            );
+            plain_error(StatusCode::BAD_REQUEST, &msg)
+        }
     }
 }
 
@@ -361,6 +495,7 @@ async fn bye(
 
 async fn invoke(
     State(s): State<Arc<Server>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path(cmd): Path<String>,
     headers: HeaderMap,
     body: Bytes,
@@ -381,7 +516,36 @@ async fn invoke(
         }
     };
     let (_, win) = s.window(&session, tab);
-    match dispatch::call(&s.app, &s.watch, win, &cmd, args).await {
+    let logged = dispatch::audit_entry(&cmd, &args);
+    let router = if logged.is_some() {
+        win.conn()
+            .await
+            .map(|c| c.profile_id.clone())
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let result = dispatch::call(&s.app, &s.watch, win, &cmd, args).await;
+    if let Some((action, detail)) = logged {
+        let router = if router.is_empty() && cmd == "connect" {
+            detail.clone()
+        } else {
+            router
+        };
+        let detail = match &result {
+            Err(e) => format!("{detail}\nFailed: {e}").trim().to_string(),
+            Ok(_) => detail,
+        };
+        s.log(
+            &web_who(&session),
+            &s.client_ip(addr, &headers),
+            &action,
+            &router,
+            detail,
+            result.is_ok(),
+        );
+    }
+    match result {
         Ok(v) => Json(v).into_response(),
         Err(e) => api_error(StatusCode::BAD_REQUEST, &e),
     }
@@ -392,6 +556,7 @@ async fn invoke(
 /// `{"error": ...}`) and then sends each event as its own message.
 async fn stream(
     State(s): State<Arc<Server>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     Query(q): Query<TabQuery>,
     ws: WebSocketUpgrade,
@@ -407,7 +572,8 @@ async fn stream(
     };
     let (_, win) = s.window(&session, &tab);
     let app = s.app.clone();
-    ws.on_upgrade(move |socket| run_stream(app, win, socket))
+    let log = (s.clone(), web_who(&session), s.client_ip(addr, &headers));
+    ws.on_upgrade(move |socket| run_stream(app, win, socket, log))
 }
 
 /// WebSockets ignore CORS, so check that the page came from this server.
@@ -420,7 +586,12 @@ fn same_origin(headers: &HeaderMap) -> bool {
     }
 }
 
-async fn run_stream(app: Arc<AppState>, win: Arc<WindowState>, socket: WebSocket) {
+async fn run_stream(
+    app: Arc<AppState>,
+    win: Arc<WindowState>,
+    socket: WebSocket,
+    (srv, who, ip): (Arc<Server>, String, String),
+) {
     let (mut sink, mut source) = socket.split();
     let first = match source.next().await {
         Some(Ok(Message::Text(t))) => t,
@@ -433,6 +604,14 @@ async fn run_stream(app: Arc<AppState>, win: Arc<WindowState>, socket: WebSocket
         .unwrap_or("")
         .to_string();
     let args = req.get("args").cloned().unwrap_or_else(|| json!({}));
+    if cmd == "open_terminal" {
+        let router = win
+            .conn()
+            .await
+            .map(|c| c.profile_id.clone())
+            .unwrap_or_default();
+        srv.log(&who, &ip, "terminal opened", &router, String::new(), true);
+    }
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     let id = match dispatch::open_stream(&app, win.clone(), &cmd, args, tx).await {
         Ok(id) => id,
@@ -485,24 +664,53 @@ async fn tokens_list(State(s): State<Arc<Server>>, headers: HeaderMap) -> Respon
 struct TokenReq {
     name: String,
     scope: tokens::Scope,
+    /// days until the token stops working (None or 0 = never)
+    #[serde(default)]
+    days: Option<u64>,
 }
 
 async fn token_create(
     State(s): State<Arc<Server>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     Json(req): Json<TokenReq>,
 ) -> Response {
     if !ui_session(&s, &headers) {
         return plain_error(StatusCode::UNAUTHORIZED, "Log in first");
     }
-    match s.tokens.create(&req.name, req.scope, watch::now_ms()) {
-        Ok((info, secret)) => Json(json!({ "token": info, "secret": secret })).into_response(),
+    match s
+        .tokens
+        .create(&req.name, req.scope, watch::now_ms(), req.days)
+    {
+        Ok((info, secret)) => {
+            let who = s
+                .auth
+                .session(&headers)
+                .map(|t| web_who(&t))
+                .unwrap_or_default();
+            let scope = if info.scope == tokens::Scope::Full {
+                "full access"
+            } else {
+                "read-only"
+            };
+            s.log(
+                &who,
+                &s.client_ip(addr, &headers),
+                "API token created",
+                "",
+                format!("{} ({scope})", info.name),
+                true,
+            );
+            s.alert(format!("A new VyGi API token \"{}\" ({scope}) was created. If that wasn't you, revoke it under API access.", info.name));
+            Json(json!({ "token": info, "secret": secret })).into_response()
+        }
         Err(e) => plain_error(StatusCode::BAD_REQUEST, &e),
     }
 }
 
 async fn token_revoke(
     State(s): State<Arc<Server>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Response {
@@ -525,8 +733,30 @@ async fn token_revoke(
             ws.disconnect().await;
         }
     }
+    let name = s
+        .tokens
+        .list()
+        .into_iter()
+        .find(|t| t.id == id)
+        .map(|t| t.name)
+        .unwrap_or_default();
     match s.tokens.revoke(&id) {
-        Ok(true) => Json(json!({ "ok": true })).into_response(),
+        Ok(true) => {
+            let who = s
+                .auth
+                .session(&headers)
+                .map(|t| web_who(&t))
+                .unwrap_or_default();
+            s.log(
+                &who,
+                &s.client_ip(addr, &headers),
+                "API token revoked",
+                "",
+                name,
+                true,
+            );
+            Json(json!({ "ok": true })).into_response()
+        }
         Ok(false) => plain_error(StatusCode::NOT_FOUND, "No such token"),
         Err(e) => plain_error(StatusCode::INTERNAL_SERVER_ERROR, &e),
     }
@@ -555,7 +785,12 @@ async fn mcp_get() -> Response {
     (StatusCode::METHOD_NOT_ALLOWED, [(header::ALLOW, "POST")]).into_response()
 }
 
-async fn mcp_post(State(s): State<Arc<Server>>, headers: HeaderMap, body: Bytes) -> Response {
+async fn mcp_post(
+    State(s): State<Arc<Server>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
     // browsers must not be able to drive this from another site (DNS rebinding)
     if headers.contains_key(header::ORIGIN) && !same_origin(&headers) {
         return plain_error(StatusCode::FORBIDDEN, "cross-site request refused");
@@ -565,7 +800,16 @@ async fn mcp_post(State(s): State<Arc<Server>>, headers: HeaderMap, body: Bytes)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .map(str::trim);
+    let ip = s.client_ip(addr, &headers);
     let Some(token) = bearer.and_then(|t| s.tokens.check(t, watch::now_ms())) else {
+        s.log(
+            "",
+            &ip,
+            "API token rejected",
+            "",
+            "unknown, revoked or expired token".into(),
+            false,
+        );
         tokio::time::sleep(std::time::Duration::from_millis(500)).await; // slows down guessing
         return (StatusCode::UNAUTHORIZED, [(header::WWW_AUTHENTICATE, "Bearer")], Json(json!({ "error": "Use an API token made in VyGi (Authorization: Bearer vygi_...)" }))).into_response();
     };
@@ -573,8 +817,102 @@ async fn mcp_post(State(s): State<Arc<Server>>, headers: HeaderMap, body: Bytes)
         Ok(v) => v,
         Err(e) => return Json(json!({ "jsonrpc": "2.0", "id": null, "error": { "code": -32700, "message": format!("Parse error: {e}") } })).into_response(),
     };
-    match mcp::handle(&s, &token, msg).await {
+    // tool calls go in the activity log (secrets in commands hidden)
+    let call = (msg.get("method").and_then(Value::as_str) == Some("tools/call")).then(|| {
+        let p = &msg["params"];
+        let name = p["name"].as_str().unwrap_or("").to_string();
+        let a = &p["arguments"];
+        let detail = if name == "apply_changes" {
+            audit::change_detail(
+                a["description"].as_str(),
+                &audit::commands_from(a.get("commands")),
+            )
+        } else {
+            let mut a = a.clone();
+            if let Some(o) = a.as_object_mut() {
+                o.remove("router");
+            }
+            if a.as_object().is_some_and(|o| o.is_empty()) {
+                String::new()
+            } else {
+                a.to_string()
+            }
+        };
+        (name, a["router"].as_str().unwrap_or("").to_string(), detail)
+    });
+    let reply = mcp::handle(&s, &token, msg).await;
+    if let Some((name, router, detail)) = call {
+        let ok = reply
+            .as_ref()
+            .map(|r| r.get("error").is_none() && r["result"]["isError"] != json!(true))
+            .unwrap_or(true);
+        s.log(
+            &format!("token {}", token.name),
+            &ip,
+            &format!("API: {name}"),
+            &router,
+            detail,
+            ok,
+        );
+    }
+    match reply {
         Some(reply) => Json(reply).into_response(),
         None => StatusCode::ACCEPTED.into_response(),
+    }
+}
+
+// ---------------------------------------------------------------- activity log and sessions
+
+#[derive(Deserialize)]
+struct AuditQuery {
+    before: Option<u64>,
+    limit: Option<usize>,
+    q: Option<String>,
+}
+
+async fn audit_list(
+    State(s): State<Arc<Server>>,
+    headers: HeaderMap,
+    Query(q): Query<AuditQuery>,
+) -> Response {
+    if !ui_session(&s, &headers) {
+        return plain_error(StatusCode::UNAUTHORIZED, "Log in first");
+    }
+    Json(s.audit.list(
+        q.before.unwrap_or(0),
+        q.limit.unwrap_or(200).min(1000),
+        q.q.as_deref().unwrap_or(""),
+    ))
+    .into_response()
+}
+
+async fn sessions_list(State(s): State<Arc<Server>>, headers: HeaderMap) -> Response {
+    let (Some(me), true) = (s.auth.session(&headers), ui_session(&s, &headers)) else {
+        return plain_error(StatusCode::UNAUTHORIZED, "Log in first");
+    };
+    Json(s.auth.sessions(&me)).into_response()
+}
+
+async fn session_end(
+    State(s): State<Arc<Server>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    let (Some(me), true) = (s.auth.session(&headers), ui_session(&s, &headers)) else {
+        return plain_error(StatusCode::UNAUTHORIZED, "Log in first");
+    };
+    if s.auth.end_session(&id) {
+        s.log(
+            &web_who(&me),
+            &s.client_ip(addr, &headers),
+            "logged out a session",
+            "",
+            format!("session {id}"),
+            true,
+        );
+        Json(json!({ "ok": true })).into_response()
+    } else {
+        plain_error(StatusCode::NOT_FOUND, "No such session")
     }
 }

@@ -28,6 +28,9 @@ pub struct Token {
     /// unix ms
     pub created: u64,
     pub last_used: Option<u64>,
+    /// unix ms after which the token stops working (None = never)
+    #[serde(default)]
+    pub expires: Option<u64>,
     /// hex SHA-256 of the token (never sent to the UI)
     #[serde(default, skip_serializing_if = "String::is_empty")]
     hash: String,
@@ -76,7 +79,13 @@ impl Tokens {
     }
 
     /// Makes a token; returns (its info, the secret, shown once).
-    pub fn create(&self, name: &str, scope: Scope, now: u64) -> Result<(Token, String), String> {
+    pub fn create(
+        &self,
+        name: &str,
+        scope: Scope,
+        now: u64,
+        days: Option<u64>,
+    ) -> Result<(Token, String), String> {
         let name = name.trim();
         if name.is_empty() || name.chars().count() > 40 {
             return Err("Give the token a name (up to 40 characters)".into());
@@ -95,6 +104,9 @@ impl Tokens {
             scope,
             created: now,
             last_used: None,
+            expires: days
+                .filter(|d| *d > 0)
+                .map(|d| now + d.min(3650) * 86_400_000),
             hash: hash(&secret),
         };
         lock(&self.list).push(t.clone());
@@ -129,7 +141,9 @@ impl Tokens {
         let h = hash(secret);
         let found = {
             let mut l = lock(&self.list);
-            let t = l.iter_mut().find(|t| t.hash == h)?;
+            let t = l
+                .iter_mut()
+                .find(|t| t.hash == h && t.expires.map_or(true, |e| now < e))?;
             // write "last used" at most every few minutes
             let stale = t
                 .last_used
@@ -155,7 +169,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("vygi-tok-{}", hex::encode(b)));
         std::fs::create_dir_all(&dir).unwrap();
         let t = Tokens::load(&dir);
-        let (info, secret) = t.create("Claude", Scope::Full, 1).unwrap();
+        let (info, secret) = t.create("Claude", Scope::Full, 1, None).unwrap();
         assert!(secret.starts_with("vygi_") && secret.len() == 5 + 64);
         assert_eq!(t.check(&secret, 2).unwrap().id, info.id);
         assert!(t.check("vygi_wrong", 2).is_none());
@@ -168,7 +182,11 @@ mod tests {
             Scope::Full
         );
         assert!(t.list()[0].hash.is_empty());
-        assert!(t.create("", Scope::Read, 1).is_err());
+        assert!(t.create("", Scope::Read, 1, None).is_err());
+        // a token past its expiry date stops working
+        let (_, short) = t.create("Week", Scope::Read, 1_000, Some(7)).unwrap();
+        assert!(t.check(&short, 1_000 + 6 * 86_400_000).is_some());
+        assert!(t.check(&short, 1_000 + 7 * 86_400_000).is_none());
         assert!(t.revoke(&info.id).unwrap());
         assert!(t.check(&secret, 4).is_none());
         let _ = std::fs::remove_dir_all(dir);

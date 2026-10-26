@@ -9,7 +9,8 @@ import { formDialog, confirmBox, alertBox } from "../lib/dialog.js";
 import { applyChanges, isConnected, onSessionChange, session } from "../lib/session.js";
 import { registerView, welcome, loadingPage } from "../lib/views.js";
 import { toArray } from "../lib/vyos.js";
-import { isDesktop } from "../lib/platform.js";
+import { isDesktop, webSessions, webSessionEnd } from "../lib/platform.js";
+import { openActivityLog } from "./activity.js";
 import { wanInfo, wanProblem } from "../lib/wan.js";
 import { protectStatus, protectOn, protectOff, smoothStatus, smoothOn, smoothOff, smoothBandwidth, adblockStatus, BLOCKLISTS } from "../lib/switches.js";
 import { failoverStatus, failoverLines, failoverOn, failoverOff, backupCandidates, parseLbStatus } from "../lib/failover.js";
@@ -122,7 +123,7 @@ export function initSettings() {
     try {
       st = await loadState();
     } catch (e) {
-      if (my === seq) clear(root).append(h("div.page", h("div.err-box", errorText(e))));
+      if (my === seq) clear(root).append(h("div.page", h("div.err-box", errorText(e)), h("p", button("Try again", render))));
       return;
     }
     if (my !== seq) return;
@@ -311,7 +312,49 @@ export function initSettings() {
           : "Block all traffic to and from chosen countries, for every device and the router.",
         h("span.set-inline", value(countries.length ? `${countries.length} blocked` : "off"), button("Choose countries…", () => editRegions(cfg, render))))),
       section("Ad and tracker blocking", adblock),
-    ];
+      isDesktop ? null : accessSection(),
+    ].filter(Boolean);
+  }
+
+  /** Web version: who can use this VyGi server, and what they did. */
+  function accessSection() {
+    const browsers = h("div", h("div.hint", "Loading…"));
+    const fill = async () => {
+      let list;
+      try {
+        list = await webSessions();
+      } catch (e) {
+        clear(browsers).append(h("div.err-box", e.message));
+        return;
+      }
+      const agent = (a) => {
+        const app = { Edg: "Edge", OPR: "Opera" }[/(Edg|OPR)\//.exec(a)?.[1]] || /(Firefox|Chrome|Safari)\//.exec(a)?.[1] || "Browser";
+        const os = ["Android", "iPhone", "iPad", "Windows", "Mac OS X", "Linux"].find((x) => a.includes(x))?.replace("Mac OS X", "Mac");
+        return os ? `${app} on ${os}` : app;
+      };
+      clear(browsers).append(h("table.grid",
+        h("thead", h("tr", h("th", "Browser"), h("th", "Address"), h("th", "Logged in"), h("th", "Last used"), h("th", ""))),
+        h("tbody", list.map((s) => h("tr",
+          h("td", agent(s.agent || ""), s.current ? h("span.badge.ok", { style: { marginLeft: "6px" } }, "this one") : null),
+          h("td", s.ip || "–"),
+          h("td", new Date(s.created).toLocaleString()),
+          h("td", new Date(s.lastSeen).toLocaleString()),
+          h("td", s.current ? null : h("button", { on: { click: async () => {
+            try {
+              await webSessionEnd(s.id);
+            } catch (e) {
+              alertBox("Log out", e.message);
+            }
+            fill();
+          } } }, "Log out")))))));
+    };
+    fill();
+    const menu = (id) => () => document.getElementById(id).click();
+    return section("VyGi access",
+      row("Activity log", "Logins, API tokens (Claude), and every change made to a router, with who, when and from which address.", button("Open…", openActivityLog)),
+      row("API tokens", "Keys that let Claude or scripts use VyGi. Each can expire and be revoked; you get an alert when one is created.", button("Manage…", menu("web-api"))),
+      row("Web password", "Logins lock for a while after repeated wrong passwords. You get an alert on a lockout and on a login from a new address (with 24/7 watching and alerts set up).", button("Change…", menu("web-password"))),
+      row("Logged-in browsers", "", null, browsers));
   }
 
   async function fillAdblock(el) {

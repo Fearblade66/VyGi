@@ -14,13 +14,14 @@ const ORDER = { bad: 0, warn: 1, info: 2 };
 const line = (c) => `${c.op} ${c.path.join(" ")}${c.value !== undefined ? ` '${c.value}'` : ""}`;
 
 export async function loadDoctor() {
-  const [cfg, w] = await Promise.all([api.getConfig([]), wanInfo()]);
+  const [cfg, w, vygiAddr] = await Promise.all([api.getConfig([]), wanInfo(), api.clientAddress().catch(() => "")]);
   return diagnose(cfg || {}, {
     wan: w.wan,
     wanCidr: w.wanCidr,
     mgmtHost: session.info?.profile?.host,
     defaultPassword: !!session.info?.defaultPassword,
     user: session.info?.profile?.sshUser || "vyos",
+    vygiAddr,
   }).sort((a, b) => ORDER[a.level] - ORDER[b.level]);
 }
 

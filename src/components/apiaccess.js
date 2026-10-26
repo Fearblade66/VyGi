@@ -60,9 +60,10 @@ export async function openApiAccess() {
     try {
       const tokens = await webTokens();
       clear(list).append(tokens.length
-        ? h("table.grid", h("thead", h("tr", h("th", "Name"), h("th", "Access"), h("th", "Made"), h("th", "Last used"), h("th", ""))),
+        ? h("table.grid", h("thead", h("tr", h("th", "Name"), h("th", "Access"), h("th", "Made"), h("th", "Last used"), h("th", "Expires"), h("th", ""))),
             h("tbody", tokens.map((t) => h("tr",
               h("td", t.name), h("td", t.scope === "full" ? "full (changes with Safe Mode)" : "read-only"), h("td", when(t.created)), h("td", when(t.lastUsed)),
+              h("td", !t.expires ? "never" : t.expires < Date.now() ? h("span.badge.bad", "expired") : when(t.expires)),
               h("td", h("button.danger", { on: { click: async () => {
                 if (!(await confirmBox("Revoke token", `Revoke "${t.name}"? Anything using it (Claude, scripts) stops working.`, "Revoke"))) return;
                 await webTokenRevoke(t.id).catch((e) => alertBox("Revoke", e.message));
@@ -81,8 +82,15 @@ export async function openApiAccess() {
         { value: "full", label: "Full: read and change settings (always with Safe Mode)" },
         { value: "read", label: "Read-only: settings, devices, history, logs" },
       ] },
+      { name: "days", label: "Expires", type: "select", value: "90", options: [
+        { value: "7", label: "in 7 days" },
+        { value: "30", label: "in 30 days" },
+        { value: "90", label: "in 90 days" },
+        { value: "365", label: "in a year" },
+        { value: "0", label: "never" },
+      ], hint: "A token that's left lying around stops working on its own." },
     ], async (v) => {
-      made = await webTokenCreate(v.name, v.scope);
+      made = await webTokenCreate(v.name, v.scope, Number(v.days) || null);
       return true;
     }, { okLabel: "Create" });
     if (made) {
