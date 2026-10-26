@@ -609,3 +609,20 @@ button.danger { color: var(--bad); }
 .chip.group::before { content: "● "; color: var(--accent, #2b6cb0); }
 /* the device table's last column can sit under the scroll bar */
 #clients table.grid td:last-child, #clients table.grid th:last-child { padding-right: 16px; }
+
+/* Advanced: the page list becomes a row of icons, leaving room for the tools */
+[data-ui="modern"] #app[data-view="windows"] #view-switch { flex-direction: row; flex-wrap: wrap; gap: 2px; padding: 8px 10px 2px; }
+[data-ui="modern"] #app[data-view="windows"] #view-switch button { padding: 7px; flex: 0 0 auto; }
+[data-ui="modern"] #app[data-view="windows"] #view-switch .nav-text { display: none; }
+/* tool picker on the empty workspace */
+#launcher { position: absolute; inset: 0; overflow: auto; padding: 18px 20px 24px; display: none; }
+#workspace:not(:has(.mdi-win)) #launcher { display: block; }
+#workspace:not(:has(.mdi-win))::before { content: none; }
+#app:not(.connected) #launcher { opacity: 0.55; }
+#launcher > .hint { margin-bottom: 12px; }
+.launch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; align-items: start; }
+.launch-group { background: var(--card, var(--white)); border: 1px solid var(--border); border-radius: var(--radius, 0); padding: 10px 12px; }
+.launch-group h3 { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.launch-items { display: flex; flex-direction: column; gap: 2px; }
+.launch-item { text-align: left; border: none; background: transparent; padding: 5px 8px; border-radius: 6px; cursor: pointer; color: var(--text); }
+.launch-item:hover { background: var(--select); }

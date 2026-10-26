@@ -121,19 +121,40 @@ function renderMenu() {
       setStatus(errorText(e), true);
     }
   };
+  const groups = [];
   for (const item of MENU) {
     if (item.children) {
       const subs = item.children.map((c) => h("div.menu-sub", { hidden: true, on: { click: guard(c.open) } }, c.label));
       const head = h("div.menu-item.group", item.label);
+      groups.push({ head, subs });
       head.addEventListener("click", () => {
-        const open = head.classList.toggle("open");
-        subs.forEach((s) => (s.hidden = !open));
+        const open = !head.classList.contains("open");
+        // one group open at a time keeps the list short
+        for (const g of groups) {
+          g.head.classList.toggle("open", g.head === head && open);
+          g.subs.forEach((x) => (x.hidden = !(g.head === head && open)));
+        }
       });
       nav.append(head, ...subs);
     } else {
       nav.append(h("div.menu-item", { on: { click: guard(item.open) } }, item.label));
     }
   }
+  renderLauncher(guard);
+}
+
+/** The empty Advanced workspace: every tool on one screen, grouped. */
+function renderLauncher(guard) {
+  const ws = document.getElementById("workspace");
+  ws.querySelector("#launcher")?.remove();
+  const loose = MENU.filter((m) => !m.children);
+  const card = (title, items) => h("section.launch-group", h("h3", title),
+    h("div.launch-items", items.map((c) => h("button.launch-item", { on: { click: guard(c.open) } }, c.label))));
+  ws.prepend(h("div#launcher",
+    h("div.hint", "Pick a tool. Its window opens here; you can open several and arrange them. The same tools are in the list on the left."),
+    h("div.launch-grid",
+      card("General", loose),
+      ...MENU.filter((m) => m.children).map((m) => card(m.label, m.children)))));
 }
 
 async function toggleConnect() {
