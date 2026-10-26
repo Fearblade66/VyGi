@@ -32,16 +32,26 @@ export function initSearch(tools) {
     if (s.info?.profileId !== cache.router) cache = { at: 0, router: null, cfg: null, clients: null, wan: "" };
   });
 
+  const fresh = () => cache.cfg && cache.router === session.info?.profileId && Date.now() - cache.at < CACHE_MS;
+  let loading = null; // one load shared by every keystroke typed while it runs
+
   async function data() {
     if (!isConnected()) return null;
-    if (cache.cfg && cache.router === session.info.profileId && Date.now() - cache.at < CACHE_MS) return cache;
+    if (fresh()) return cache;
+    loading ??= load().finally(() => (loading = null));
+    return loading;
+  }
+
+  async function load() {
+    const router = session.info.profileId;
     const [cfg, routes, clients] = await Promise.all([
       api.getConfig([]).catch(() => ({})),
       api.routes(4, "default").catch(() => []),
       cache.clients && cache.router === session.info.profileId ? cache.clients : collectClients().then((r) => r.clients).catch(() => []),
     ]);
+    if (session.info?.profileId !== router) return null; // switched router meanwhile
     const def = routes.find((r) => r.dst === "default");
-    cache = { at: Date.now(), router: session.info.profileId, cfg: cfg || {}, clients, wan: def?.dev || (def?.nexthops || [])[0]?.dev || "" };
+    cache = { at: Date.now(), router, cfg: cfg || {}, clients, wan: def?.dev || (def?.nexthops || [])[0]?.dev || "" };
     return cache;
   }
 
@@ -118,7 +128,7 @@ export function initSearch(tools) {
     return out;
   }
 
-  function show(list) {
+  function show(list, searching = false) {
     // best groups first, a few results per group
     const groups = new Map();
     for (const r of list.sort((a, b) => b.sc - a.sc)) {
@@ -134,7 +144,7 @@ export function initSearch(tools) {
     }
     box.hidden = false;
     if (!results.length) {
-      box.append(h("div.search-empty", isConnected() ? "Nothing found." : "Nothing found. Connect to a router to search devices and settings."));
+      box.append(h("div.search-empty", searching ? "Searching devices and settings…" : isConnected() ? "Nothing found." : "Nothing found. Connect to a router to search devices and settings."));
       return;
     }
     let i = 0;
@@ -170,7 +180,7 @@ export function initSearch(tools) {
     const q = input.value.trim().toLowerCase();
     if (!q) return show([]);
     const quick = staticResults(q);
-    show(quick); // pages and tools right away; devices and settings when loaded
+    show(quick, isConnected() && !fresh()); // pages and tools right away; devices and settings when loaded
     const d = await data().catch(() => null);
     if (mine !== seq || !d) return;
     show([...quick, ...liveResults(q, d)]);

@@ -101,7 +101,7 @@ impl VyosApi {
         self.post_with_timeout(endpoint, body, None).await
     }
 
-    /// Reads (`/retrieve`, `/show`) are retried when the router answers HTTP
+    /// Reads (`/retrieve`, `/show`) are retried (up to about 11 s) when the router answers HTTP
     /// 500 "An internal error occurred": VyOS gives that for a few seconds
     /// while a commit or save is rewriting the config. Changes are never retried.
     async fn post_with_timeout(
@@ -114,7 +114,7 @@ impl VyosApi {
         let mut attempt = 0u64;
         loop {
             match self.post_once(endpoint, body.clone(), timeout).await {
-                Err(AppError::Api(m)) if read_only && attempt < 5 && m.starts_with(TRANSIENT) => {
+                Err(AppError::Api(m)) if read_only && attempt < 7 && m.starts_with(TRANSIENT) => {
                     attempt += 1;
                     tokio::time::sleep(Duration::from_millis(400 * attempt)).await;
                 }
