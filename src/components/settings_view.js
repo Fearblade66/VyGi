@@ -11,6 +11,7 @@ import { registerView, welcome, loadingPage } from "../lib/views.js";
 import { toArray } from "../lib/vyos.js";
 import { isDesktop, webSessions, webSessionEnd } from "../lib/platform.js";
 import { openActivityLog } from "./activity.js";
+import { openClaudeSetup } from "./claude_setup.js";
 import { wanInfo, wanProblem } from "../lib/wan.js";
 import { protectStatus, protectOn, protectOff, smoothStatus, smoothOn, smoothOff, smoothBandwidth, adblockStatus, BLOCKLISTS } from "../lib/switches.js";
 import { failoverStatus, failoverLines, failoverOn, failoverOff, backupCandidates, parseLbStatus } from "../lib/failover.js";
@@ -352,6 +353,7 @@ export function initSettings() {
     const menu = (id) => () => document.getElementById(id).click();
     return section("VyGi access",
       row("Activity log", "Logins, API tokens (Claude), and every change made to a router, with who, when and from which address.", button("Open…", openActivityLog)),
+      row("Claude", "Let Claude (Claude Code or Claude Desktop) check and change your routers for you. A guided setup: one file to run on your computer.", button("Connect Claude…", openClaudeSetup, true)),
       row("API tokens", "Keys that let Claude or scripts use VyGi. Each can expire and be revoked; you get an alert when one is created.", button("Manage…", menu("web-api"))),
       row("Web password", "Logins lock for a while after repeated wrong passwords. You get an alert on a lockout and on a login from a new address (with 24/7 watching and alerts set up).", button("Change…", menu("web-password"))),
       row("Logged-in browsers", "", null, browsers));

@@ -649,3 +649,7 @@ table.grid th { position: sticky; }
 .col-grip { position: absolute; top: 0; right: 0; width: 6px; height: 100%; cursor: col-resize; touch-action: none; }
 .col-grip:hover, .col-resizing .col-grip:hover { background: var(--accent, #3b82f6); opacity: 0.4; }
 .col-resizing, .col-resizing * { cursor: col-resize !important; user-select: none !important; }
+
+/* Connect Claude wizard */
+.claude-steps ol { margin: 0 0 10px; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; }
+code.copy-line { display: block; margin: 4px 0; padding: 6px 8px; font-family: var(--mono, ui-monospace, monospace); font-size: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; user-select: all; word-break: break-all; }

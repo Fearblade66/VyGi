@@ -3,6 +3,7 @@
 import { h, clear, setStatus } from "../lib/dom.js";
 import { modal, formDialog, confirmBox, alertBox } from "../lib/dialog.js";
 import { webTokens, webTokenCreate, webTokenRevoke } from "../lib/platform.js";
+import { openClaudeSetup } from "./claude_setup.js";
 
 const when = (ms) => (ms ? new Date(ms).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "never");
 
@@ -21,7 +22,7 @@ function copyBox(text) {
 }
 
 /** Shows a new token once, with ready-to-paste setup for Claude. */
-async function showNewToken(info, secret) {
+export async function showNewToken(info, secret) {
   const url = `${location.origin}/mcp`;
   const claudeCode = `claude mcp add --transport http vygi ${url} --header "Authorization: Bearer ${secret}"`;
   const desktop = JSON.stringify({ mcpServers: { vygi: { command: "npx", args: ["-y", "mcp-remote", url, "--header", `Authorization: Bearer ${secret}`] } } }, null, 2);
@@ -102,7 +103,9 @@ export async function openApiAccess() {
   await modal("API access", h("div", { style: { width: "640px" } },
     h("div.hint", { style: { marginBottom: "8px" } }, "Tokens let Claude (through MCP) or your own programs use VyGi. Keep VyGi inside your home network: tokens give the same control as your login, except over the routers' logins, their API and Safe Mode."),
     list,
-    h("div", { style: { marginTop: "10px" } }, h("button.primary", { on: { click: create } }, "New token"))),
+    h("div", { style: { marginTop: "10px", display: "flex", gap: "8px" } },
+      h("button.primary", { on: { click: () => openClaudeSetup().then(load) } }, "Connect Claude…"),
+      h("button", { on: { click: create } }, "New token (scripts, manual setup)"))),
   [{ label: "Close", value: "ok", primary: true }]);
   setStatus("");
 }

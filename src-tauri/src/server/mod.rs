@@ -170,6 +170,7 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         .route("/api/sessions", get(sessions_list))
         .route("/api/sessions/{id}/end", post(session_end))
         .route("/api/cert", get(cert))
+        .route("/api/cert/names", get(cert_names))
         .route("/mcp", post(mcp_post).get(mcp_get).delete(mcp_get))
         .fallback_service(ServeDir::new(&cfg.web).fallback(ServeFile::new(index)))
         .layer(axum::middleware::map_response(security_headers))
@@ -762,6 +763,18 @@ async fn token_revoke(
     }
 }
 
+/// Which names VyGi's own certificate covers (the Claude setup checks the
+/// address it will use). Empty when the certificate is your own.
+async fn cert_names(State(s): State<Arc<Server>>) -> Response {
+    let names: Vec<String> = s
+        .cert_path
+        .as_ref()
+        .and_then(|p| std::fs::read_to_string(p.with_file_name("made-by-vygi-for.txt")).ok())
+        .map(|m| m.trim().split(',').map(str::to_string).collect())
+        .unwrap_or_default();
+    Json(json!({ "tls": s.cert_path.is_some(), "names": names })).into_response()
+}
+
 /// The server's (public) certificate, so MCP clients can be told to trust it.
 async fn cert(State(s): State<Arc<Server>>) -> Response {
     match s.cert_path.as_ref().and_then(|p| std::fs::read(p).ok()) {
@@ -798,8 +811,9 @@ async fn mcp_post(
     let bearer = headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(str::trim);
+        // "Bearer vygi_…", or the bare token (no space: easier to pass to
+        // mcp-remote through Claude's settings on every platform)
+        .map(|v| v.strip_prefix("Bearer ").unwrap_or(v).trim());
     let ip = s.client_ip(addr, &headers);
     let Some(token) = bearer.and_then(|t| s.tokens.check(t, watch::now_ms())) else {
         s.log(
