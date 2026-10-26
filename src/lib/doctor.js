@@ -10,6 +10,7 @@
 import { toArray, flattenInterfaces, parseIpv4Cidr, ipv4InCidr } from "./vyos.js";
 import { securityFindings } from "./secure.js";
 import { readPolicies, policyCommands, misplacedPolicies } from "./policies.js";
+import { readMdns, mdnsCommands, mdnsGaps } from "./mdns.js";
 
 const PRIVATE = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"];
 const isPrivate = (ip) => PRIVATE.some((c) => ipv4InCidr(ip, c));
@@ -294,6 +295,12 @@ export function diagnose(cfg, env = {}) {
   const late = misplacedPolicies(cfg);
   if (late.length) {
     add({ id: "policy-order", level: "bad", title: "A network policy comes too late", text: `The policy ${late.map((n) => `"${n}"`).join(", ")} runs after an isolation or Traffic Rule, so its exception has no effect. The fix moves VyGi's network policies back in front.`, fix: policyCommands(cfg, readPolicies(cfg)) });
+  }
+
+  // ---- device discovery (mDNS) into an isolated network needs its exception
+  const gaps = mdnsGaps(cfg);
+  if (gaps.length) {
+    add({ id: "mdns-gap", title: "Device discovery can't reach an isolated network", text: `mDNS is repeated to ${gaps.join(", ")}, but that network is isolated and has no exception for it (it's removed when the network is edited), so its devices (Chromecast, AirPlay, printers) can't be found from the other networks.`, fix: mdnsCommands(cfg, readMdns(cfg).ifaces) });
   }
 
   // ---- features that don't mix

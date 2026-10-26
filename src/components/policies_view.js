@@ -9,6 +9,7 @@ import { icon } from "../lib/icons.js";
 import { readGroups } from "../lib/devgroups.js";
 import { readPolicies, policyCommands, checkPolicy, nextPolicyId, reach, describePorts } from "../lib/policies.js";
 import { deviceList } from "./groups.js";
+import { readMdns, mdnsCommands } from "../lib/mdns.js";
 
 const PROTOCOLS = [
   { value: "any", label: "Everything" },
@@ -138,3 +139,37 @@ function move(list, i, d) {
   [out[i], out[i + d]] = [out[i + d], out[i]];
   return out;
 }
+
+/** Device discovery across networks (mDNS repeater). */
+export function mdnsSection(st, nets, onChange) {
+  const m = readMdns(st.cfg);
+  const name = (i) => nets.find((n) => n.iface === i)?.name || i;
+  const opt = (n) => `${n.name} (${n.iface})`;
+  async function choose() {
+    let cmds = null;
+    await formDialog("Device discovery across networks", [
+      { name: "nets", label: "Networks", type: "multicheck", value: nets.filter((n) => m.ifaces.includes(n.iface)).map(opt), options: nets.map(opt), hint: "Choose two or more, or none to turn it off." },
+    ], (v) => {
+      cmds = mdnsCommands(st.cfg, nets.filter((n) => v.nets.includes(opt(n))).map((n) => n.iface));
+      return true;
+    }, { okLabel: "Apply", intro: "Phones and computers find Chromecasts, AirPlay speakers, printers and smart-home hubs by mDNS, which normally stays inside one network. The router repeats it between the networks you choose. An isolated network also gets an exception so its devices can announce themselves to the router." });
+    if (!cmds) return;
+    try {
+      if (cmds.length) await applyChanges(cmds, "device discovery across networks");
+    } catch (e) {
+      if (!/^Cancelled/.test(e?.message || "")) alertBox("Device discovery", errorText(e));
+    }
+    onChange();
+  }
+  const isolated = nets.filter((n) => m.ifaces.includes(n.iface) && n.isolated);
+  return h("section.card.policy-section",
+    h("div.vpn-head",
+      h("span.net-icon", icon("wifi", 18)),
+      h("div.grow",
+        h("div.net-name", "Device discovery across networks (mDNS)"),
+        h("div.hint", m.on ? `On between ${m.ifaces.map(name).join(", ")}.` : "Off: Chromecast, AirPlay and printers are only found from their own network.",
+          isolated.length ? ` To cast or print from another network to ${isolated.map((n) => n.name).join(", ")} (isolated), also add a policy above that allows it.` : "")),
+      m.manual ? h("span.badge", { title: "Set up with options VyGi doesn't manage: change it in Advanced → Services (config)." }, "set up by hand")
+        : h("button", { on: { click: choose } }, m.on ? "Change…" : "Turn on…")));
+}
+
