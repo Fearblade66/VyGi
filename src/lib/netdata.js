@@ -32,7 +32,7 @@ export function networksFromConfig(ifaces) {
  * Pure merge (testable without a router). Inputs are the raw API results.
  * Returns clients sorted online-first, then by name/IP.
  */
-export function mergeClients({ neighbors = [], leases = [], dhcpConfig = {}, hosts = {}, wgDump = "", wgConfig = {}, flows = [], ifaces = {}, blocked = [] }) {
+export function mergeClients({ neighbors = [], leases = [], dhcpConfig = {}, hosts = {}, wgDump = "", wgConfig = {}, flows = [], ifaces = {}, blocked = [], wan = "" }) {
   const nets = networksFromConfig(ifaces);
   const netOf = (ip) => nets.find((n) => ipv4InCidr(ip, n.cidr));
   const byKey = new Map(); // mac (or ip for VPN) -> client
@@ -61,6 +61,7 @@ export function mergeClients({ neighbors = [], leases = [], dhcpConfig = {}, hos
 
   for (const n of neighbors) {
     if (!n.lladdr) continue;
+    if (wan && n.dev === wan) continue; // the provider's side (its gateway / modem) isn't one of your devices
     const st = toArray(n.state).join(",");
     if (/FAILED|INCOMPLETE/.test(st)) continue;
     const c = get(n.lladdr.toLowerCase(), { mac: n.lladdr.toLowerCase() });
@@ -144,7 +145,7 @@ export function lanTester(networks) {
 /** Fetches everything and merges. Failures of optional sources are ignored. */
 export async function collectClients() {
   const safe = (p, fallback) => p.catch(() => fallback);
-  const [neighbors, leases, dhcpConfig, hosts, wgDump, ifaces, flows, groups] = await Promise.all([
+  const [neighbors, leases, dhcpConfig, hosts, wgDump, ifaces, flows, groups, routes] = await Promise.all([
     safe(api.neighbors(), []),
     safe(api.dhcpLeases(4), []),
     safe(api.getConfig(["service", "dhcp-server"]), {}),
@@ -153,9 +154,12 @@ export async function collectClients() {
     safe(api.getConfig(["interfaces"]), {}),
     safe(api.connections(), []),
     safe(api.getConfig(["firewall", "group", "mac-group", BLOCK_GROUP]), {}),
+    safe(api.routes(4, "default"), []),
   ]);
+  const def = routes.find((r) => r.dst === "default");
+  const wan = def?.dev || (def?.nexthops || [])[0]?.dev || "";
   const clients = mergeClients({
-    neighbors, leases: Array.isArray(leases) ? leases : [], dhcpConfig, hosts, wgDump, wgConfig: ifaces?.wireguard || {}, flows, ifaces, blocked: toArray(groups?.["mac-address"]),
+    neighbors, leases: Array.isArray(leases) ? leases : [], dhcpConfig, hosts, wgDump, wgConfig: ifaces?.wireguard || {}, flows, ifaces, blocked: toArray(groups?.["mac-address"]), wan,
   });
   const networks = networksFromConfig(ifaces);
   if (samplerKey !== session.info?.profileId) {

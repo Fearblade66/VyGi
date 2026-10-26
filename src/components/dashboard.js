@@ -151,7 +151,7 @@ export function initDashboard() {
       h("h2", i?.hostname || "Router"),
       h("span.hint", `VyOS ${i?.version ?? ""}`),
       h("span.hint", i?.profile?.host ?? ""),
-      state.load ? h("span.pill.muted", `up ${fmtUptime(state.load.uptimeSecs)}`) : null,
+      state.load ? h("span.pill.muted", `up ${fmtUptime(state.load.uptimeSecs)}`) : "", // append() would print null
     );
   }
 

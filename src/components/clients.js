@@ -97,10 +97,10 @@ export function initClients() {
     [
       { key: "statusDot", label: "", width: "26px", render: (c) => h(`span.dot${c.online ? ".on" : ""}`, { title: c.online ? "online" : "offline" }) },
       { key: "label", label: "Name", render: (c) => h("div", h("div.client-name", c.label), h("div.client-sub", c.mac || (c.kind === "vpn" ? "WireGuard peer" : ""))) },
-      { key: "ip", label: "IP Address", width: "130px" },
-      { key: "network", label: "Network", width: "100px", render: (c) => c.network || c.iface || "" },
+      { key: "ip", label: "IP Address", width: "112px" },
+      { key: "network", label: "Network", width: "84px", render: (c) => c.network || c.iface || "" },
       { key: "kind", label: "Connection", width: "100px", render: (c) => (c.kind === "vpn" ? "VPN" : "Wired / LAN") },
-      { key: "tags", label: "", width: "170px", render: (c) => h("span", c.blocked ? h("span.tag.bad", "blocked") : null, ...groupsOf(groups, c.mac || "").map((g) => h("span.tag.group", g.name)), c.fixedIp ? h("span.tag", "fixed IP") : null, c.privateMac ? h("span.tag", "private MAC") : null, c.source.includes("dhcp") ? h("span.tag", "DHCP") : null) },
+      { key: "tags", label: "", width: "150px", render: (c) => h("span", c.blocked ? h("span.tag.bad", "blocked") : null, ...groupsOf(groups, c.mac || "").map((g) => h("span.tag.group", g.name)), c.fixedIp ? h("span.tag", "fixed IP") : null, c.privateMac ? h("span.tag", "private MAC") : null, c.source.includes("dhcp") ? h("span.tag", "DHCP") : null) },
       { key: "activity", label: "Activity", width: "190px", className: "num", render: activity },
     ],
     {
@@ -180,8 +180,8 @@ export function initClients() {
         ...row("Neighbor state", c.state),
         ...row("Known from", c.source.join(", ")),
         ...row("MAC type", c.privateMac ? "private (randomized)" : c.mac ? "hardware" : "")),
-      c.privateMac ? h("div.hint", "This device uses a private MAC address. Phones may change it per network or over time, which breaks fixed IPs and blocking.") : null,
-      c.ip && c.down != null ? h("div", h("h3", { style: { margin: "14px 0 4px" } }, "Sites"), sitesBox) : null,
+      c.privateMac ? h("div.hint", "This device uses a private MAC address. Phones may change it per network or over time, which breaks fixed IPs and blocking.") : "", // append() would print null
+      c.ip && c.down != null ? h("div", h("h3", { style: { margin: "14px 0 4px" } }, "Sites"), sitesBox) : "",
       h("div.actions",
         c.ip ? h("button", { on: { click: () => rename(c) } }, "Rename") : null,
         c.mac && c.iface && c.kind !== "vpn" && !c.online ? h("button", { title: "Send a Wake-on-LAN packet (the device must have Wake-on-LAN turned on)", on: { click: () => wake(c) } }, "Wake up") : null,
@@ -308,6 +308,8 @@ export function initClients() {
   async function enableAccounting() {
     try {
       await applyChanges([{ op: "set", path: ["system", "sysctl", "parameter", "net.netfilter.nf_conntrack_acct", "value"], value: "1" }], "turn on per-connection traffic counting");
+      // also live: when the setting was already there (the router lost it after a restart) the commit changes nothing
+      await api.accountingSync();
       setStatus("Traffic counting is on. Speeds appear for connections opened from now on.");
       load();
     } catch (e) {

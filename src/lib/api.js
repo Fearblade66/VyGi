@@ -66,6 +66,7 @@ export const api = {
   imageList: () => invoke("image_list"),
   imageAdd: (url) => invoke("image_add", { url }),
   updateCheck: () => invoke("update_check"),
+  accountingSync: () => invoke("accounting_sync"),
   imageSetDefault: (name) => invoke("image_set_default", { name }),
   imageDelete: (name) => invoke("image_delete", { name }),
   power: (action) => invoke("power", { action }),

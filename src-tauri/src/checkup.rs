@@ -284,6 +284,41 @@ async fn take_snapshot(
     Ok((saved, dir, count, changes, boot))
 }
 
+const ACCT: &str = "net.netfilter.nf_conntrack_acct";
+
+/// Per-connection traffic counting (Clients' speeds) is a sysctl. VyOS can
+/// lose the live value after a restart while the config still says 1, so
+/// this applies the configured value when they differ. Returns whether it
+/// had to (true) or not (false).
+pub async fn sync_accounting(conn: &Connection) -> AppResult<bool> {
+    let want = conn
+        .api
+        .return_value(&path(&["system", "sysctl", "parameter", ACCT, "value"]))
+        .await
+        .ok()
+        .flatten();
+    if want.as_deref() != Some("1") {
+        return Ok(false);
+    }
+    let live = conn
+        .ssh
+        .exec_ok(&format!("/usr/sbin/sysctl -n {ACCT}"))
+        .await?;
+    if live.trim() == "1" {
+        return Ok(false);
+    }
+    conn.ssh
+        .exec_ok(&format!("sudo -n /usr/sbin/sysctl -w {ACCT}=1"))
+        .await?;
+    Ok(true)
+}
+
+/// Applies traffic counting now (after the config was set).
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn accounting_sync(state: Win) -> AppResult<bool> {
+    sync_accounting(&*state.conn().await?).await
+}
+
 /// Saves a backup snapshot when the config changed since the last one (24/7 watching).
 /// Returns whether a new snapshot was written.
 pub async fn backup_if_changed(dirs: &Dirs, conn: &Connection) -> AppResult<bool> {
@@ -313,6 +348,10 @@ pub async fn connect_checkup(app: St, state: Win) -> AppResult<Checkup> {
     };
     if let Some(u) = unsaved {
         state.tx.lock().await.unsaved = u;
+    }
+
+    if let Err(e) = sync_accounting(&conn).await {
+        problems.push(format!("traffic counting: {e}"));
     }
 
     let health = match conn.ssh.exec(HEALTH_SCRIPT, Duration::from_secs(20)).await {

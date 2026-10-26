@@ -607,3 +607,5 @@ button.danger { color: var(--bad); }
 }
 .tag.group { background: color-mix(in srgb, var(--accent, #2b6cb0) 14%, transparent); border-color: color-mix(in srgb, var(--accent, #2b6cb0) 40%, transparent); }
 .chip.group::before { content: "● "; color: var(--accent, #2b6cb0); }
+/* the device table's last column can sit under the scroll bar */
+#clients table.grid td:last-child, #clients table.grid th:last-child { padding-right: 16px; }

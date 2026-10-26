@@ -9,6 +9,19 @@ It talks to the router in two ways:
 
 Targets current VyOS (1.5 / rolling). The API calls were checked against `vyos-1x/src/services/api/rest/routers.py`.
 
+![Dashboard](docs/screenshots/dashboard.png)
+
+| | |
+|---|---|
+| ![Clients: devices with live speeds, groups and a detail panel](docs/screenshots/clients.png) | ![Traffic Rules: bedtime and site blocks for a device group](docs/screenshots/traffic-rules.png) |
+| **Clients**: every device, live speeds, groups, fixed IPs | **Traffic Rules**: block the internet or sites, on a schedule |
+| ![Networks: Home, IoT and Office networks with DHCP](docs/screenshots/networks.png) | ![Settings: health check, firewall and ad blocking](docs/screenshots/settings.png) |
+| **Networks**: VLANs, ports and bridges, DHCP and isolation | **Settings**: Internet, Security and System, UniFi-style |
+| ![Advanced: Winbox-style windows for every VyOS feature](docs/screenshots/advanced.png) | ![Dashboard in the dark theme](docs/screenshots/dashboard-dark.png) |
+| **Advanced**: Winbox-style windows for everything else | Light, dark and Classic (Winbox gray) themes |
+
+Screenshots: the web version against a VyOS test router (rolling, in a container) with a few simulated devices.
+
 ## Two ways to work
 
 - **Pages** (UniFi-style), in the sidebar:

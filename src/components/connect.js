@@ -5,7 +5,7 @@ import { h, clear, setStatus } from "../lib/dom.js";
 import { modal, confirmBox, alertBox } from "../lib/dialog.js";
 import { setConnected, refreshTx } from "../lib/session.js";
 import { runCheckup } from "./checkup.js";
-import { showView, savedView } from "../lib/views.js";
+import { showView, savedView, currentView } from "../lib/views.js";
 
 export async function showConnectDialog() {
   const routers = await api.listRouters().catch(() => []);
@@ -154,7 +154,8 @@ export async function showConnectDialog() {
   if (!connected) return;
   if (connected.revertAction !== "reload") await warnRevertAction();
   const shown = await runCheckup();
-  if (!shown) showView(savedView());
+  // the check-up can take a while: don't reload the page the user is already on
+  if (!shown && currentView() !== savedView()) showView(savedView());
 }
 
 /** Asks the user about an unknown or changed fingerprint. Returns true if accepted. */

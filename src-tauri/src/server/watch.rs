@@ -375,6 +375,7 @@ async fn upkeep(
     saved: &mut Saved,
 ) {
     let Ok(conn) = ws.conn().await else { return };
+    let _ = checkup::sync_accounting(&conn).await;
     let now = now_ms();
     if now.saturating_sub(saved.last_backup) > BACKUP_EVERY
         && checkup::backup_if_changed(&app.dirs, &conn).await.is_ok()

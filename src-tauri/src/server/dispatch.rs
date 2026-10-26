@@ -129,6 +129,7 @@ pub async fn call(
         ),
 
         "connect_checkup" => json(checkup::connect_checkup(st(), w()).await),
+        "accounting_sync" => json(checkup::accounting_sync(w()).await),
         "history_list" => json(checkup::history_list(st(), w()).await),
         "history_diff" => json(checkup::history_diff(st(), w(), arg(&a, "id")?).await),
         "history_restore" => json(

@@ -91,6 +91,7 @@ pub fn run() {
             sysinfo::processes,
             sysinfo::image_list,
             updates::update_check,
+            checkup::accounting_sync,
             sysinfo::image_add,
             sysinfo::image_set_default,
             sysinfo::image_delete,
