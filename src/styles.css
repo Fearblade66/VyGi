@@ -759,3 +759,4 @@ table.grid th.sorted.desc::after { content: " ▼"; }
 .topo-dev-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .topo-elsewhere { margin-top: 16px; }
 .topo-note { margin: -6px 0 12px; }
+.ids-alerts { max-height: 360px; border: 1px solid var(--border); border-radius: 6px; margin-top: 6px; }

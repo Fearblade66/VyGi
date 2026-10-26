@@ -11,6 +11,7 @@ import { registerView, welcome, loadingPage } from "../lib/views.js";
 import { toArray } from "../lib/vyos.js";
 import { isDesktop, webSessions, webSessionEnd } from "../lib/platform.js";
 import { openActivityLog } from "./activity.js";
+import { idsSection } from "./ids_view.js";
 import { openClaudeSetup } from "./claude_setup.js";
 import { wanInfo, wanProblem } from "../lib/wan.js";
 import { readInternet, internetCommands, describeInternet, PD_LENGTHS } from "../lib/wanconf.js";
@@ -363,6 +364,7 @@ export function initSettings() {
           ? `No traffic to or from: ${countries.slice(0, 8).map((c) => `${flagEmoji(c)} ${countryName(c.toUpperCase())}`).join(", ")}${countries.length > 8 ? ", …" : ""}`
           : "Block all traffic to and from chosen countries, for every device and the router.",
         h("span.set-inline", value(countries.length ? `${countries.length} blocked` : "off"), button("Choose countries…", () => editRegions(cfg, render))))),
+      section("Intrusion detection (IDS)", idsSection(st, render)),
       section("Ad and tracker blocking", adblock),
       isDesktop ? null : accessSection(),
     ].filter(Boolean);

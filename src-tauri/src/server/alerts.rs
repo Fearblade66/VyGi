@@ -12,7 +12,8 @@ const VPN_FRESH_SECS: u64 = 180;
 
 /// Which kinds are on unless the user changed them.
 pub fn default_on(kind: &str) -> bool {
-    kind != "vpn"
+    // "ids-block" isn't an alert: it's the opt-in automatic blocking of attackers
+    kind != "vpn" && kind != "ids-block"
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]

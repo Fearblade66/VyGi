@@ -20,7 +20,8 @@ use super::history::{DeviceTotal, FlowRec, LogLine, Saved, Store};
 use crate::error::{AppError, AppResult};
 use crate::ssh::StreamEvent;
 use crate::state::{AppState, Out, St, Win, WindowState};
-use crate::{checkup, connection, monitor, sysinfo, transactions, updates};
+use crate::vyos_api::ConfigCommand;
+use crate::{checkup, connection, ids, monitor, sysinfo, transactions, updates};
 
 const CHECK_EVERY: Duration = Duration::from_secs(60);
 const BACKUP_EVERY: u64 = 6 * 3600 * 1000;
@@ -332,6 +333,17 @@ impl Watcher {
                     lock(&status).error = Some(format!("Couldn't send a notification: {e}"));
                 }
                 record_traffic(&ws, &store, &mut ctx, snap.devices.as_deref()).await;
+                let ids_found: Vec<Alert> = watch_ids(&ws, &rw, &mut saved)
+                    .await
+                    .into_iter()
+                    .filter(|a| rw.on(&a.kind))
+                    .collect();
+                if !ids_found.is_empty() {
+                    store.add_alerts(&ids_found);
+                    if let Err(e) = self.notify(&name, &ids_found).await {
+                        lock(&status).error = Some(format!("Couldn't send a notification: {e}"));
+                    }
+                }
                 upkeep(&self.app, &ws, &rw, &store, &mut saved).await;
                 saved.cursor = lock(&cursor).clone();
                 store.save(&saved);
@@ -661,6 +673,122 @@ async fn snapshot(ws: &Arc<WindowState>, rw: &RouterWatch) -> Snapshot {
     s
 }
 
+/// The address group VyGi's automatic attacker blocks go into (the
+/// Intrusion detection settings create the rules that drop it).
+pub const IDS_BLOCK_GROUP: &str = "VYGI-IDS-BLOCK";
+const IDS_BLOCK_MS: u64 = 24 * 3600 * 1000;
+
+/// Intrusion detection: new serious alerts (priority 1-2) as alerts, grouped
+/// by attack and source; with automatic blocking on, internet addresses
+/// behind a priority-1 attack are blocked for 24 hours. Expired blocks go.
+async fn watch_ids(ws: &WindowState, rw: &RouterWatch, saved: &mut Saved) -> Vec<Alert> {
+    let Ok(conn) = ws.conn().await else {
+        return Vec::new();
+    };
+    let Ok(Some((list, offset))) = ids::new_alerts(&conn, saved.ids_offset).await else {
+        return Vec::new();
+    };
+    saved.ids_offset = offset;
+    let before = saved.ids_blocked.clone();
+    let (alerts, cmds) = ids_decide(&list, &mut saved.ids_blocked, rw.on("ids-block"), now_ms());
+    // on its own (not Safe Mode): a short-lived block; if a change is waiting for Confirm, try again next time
+    if !cmds.is_empty() && conn.api.configure(&cmds, 0).await.is_err() {
+        saved.ids_blocked = before;
+    }
+    alerts
+}
+
+/// What to do with new IDS alerts: alerts for priority 1-2 (grouped by attack
+/// and source), and with `auto_block` the commands that block internet
+/// addresses behind a priority-1 attack for 24 hours and unblock expired ones.
+/// `blocked` is updated as if the commands succeed.
+fn ids_decide(
+    list: &[ids::IdsAlert],
+    blocked: &mut Vec<(String, u64)>,
+    auto_block: bool,
+    now: u64,
+) -> (Vec<Alert>, Vec<ConfigCommand>) {
+    let mut cmds = Vec::new();
+    let path = |ip: &str| {
+        vec![
+            "firewall".to_string(),
+            "group".into(),
+            "address-group".into(),
+            IDS_BLOCK_GROUP.into(),
+            "address".into(),
+            ip.to_string(),
+        ]
+    };
+    blocked.retain(|(ip, until)| {
+        let keep = *until > now;
+        if !keep {
+            cmds.push(ConfigCommand {
+                op: "delete".into(),
+                path: path(ip),
+                value: None,
+            });
+        }
+        keep
+    });
+    let mut grouped: Vec<(&ids::IdsAlert, u32)> = Vec::new();
+    for a in list.iter().filter(|a| a.priority <= 2) {
+        match grouped
+            .iter_mut()
+            .find(|(g, _)| g.sid == a.sid && g.src == a.src)
+        {
+            Some((_, n)) => *n += 1,
+            None => grouped.push((a, 1)),
+        }
+    }
+    let mut out = Vec::new();
+    for (a, n) in grouped {
+        let public = a.src.parse::<Ipv4Addr>().is_ok_and(|ip| {
+            !(ip.is_private()
+                || ip.is_loopback()
+                || ip.is_link_local()
+                || (ip.octets()[0] == 100 && (ip.octets()[1] & 0xc0) == 64) // carrier-grade NAT
+                || ip.is_unspecified())
+        });
+        let mut now_blocked = false;
+        if auto_block && a.priority == 1 && public && !blocked.iter().any(|(ip, _)| *ip == a.src) {
+            blocked.push((a.src.clone(), now + IDS_BLOCK_MS));
+            cmds.push(ConfigCommand {
+                op: "set".into(),
+                path: path(&a.src),
+                value: None,
+            });
+            now_blocked = true;
+        }
+        out.push(Alert {
+            kind: "ids".into(),
+            text: format!(
+                "Intrusion detection: {} ({}{} → {}:{}){}",
+                a.msg,
+                if n > 1 {
+                    format!("{n}× from ")
+                } else {
+                    "from ".into()
+                },
+                a.src,
+                a.dst,
+                a.dport,
+                if now_blocked {
+                    ". Blocked that address for 24 hours."
+                } else {
+                    ""
+                }
+            ),
+            level: if a.priority == 1 {
+                "bad".into()
+            } else {
+                "warn".into()
+            },
+            at: a.t,
+        });
+    }
+    (out, cmds)
+}
+
 /// Previous counters, to turn totals into per-minute amounts.
 #[derive(Default)]
 struct Counters {
@@ -859,6 +987,54 @@ async fn record_traffic(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn ids_alerts_and_blocking() {
+        let alert = |src: &str, p: u8, sid: &str| ids::IdsAlert {
+            t: 1,
+            sid: sid.into(),
+            msg: "ET X".into(),
+            class: String::new(),
+            priority: p,
+            proto: "tcp".into(),
+            src: src.into(),
+            sport: 1,
+            dst: "203.0.113.5".into(),
+            dport: 22,
+            dropped: false,
+        };
+        let list = [
+            alert("198.51.100.66", 1, "9"),
+            alert("198.51.100.66", 1, "9"),
+            alert("10.20.2.42", 1, "9"),
+            alert("100.64.1.1", 1, "9"),
+            alert("8.8.8.8", 2, "5"),
+            alert("8.8.4.4", 3, "4"),
+        ];
+        let mut blocked = vec![("192.0.2.9".to_string(), 500)];
+        let (alerts, cmds) = ids_decide(&list, &mut blocked, true, 1000);
+        // priority 3 isn't an alert; the same attack from one address is one alert
+        assert_eq!(alerts.len(), 4);
+        assert!(
+            alerts[0].text.contains("2× from 198.51.100.66")
+                && alerts[0].text.ends_with("24 hours.")
+                && alerts[0].level == "bad"
+        );
+        // only the public priority-1 source is blocked; the expired block goes
+        let paths: Vec<String> = cmds
+            .iter()
+            .map(|c| format!("{} {}", c.op, c.path.last().unwrap()))
+            .collect();
+        assert_eq!(paths, ["delete 192.0.2.9", "set 198.51.100.66"]);
+        assert_eq!(
+            blocked,
+            [("198.51.100.66".to_string(), 1000 + 24 * 3600 * 1000)]
+        );
+        // already blocked: not again; automatic blocking off: no commands
+        assert!(ids_decide(&list, &mut blocked, true, 2000).1.is_empty());
+        let mut none = Vec::new();
+        assert!(ids_decide(&list, &mut none, false, 2000).1.is_empty());
+    }
+
     #[test]
     fn connections_tracked_until_they_end() {
         let own: std::collections::HashSet<String> =

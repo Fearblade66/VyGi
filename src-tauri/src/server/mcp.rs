@@ -44,6 +44,7 @@ fn tools() -> Value {
     };
     json!([
         t("list_routers", "Routers saved in VyGi, with whether the server watches them 24/7.", json!({}), &[], true),
+        t("ids_alerts", "Intrusion detection (Suricata on the router, if VyGi set it up): the newest alerts, newest first: time, rule message, priority (1 = most serious .. 4), classification, protocol, source/destination address and port.", json!({ "router": router, "limit": { "type": "integer", "description": "Default 100, at most 1000" } }), &["router"], true),
         t("router_status", "Host name, VyOS version, uptime, CPU load and memory, interfaces with addresses and traffic counters, default route, and whether changes are waiting for confirmation or unsaved.", json!({ "router": router }), &["router"], true),
         t("get_config", "The router's configuration (or part of it) as JSON. Passwords, keys and secrets are redacted.", json!({ "router": router, "path": path }), &["router"], true),
         t("run_show", "Runs a VyOS operational `show` command and returns its text, e.g. [\"interfaces\"], [\"ip\", \"route\"], [\"firewall\"], [\"system\", \"image\"], [\"log\", \"tail\", \"100\"].", json!({ "router": router, "path": { "type": "array", "items": { "type": "string" } } }), &["router", "path"], true),
@@ -336,6 +337,10 @@ async fn call(srv: &Arc<Server>, token: &Token, name: &str, a: &Value) -> AppRes
     let ws = router_conn(srv, token, &router).await?;
     let w = || Win(ws.clone());
     match name {
+        "ids_alerts" => {
+            let limit = n(a, "limit").unwrap_or(100).clamp(1, 1000) as u32;
+            Ok(json!(crate::ids::ids_alerts(w(), limit).await?))
+        }
         "router_status" => {
             let (info, load, stats, routes, tx) = tokio::join!(
                 sysinfo::system_info(w()),

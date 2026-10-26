@@ -66,6 +66,10 @@ pub struct Saved {
     pub last_update_check: u64,
     /// the newest VyOS version already alerted about
     pub update_seen: String,
+    /// how far the intrusion detection alert log was read (bytes)
+    pub ids_offset: u64,
+    /// internet addresses blocked automatically after an attack: (address, until ms)
+    pub ids_blocked: Vec<(String, u64)>,
 }
 
 pub struct Store {

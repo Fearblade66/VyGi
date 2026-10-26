@@ -16,7 +16,7 @@ use super::watch::{now_ms, Notify, RouterWatch, WatchHost, Watcher};
 use crate::error::{AppError, AppResult};
 use crate::state::{AppState, Out, St, Win, WindowState};
 use crate::{
-    backup, checkup, connection, geoip, monitor, siteicons, sysinfo, technitium, torch,
+    backup, checkup, connection, geoip, ids, monitor, siteicons, sysinfo, technitium, torch,
     transactions, updates, wireguard,
 };
 
@@ -132,6 +132,12 @@ pub async fn call(
         "accounting_sync" => json(checkup::accounting_sync(w()).await),
         "client_address" => json(checkup::client_address(w()).await),
         "port_info" => json(monitor::port_info(w()).await),
+        "ids_prepare" => json(ids::ids_prepare(w()).await),
+        "ids_status" => json(ids::ids_status(w()).await),
+        "ids_update_rules" => json(ids::ids_update_rules(w()).await),
+        "ids_alerts" => {
+            json(ids::ids_alerts(w(), arg::<Option<u32>>(&a, "limit")?.unwrap_or(200)).await)
+        }
         "history_list" => json(checkup::history_list(st(), w()).await),
         "history_diff" => json(checkup::history_diff(st(), w(), arg(&a, "id")?).await),
         "history_restore" => json(
@@ -303,6 +309,8 @@ pub fn audit_entry(cmd: &str, a: &Value) -> Option<(String, String)> {
             entry("connected", format!("{user}@{host}"))
         }
         "forget_router" => entry("removed a saved router", s("id")),
+        "ids_prepare" => entry("intrusion detection: downloaded Suricata", String::new()),
+        "ids_update_rules" => entry("intrusion detection: updated rules", String::new()),
         "dns_server_setup" => entry("linked a DNS server", s("url")),
         "dns_server_forget" => entry("unlinked the DNS server", String::new()),
         "dns_server_call" => {

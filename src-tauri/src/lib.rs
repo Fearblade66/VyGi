@@ -3,6 +3,7 @@ pub mod checkup;
 pub mod connection;
 pub mod error;
 pub mod geoip;
+pub mod ids;
 pub mod monitor;
 pub mod security;
 pub mod siteicons;
@@ -94,6 +95,10 @@ pub fn run() {
             checkup::accounting_sync,
             checkup::client_address,
             monitor::port_info,
+            ids::ids_prepare,
+            ids::ids_status,
+            ids::ids_update_rules,
+            ids::ids_alerts,
             sysinfo::image_add,
             sysinfo::image_set_default,
             sysinfo::image_delete,
