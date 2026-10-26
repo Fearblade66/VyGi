@@ -51,6 +51,8 @@ pub struct Server {
     tokens: tokens::Tokens,
     /// for the certificate download (Claude's MCP client must trust it)
     cert_path: Option<PathBuf>,
+    /// the web UI's files (and the Android app, when the image has it)
+    web: PathBuf,
     watch: Arc<watch::Watcher>,
     /// window label -> last request
     tabs: StdMutex<HashMap<String, Instant>>,
@@ -123,6 +125,7 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         auth,
         tokens: tokens::Tokens::load(&cfg.data),
         cert_path: cfg.tls.then(|| cfg.data.join("tls").join("cert.pem")),
+        web: cfg.web.clone(),
         watch,
         tabs: StdMutex::new(HashMap::new()),
         audit: audit::Audit::new(&cfg.data),
@@ -171,6 +174,8 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         .route("/api/sessions/{id}/end", post(session_end))
         .route("/api/cert", get(cert))
         .route("/api/cert/names", get(cert_names))
+        .route("/api/app/info", get(app_info))
+        .route("/api/app/alerts", get(app_alerts))
         .route("/mcp", post(mcp_post).get(mcp_get).delete(mcp_get))
         .fallback_service(ServeDir::new(&cfg.web).fallback(ServeFile::new(index)))
         .layer(axum::middleware::map_response(security_headers))
@@ -775,6 +780,97 @@ async fn cert_names(State(s): State<Arc<Server>>) -> Response {
     Json(json!({ "tls": s.cert_path.is_some(), "names": names })).into_response()
 }
 
+/// SHA-256 of the server certificate as "AB:CD:…" (what the Android app
+/// shows before it trusts the server).
+fn cert_fingerprint(pem: &str) -> Option<String> {
+    use base64::Engine;
+    use sha2::{Digest, Sha256};
+    let b64: String = pem
+        .split("-----BEGIN CERTIFICATE-----")
+        .nth(1)?
+        .split("-----END CERTIFICATE-----")
+        .next()?
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    let der = base64::engine::general_purpose::STANDARD.decode(b64).ok()?;
+    let hex = hex::encode_upper(Sha256::digest(&der));
+    Some(
+        hex.as_bytes()
+            .chunks(2)
+            .map(|c| String::from_utf8_lossy(c).into_owned())
+            .collect::<Vec<_>>()
+            .join(":"),
+    )
+}
+
+/// The Android app: whether this server has it (the Docker image does) and
+/// which version, plus the certificate fingerprint to check it against.
+async fn app_info(State(s): State<Arc<Server>>) -> Response {
+    let apk = s.web.join("vygi.apk");
+    let version: Option<Value> = std::fs::read_to_string(s.web.join("vygi-app.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok());
+    let fingerprint = s
+        .cert_path
+        .as_ref()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|pem| cert_fingerprint(&pem));
+    Json(json!({
+        "apk": apk.is_file().then(|| json!({
+            "url": "/vygi.apk",
+            "size": std::fs::metadata(&apk).map(|m| m.len()).unwrap_or(0),
+            "versionCode": version.as_ref().and_then(|v| v["versionCode"].as_u64()),
+            "versionName": version.as_ref().and_then(|v| v["versionName"].as_str().map(str::to_string)),
+        })),
+        "fingerprint": fingerprint,
+    }))
+    .into_response()
+}
+
+#[derive(Deserialize)]
+struct SinceQuery {
+    since: Option<u64>,
+}
+
+/// New alerts for the Android app's notifications (any API token).
+async fn app_alerts(
+    State(s): State<Arc<Server>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Query(q): Query<SinceQuery>,
+) -> Response {
+    let bearer = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.strip_prefix("Bearer ").unwrap_or(v).trim());
+    if bearer
+        .and_then(|t| s.tokens.check(t, watch::now_ms()))
+        .is_none()
+    {
+        s.log(
+            "",
+            &s.client_ip(addr, &headers),
+            "API token rejected",
+            "",
+            "Android app alerts: unknown, revoked or expired token".into(),
+            false,
+        );
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        return plain_error(
+            StatusCode::UNAUTHORIZED,
+            "unknown, revoked or expired token",
+        );
+    }
+    let list: Vec<Value> = s
+        .watch
+        .recent_alerts(q.since.unwrap_or(0), 50)
+        .into_iter()
+        .map(|(router, a)| json!({ "router": router, "kind": a.kind, "text": a.text, "level": a.level, "at": a.at }))
+        .collect();
+    Json(json!({ "alerts": list, "now": watch::now_ms() })).into_response()
+}
+
 /// The server's (public) certificate, so MCP clients can be told to trust it.
 async fn cert(State(s): State<Arc<Server>>) -> Response {
     match s.cert_path.as_ref().and_then(|p| std::fs::read(p).ok()) {
@@ -928,5 +1024,20 @@ async fn session_end(
         Json(json!({ "ok": true })).into_response()
     } else {
         plain_error(StatusCode::NOT_FOUND, "No such session")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cert_fingerprint;
+
+    #[test]
+    fn fingerprint_of_pem() {
+        // DER bytes "hello" -> base64 aGVsbG8=
+        let pem = "-----BEGIN CERTIFICATE-----\naGVs\nbG8=\n-----END CERTIFICATE-----\n";
+        let fp = cert_fingerprint(pem).unwrap();
+        assert!(fp.starts_with("2C:F2:4D:BA:5F:B0:A3:0E"), "{fp}");
+        assert_eq!(fp.len(), 32 * 3 - 1);
+        assert!(cert_fingerprint("nothing").is_none());
     }
 }

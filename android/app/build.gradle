@@ -1,0 +1,48 @@
+// The VyGi Android app: a WebView on the user's VyGi server plus alert
+// notifications. No libraries beyond the Android framework.
+// CI sets VYGI_VERSION_CODE / VYGI_VERSION_NAME and, for a stable signature
+// (needed for updates), VYGI_KEYSTORE / VYGI_KEYSTORE_PASSWORD.
+plugins {
+    id 'com.android.application'
+}
+
+def env = { String k, String d -> System.getenv(k) ?: d }
+
+android {
+    namespace 'com.vygi.app'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.vygi.app'
+        minSdk 29
+        targetSdk 35
+        versionCode env('VYGI_VERSION_CODE', '1').toInteger()
+        versionName env('VYGI_VERSION_NAME', '0.1-dev')
+    }
+
+    signingConfigs {
+        release {
+            storeFile file(env('VYGI_KEYSTORE', 'missing.jks'))
+            storePassword env('VYGI_KEYSTORE_PASSWORD', '')
+            keyAlias 'vygi'
+            keyPassword env('VYGI_KEYSTORE_PASSWORD', '')
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig System.getenv('VYGI_KEYSTORE') ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+}

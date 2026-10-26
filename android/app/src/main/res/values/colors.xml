@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- the web UI's Modern panel colours, so the bars blend in -->
+    <color name="panel">#FFFFFF</color>
+    <color name="text">#1D2433</color>
+    <color name="muted">#5F6B7A</color>
+    <color name="accent">#006FFF</color>
+    <color name="icon_bg">#006FFF</color>
+    <bool name="light">true</bool>
+</resources>

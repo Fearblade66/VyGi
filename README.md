@@ -198,6 +198,17 @@ Changing the web password logs out every other browser session.
 
 The server needs the router's password and API key saved (tick **Remember** when connecting) and the router trusted once from VyGi.
 
+### Android app (web version)
+
+The Docker image includes an Android app (Android 10 or newer): the same pages with a phone layout (tabs at the bottom, the menu behind **More**, windows and dialogs full screen), plus alerts as phone notifications. It's a client of your VyGi server, so it works wherever the server is reachable: at home, or away over your VPN. Router passwords stay on the server.
+
+- **Install:** sidebar → **Phone app** shows a QR code for `https://<vygi>:8443/vygi.apk` and the server's certificate fingerprint. Open the link on the phone (the browser warns about VyGi's self-signed certificate), install the file (Android asks to allow installs from the browser), open VyGi, type the server address (port 8443 is assumed when you leave it out) and check the fingerprint it shows matches. Then log in with the VyGi password.
+- **Certificate:** the app trusts exactly the certificate you accepted (a certificate the phone already trusts, from your own reverse proxy, works too). If VyGi makes a new one (for example after `VYGI_HOSTNAMES` changes), the app asks again with the new fingerprint.
+- **Notifications:** after login the app makes itself a read-only API token ("Android app (<phone>)", listed under **API access**; revoke it there) and checks the server for new alerts every 15 minutes, the shortest interval Android allows for background work. Serious ones (internet down, attacks) use the "Urgent alerts" channel. 24/7 watching must be on. For instant alerts use ntfy (above) instead or as well.
+- **Updates:** when the server has a newer app (after `docker compose pull`), the app offers to install it. Updates install only over an app signed with the same key: the build uses the repository secret `ANDROID_KEYSTORE` (base64 of a `.jks` with key alias `vygi` and password `vygi-android`) when it's set, otherwise a key the build made once and keeps in GitHub's Actions cache (if that cache is ever cleared, uninstall the app once and install the new one).
+- **Back** closes the open dialog, menu, window or page, then leaves the app. Files VyGi saves (backups, WireGuard configs) go to **Downloads**. **Change server** is at the bottom of the menu.
+- Build it yourself: `cd android && gradle assembleRelease` (Android SDK with platform 35, JDK 17).
+
 ### Claude (AI) access
 
 VyGi can be used by Claude, so it can check your setup, explain problems ("why was the internet slow last night?") and make changes for you.
@@ -281,6 +292,7 @@ Testing on the real router found and fixed several things mocks didn't show: VyO
 index.html, src/              UI (plain JavaScript + Vite)
   main.js                     menu and app startup
   lib/                        windows (mdi.js), tables, dialogs, charts, session/Safe Mode,
+                              phone.js (phone layout), androidapp.js (the Android app's bridge),
                               rules.js (shared firewall/NAT rule editor),
                               netdata.js (client list), views.js (pages and themes),
                               icons.js, netplan.js (Networks), trafficrules.js (Traffic Rules),
@@ -311,6 +323,8 @@ src-tauri/src/                Rust backend (the desktop app, or with --features 
   security.rs                 OS keychain (file fallback) + routers.json (Technitium links: dns-servers.json)
   state.rs                    per-window connection state
   error.rs
+android/                      the Android app: a WebView on the VyGi server, certificate pinning,
+                              alert notifications (JobScheduler) and self-update (no libraries)
 e2e/                          end-to-end tests against a real VyOS router in Docker
 ```
 

@@ -35,14 +35,83 @@ jobs:
           cargo clippy --no-default-features --features server --all-targets -- -D warnings
           cargo test --no-default-features --features server
 
+  android:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+      # Updates install only when every build is signed with the same key.
+      # Best: a repository secret ANDROID_KEYSTORE (base64 of a .jks with key
+      # alias "vygi", password "vygi-android"; see the README). Without it, a
+      # key made by CI once and kept in the Actions cache is used.
+      - name: Signing key from the secret
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+        run: |
+          mkdir -p "$HOME/.vygi-signing"
+          if [ -n "$ANDROID_KEYSTORE" ]; then
+            echo "$ANDROID_KEYSTORE" | base64 -d > "$HOME/.vygi-signing/vygi.jks"
+            echo "FROM_SECRET=1" >> "$GITHUB_ENV"
+          fi
+      - name: Signing key from the cache
+        if: env.FROM_SECRET != '1'
+        id: keycache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.vygi-signing/vygi.jks
+          key: vygi-android-signing-v1
+      - name: Make a signing key (first build only)
+        if: env.FROM_SECRET != '1' && steps.keycache.outputs.cache-hit != 'true'
+        run: |
+          keytool -genkeypair -keystore "$HOME/.vygi-signing/vygi.jks" -alias vygi -keyalg RSA -keysize 3072 \
+            -validity 36500 -storepass vygi-android -keypass vygi-android -dname "CN=VyGi"
+      - name: Keep the new key
+        if: env.FROM_SECRET != '1' && steps.keycache.outputs.cache-hit != 'true' && github.event_name == 'push'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.vygi-signing/vygi.jks
+          key: vygi-android-signing-v1
+      - name: Build the APK
+        working-directory: android
+        env:
+          VYGI_KEYSTORE_PASSWORD: vygi-android
+          VYGI_VERSION_CODE: ${{ github.run_number }}
+          VYGI_VERSION_NAME: 0.1.${{ github.run_number }}
+        run: |
+          export VYGI_KEYSTORE="$HOME/.vygi-signing/vygi.jks"
+          gradle --no-daemon assembleRelease
+          mkdir -p ../out
+          cp app/build/outputs/apk/release/app-release.apk ../out/vygi.apk
+          echo "{\"versionCode\": $VYGI_VERSION_CODE, \"versionName\": \"$VYGI_VERSION_NAME\"}" > ../out/vygi-app.json
+          ls -la ../out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VyGi-Android
+          path: out/
+          if-no-files-found: error
+
   docker:
-    needs: check
+    needs: [check, android]
+    # the image still ships when only the Android build failed (without the app)
+    if: ${{ !cancelled() && needs.check.result == 'success' }}
     runs-on: ubuntu-22.04
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v4
+      - name: The Android app, served by the VyGi server
+        if: needs.android.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: VyGi-Android
+          path: public/
       - uses: docker/setup-buildx-action@v3
       - name: Log in to GitHub Container Registry
         if: github.event_name == 'push'

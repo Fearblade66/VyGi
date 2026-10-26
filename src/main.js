@@ -28,6 +28,7 @@ import { openUsers } from "./components/users.js";
 import { runCheckup } from "./components/checkup.js";
 import { initViews, showView, onAnyView } from "./lib/views.js";
 import { initPhone } from "./lib/phone.js";
+import { initAndroidApp } from "./lib/androidapp.js";
 import { initNetworks } from "./components/networks.js";
 import { initRules } from "./components/rules_view.js";
 import { initPortForwards } from "./components/portfwd_view.js";
@@ -37,6 +38,7 @@ import { initHistory } from "./components/history_view.js";
 import { initSearch } from "./components/search.js";
 import { initInsights } from "./components/insights.js";
 import { openApiAccess } from "./components/apiaccess.js";
+import { openPhoneApp } from "./components/phoneapp.js";
 import { openClaudeReport } from "./components/report.js";
 import { initDashboard } from "./components/dashboard.js";
 import { initSettings } from "./components/settings_view.js";
@@ -292,6 +294,10 @@ function initWebAccount() {
     e.preventDefault();
     openApiAccess();
   });
+  document.getElementById("web-phone").addEventListener("click", (e) => {
+    e.preventDefault();
+    openPhoneApp();
+  });
   document.getElementById("web-logout").addEventListener("click", (e) => {
     e.preventDefault();
     webLogout();
@@ -336,6 +342,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   if (!isDesktop) {
     initWebAccount();
     if (!(await webSession().catch(() => false))) await webLoginDialog();
+    initAndroidApp();
   }
   showConnectDialog();
 });

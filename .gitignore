@@ -1,2 +1,4 @@
 node_modules/
 dist/
+public/vygi.apk
+public/vygi-app.json

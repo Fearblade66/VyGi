@@ -8,6 +8,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY index.html vite.config.js ./
 COPY src ./src
+# public/ also gets the Android app (vygi.apk) when CI built it
+COPY public ./public
 RUN npx vite build
 
 FROM rust:1-bookworm AS server

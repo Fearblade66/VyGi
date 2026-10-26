@@ -183,6 +183,38 @@ impl Watcher {
         lock(&self.cfg).notify.clone()
     }
 
+    /// The newest alerts of every watched router, newest first:
+    /// (router name, alert). For the Android app's notifications.
+    pub fn recent_alerts(&self, since: u64, limit: usize) -> Vec<(String, Alert)> {
+        let routers: Vec<(String, String)> = lock(&self.cfg)
+            .routers
+            .iter()
+            .filter(|(_, r)| r.enabled)
+            .map(|(id, r)| {
+                (
+                    id.clone(),
+                    if r.name.is_empty() {
+                        id.clone()
+                    } else {
+                        r.name.clone()
+                    },
+                )
+            })
+            .collect();
+        let mut all: Vec<(String, Alert)> = routers
+            .into_iter()
+            .flat_map(|(id, name)| {
+                self.store(&id)
+                    .alerts(since, limit)
+                    .into_iter()
+                    .map(move |a| (name.clone(), a))
+            })
+            .collect();
+        all.sort_by_key(|(_, a)| std::cmp::Reverse(a.at));
+        all.truncate(limit);
+        all
+    }
+
     pub fn store(&self, id: &str) -> Store {
         Store::new(&self.base, id)
     }

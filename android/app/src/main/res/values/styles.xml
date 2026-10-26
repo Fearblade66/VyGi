@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="@android:style/Theme.DeviceDefault.DayNight">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowBackground">@color/panel</item>
+        <item name="android:statusBarColor">@color/panel</item>
+        <item name="android:navigationBarColor">@color/panel</item>
+        <item name="android:windowLightStatusBar">@bool/light</item>
+        <item name="android:windowLightNavigationBar">@bool/light</item>
+        <item name="android:colorAccent">@color/accent</item>
+    </style>
+</resources>

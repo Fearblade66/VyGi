@@ -813,3 +813,10 @@ table.grid th.sorted.desc::after { content: " ▼"; }
   #search-results { left: 0; right: 0; width: auto; max-height: calc(100dvh - 180px); }
   .drawer-open #toasts { display: none; }
 }
+
+/* Phone app dialog; inside the app, the "Phone app" link is pointless */
+.app-steps { margin: 0 0 12px; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; line-height: 1.45; }
+.app-qr { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.app-qr > div { flex: 1 1 200px; min-width: 0; }
+.app-qr canvas { border-radius: 8px; background: #fff; }
+[data-app="android"] #web-phone { display: none; }

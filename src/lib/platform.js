@@ -4,6 +4,8 @@
 import { invoke as tauriInvoke, Channel } from "@tauri-apps/api/core";
 
 export const isDesktop = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
+/** Inside the VyGi Android app (a WebView on the VyGi server, with a small native bridge). */
+export const androidApp = typeof window !== "undefined" ? window.VyGiApp || null : null;
 
 // One id per page load: each browser tab gets its own router connection.
 const TAB = (() => {
@@ -83,6 +85,8 @@ export async function saveText(defaultName, text, filters = []) {
     await tauriInvoke("save_text_file", { file, contents: text });
     return file;
   }
+  // the app's WebView can't download blob: links; it saves to Downloads itself
+  if (androidApp) return androidApp.saveText(defaultName, text) ? `Downloads/${defaultName}` : null;
   const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
   const a = document.createElement("a");
   a.href = url;
