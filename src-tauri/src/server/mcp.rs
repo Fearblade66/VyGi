@@ -25,7 +25,7 @@ const MAX_COMMANDS: usize = 300;
 
 const INSTRUCTIONS: &str = "VyGi manages VyOS routers. Start with list_routers, then router_status. \
 Read before changing: get_config (secrets are redacted), run_show, list_devices, and the 24/7 history tools \
-(get_alerts, traffic_history, device_usage, search_logs) when the server watches the router. \
+(get_alerts, traffic_history, device_usage, search_logs, get_flows) when the server watches the router. \
 Changes: apply_changes uses Safe Mode, so the router undoes them by itself after confirm_minutes unless you call \
 confirm_changes. After applying, check that the router and the internet still work (router_status, ping) and only \
 then confirm. If anything looks wrong, don't confirm: it reverts automatically. Explain to the user what you change \
@@ -52,6 +52,7 @@ fn tools() -> Value {
         t("get_alerts", "Alerts the VyGi server recorded while watching the router 24/7 (internet down, new devices, restarts…).", json!({ "router": router, "hours": { "type": "integer", "description": "How far back (default 168)" } }), &["router"], true),
         t("traffic_history", "Internet traffic over time recorded by the 24/7 watching: [[unix ms, download bit/s, upload bit/s], ...].", json!({ "router": router, "hours": { "type": "integer", "description": "Default 24" } }), &["router"], true),
         t("device_usage", "Data used per device (bytes down/up) recorded by the 24/7 watching.", json!({ "router": router, "days": { "type": "integer", "description": "Default 1" } }), &["router"], true),
+        t("get_flows", "Connections recorded by the 24/7 watching, newest first: finished connections devices made (src, dst, port, proto, bytes up/down, count) and attempts a firewall rule blocked (blocked: true, rule e.g. \"ipv4-FWD-filter-3\" = firewall ipv4 forward filter rule 3). Blocks are listed only for rules that log.", json!({ "router": router, "hours": { "type": "integer", "description": "Default 24" }, "query": { "type": "string", "description": "An address, port, protocol or rule" }, "kind": { "type": "string", "enum": ["", "allowed", "blocked"] }, "limit": { "type": "integer", "description": "Default 200, at most 2000" } }), &["router"], true),
         t("search_logs", "Searches the router's system log recorded by the 24/7 watching, newest first.", json!({ "router": router, "query": { "type": "string" }, "days": { "type": "integer" }, "max_priority": { "type": "integer", "description": "0-7; 3 = errors only, 4 = warnings and worse" }, "limit": { "type": "integer" } }), &["router"], true),
         t("apply_changes", "Applies VyOS configuration commands with Safe Mode: the router reverts them after confirm_minutes unless confirm_changes is called. Commands are {op: \"set\"|\"delete\", path: [...], value?}, the same as VyOS `set`/`delete` lines split into words (the value separate). Needs a full-access token.", json!({
             "router": router,
@@ -274,7 +275,7 @@ async fn call(srv: &Arc<Server>, token: &Token, name: &str, a: &Value) -> AppRes
     let now = now_ms();
     if matches!(
         name,
-        "get_alerts" | "traffic_history" | "device_usage" | "search_logs"
+        "get_alerts" | "traffic_history" | "device_usage" | "search_logs" | "get_flows"
     ) && srv.app.profiles.find(&router).is_err()
     {
         return Err(AppError::Invalid(format!(
@@ -306,6 +307,17 @@ async fn call(srv: &Arc<Server>, token: &Token, name: &str, a: &Value) -> AppRes
                 100,
             );
             return Ok(Value::Array(list.into_iter().map(|(k, t)| json!({ "key": k, "ip": t.ip, "name": t.name, "downBytes": t.down, "upBytes": t.up })).collect()));
+        }
+        "get_flows" => {
+            let hours = n(a, "hours").unwrap_or(24).clamp(1, 24 * 400);
+            let limit = n(a, "limit").unwrap_or(200).clamp(1, 2000) as usize;
+            return Ok(json!(srv.watch.store(&router).flows(
+                now.saturating_sub(hours * 3_600_000),
+                now,
+                &s(a, "query").unwrap_or_default(),
+                &s(a, "kind").unwrap_or_default(),
+                limit
+            )));
         }
         "search_logs" => {
             let days = n(a, "days").unwrap_or(1).clamp(1, 400);

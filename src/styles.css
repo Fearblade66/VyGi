@@ -731,3 +731,7 @@ table.grid th.sorted.desc::after { content: " ▼"; }
 .policy-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
 .policy-row.off { opacity: 0.55; }
 .policy-name { font-weight: 600; }
+
+/* Insights: Flows */
+.flows-card .table-wrap { max-height: 420px; border: 1px solid var(--border); border-radius: 6px; margin-top: 6px; }
+.flows-card .log-bar { margin-top: 8px; }

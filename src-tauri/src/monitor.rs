@@ -24,6 +24,39 @@ pub async fn interface_stats(state: Win) -> AppResult<Value> {
     }))
 }
 
+/// Physical ports' speed and cable state, and the bridges' forwarding tables
+/// (which device MAC is behind which bridge port), for the ports map.
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn port_info(state: Win) -> AppResult<Value> {
+    let cmd = format!(
+        "for i in /sys/class/net/*; do [ -e $i/device ] || continue; echo \"$(basename $i) $(cat $i/speed 2>/dev/null || echo -) $(cat $i/carrier 2>/dev/null || echo -)\"; done; echo {SPLIT_MARK}; bridge -j fdb show 2>/dev/null || echo []"
+    );
+    let out = state.conn().await?.ssh.exec_ok(&cmd).await?;
+    let (ports, fdb) = out
+        .split_once(SPLIT_MARK)
+        .ok_or_else(|| AppError::Ssh("unexpected port info output".into()))?;
+    Ok(serde_json::json!({
+        "ports": parse_ports(ports),
+        "fdb": serde_json::from_str::<Value>(fdb.trim()).unwrap_or(Value::Array(Vec::new())),
+    }))
+}
+
+/// "eth0 1000 1" lines -> [{ name, speedMbit, carrier }] (speed/carrier null when unknown).
+fn parse_ports(text: &str) -> Vec<Value> {
+    text.lines()
+        .filter_map(|l| {
+            let mut it = l.split_whitespace();
+            let name = it.next()?;
+            let speed = it
+                .next()
+                .and_then(|v| v.parse::<i64>().ok())
+                .filter(|v| *v > 0);
+            let carrier = it.next().and_then(|v| v.parse::<u8>().ok()).map(|c| c == 1);
+            Some(serde_json::json!({ "name": name, "speedMbit": speed, "carrier": carrier }))
+        })
+        .collect()
+}
+
 /// Kernel routing table, optionally for one VRF.
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn routes(state: Win, family: u8, vrf: Option<String>) -> AppResult<Value> {
@@ -212,5 +245,23 @@ mod tests {
             filter: String::new()
         })
         .is_err());
+    }
+}
+
+#[cfg(test)]
+mod port_tests {
+    use super::parse_ports;
+    use serde_json::json;
+
+    #[test]
+    fn ports() {
+        assert_eq!(
+            parse_ports("eth0 1000 1\neth1 - 0\neth2 -1 -\n"),
+            vec![
+                json!({ "name": "eth0", "speedMbit": 1000, "carrier": true }),
+                json!({ "name": "eth1", "speedMbit": null, "carrier": false }),
+                json!({ "name": "eth2", "speedMbit": null, "carrier": null }),
+            ]
+        );
     }
 }

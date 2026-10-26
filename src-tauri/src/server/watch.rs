@@ -16,7 +16,7 @@ use serde_json::{json, Value};
 use tokio::sync::watch;
 
 use super::alerts::{self, Alert, Device, Peer, Snapshot, Watched};
-use super::history::{DeviceTotal, LogLine, Saved, Store};
+use super::history::{DeviceTotal, FlowRec, LogLine, Saved, Store};
 use crate::error::{AppError, AppResult};
 use crate::ssh::StreamEvent;
 use crate::state::{AppState, Out, St, Win, WindowState};
@@ -666,6 +666,77 @@ async fn snapshot(ws: &Arc<WindowState>, rw: &RouterWatch) -> Snapshot {
 struct Counters {
     wan: Option<(u64, String, u64, u64)>, // (at ms, interface, rx, tx)
     flows: Option<HashMap<String, (u64, u64)>>,
+    /// connections seen and still open (Flows), by kernel id
+    open: HashMap<String, FlowRec>,
+}
+
+/// Follows connections between looks: returns the ones that ended since the
+/// last look (identical ones that ended together merged). Connections to the
+/// router itself (mostly DNS) are left out; a port forward is recorded from
+/// the internet address to the device it reached.
+fn track_flows(
+    open: &mut HashMap<String, FlowRec>,
+    flows: &[Value],
+    own: &std::collections::HashSet<String>,
+    now: u64,
+) -> Vec<FlowRec> {
+    let mut seen = std::collections::HashSet::new();
+    for f in flows {
+        let s = |k: &str| f[k].as_str().unwrap_or("").to_string();
+        let (id, src, dst, reply_src) = (s("id"), s("src"), s("dst"), s("replySrc"));
+        if id.is_empty() || own.contains(&src) {
+            continue;
+        }
+        let to = if own.contains(&dst) && is_lan(&reply_src) && !own.contains(&reply_src) {
+            reply_src // a port forward: it really went to the device behind the router
+        } else {
+            dst
+        };
+        if own.contains(&to) || !(is_lan(&src) || is_lan(&to)) {
+            continue;
+        }
+        seen.insert(id.clone());
+        let e = open.entry(id).or_insert_with(|| FlowRec {
+            t: now,
+            f: now,
+            s: src,
+            d: to,
+            p: f["dport"]
+                .as_str()
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(0),
+            pr: s("proto"),
+            up: 0,
+            down: 0,
+            n: 1,
+        });
+        e.t = now;
+        e.up = f["origBytes"].as_u64().unwrap_or(e.up);
+        e.down = f["replyBytes"].as_u64().unwrap_or(e.down);
+    }
+    let ended: Vec<String> = open
+        .keys()
+        .filter(|id| !seen.contains(*id))
+        .cloned()
+        .collect();
+    let mut merged: Vec<FlowRec> = Vec::new();
+    for id in ended {
+        let Some(f) = open.remove(&id) else { continue };
+        match merged
+            .iter_mut()
+            .find(|m| m.s == f.s && m.d == f.d && m.p == f.p && m.pr == f.pr)
+        {
+            Some(m) => {
+                m.n += 1;
+                m.up += f.up;
+                m.down += f.down;
+                m.f = m.f.min(f.f);
+                m.t = m.t.max(f.t);
+            }
+            None => merged.push(f),
+        }
+    }
+    merged
 }
 
 fn is_lan(ip: &str) -> bool {
@@ -732,6 +803,7 @@ async fn record_traffic(
     let Ok(Value::Array(flows)) = serde_json::to_value(flows) else {
         return;
     };
+    store.add_flows(&track_flows(&mut ctx.open, &flows, &own, now));
     let mut cur: HashMap<String, (u64, u64)> = HashMap::new();
     let mut per_ip: HashMap<String, (u64, u64)> = HashMap::new();
     for f in &flows {
@@ -787,6 +859,59 @@ async fn record_traffic(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn connections_tracked_until_they_end() {
+        let own: std::collections::HashSet<String> =
+            ["10.20.2.2".to_string(), "203.0.113.5".to_string()].into();
+        let flow = |id: &str, src: &str, dst: &str, reply_src: &str, port: &str, up: u64| json!({ "id": id, "src": src, "dst": dst, "replySrc": reply_src, "dport": port, "proto": "tcp", "origBytes": up, "replyBytes": up * 10 });
+        let mut open = HashMap::new();
+        // a web connection, a DNS lookup to the router (left out), a port forward from the internet
+        let first = [
+            flow("1", "10.20.2.42", "1.1.1.1", "1.1.1.1", "443", 5),
+            flow("2", "10.20.2.42", "10.20.2.2", "10.20.2.2", "53", 1),
+            flow("3", "8.8.4.4", "203.0.113.5", "10.20.2.20", "32400", 7),
+        ];
+        assert!(track_flows(&mut open, &first, &own, 1000).is_empty());
+        assert_eq!(open.len(), 2);
+        // a minute later: 1 grew, then everything ended
+        assert!(track_flows(
+            &mut open,
+            &[
+                flow("1", "10.20.2.42", "1.1.1.1", "1.1.1.1", "443", 50),
+                flow("3", "8.8.4.4", "203.0.113.5", "10.20.2.20", "32400", 7)
+            ],
+            &own,
+            61_000
+        )
+        .is_empty());
+        let mut ended = track_flows(&mut open, &[], &own, 121_000);
+        ended.sort_by_key(|a| a.p);
+        assert_eq!(ended.len(), 2);
+        assert_eq!(
+            (
+                ended[0].d.as_str(),
+                ended[0].p,
+                ended[0].up,
+                ended[0].down,
+                ended[0].f,
+                ended[0].t
+            ),
+            ("1.1.1.1", 443, 50, 500, 1000, 61_000)
+        );
+        assert_eq!(
+            (ended[1].s.as_str(), ended[1].d.as_str()),
+            ("8.8.4.4", "10.20.2.20")
+        );
+        // identical connections that ended together are merged
+        let same = [
+            flow("7", "10.20.2.3", "9.9.9.9", "9.9.9.9", "443", 1),
+            flow("8", "10.20.2.3", "9.9.9.9", "9.9.9.9", "443", 2),
+        ];
+        track_flows(&mut open, &same, &own, 200_000);
+        let m = track_flows(&mut open, &[], &own, 260_000);
+        assert_eq!((m.len(), m[0].n, m[0].up), (1, 2, 3));
+    }
+
     use super::*;
 
     #[test]

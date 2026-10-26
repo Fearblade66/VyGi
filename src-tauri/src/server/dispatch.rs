@@ -131,6 +131,7 @@ pub async fn call(
         "connect_checkup" => json(checkup::connect_checkup(st(), w()).await),
         "accounting_sync" => json(checkup::accounting_sync(w()).await),
         "client_address" => json(checkup::client_address(w()).await),
+        "port_info" => json(monitor::port_info(w()).await),
         "history_list" => json(checkup::history_list(st(), w()).await),
         "history_diff" => json(checkup::history_diff(st(), w(), arg(&a, "id")?).await),
         "history_restore" => json(
@@ -246,6 +247,21 @@ async fn watch_call(
                 now - days * DAY,
                 now,
                 max_p,
+                limit,
+            )))
+        }
+        "flows" => {
+            let hours = arg::<Option<u64>>(a, "hours")?
+                .unwrap_or(24)
+                .clamp(1, 24 * 400);
+            let q: String = arg::<Option<String>>(a, "query")?.unwrap_or_default();
+            let kind: String = arg::<Option<String>>(a, "kind")?.unwrap_or_default();
+            let limit = arg::<Option<usize>>(a, "limit")?.unwrap_or(500).min(5000);
+            json(Ok(w.store(&id).flows(
+                now - hours * 3_600_000,
+                now,
+                &q,
+                &kind,
                 limit,
             )))
         }

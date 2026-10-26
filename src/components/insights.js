@@ -8,6 +8,10 @@ import { registerView, welcome, loadingPage } from "../lib/views.js";
 import { icon } from "../lib/icons.js";
 import { niceMax, splitAtGaps } from "../lib/chart.js";
 import { collectClients } from "../lib/netdata.js";
+import { makeTable, filterBox } from "../lib/table.js";
+import { applyChanges } from "../lib/session.js";
+import { alertBox } from "../lib/dialog.js";
+import { ruleLabel, portName, unloggedBlocks, logBlocksCommands } from "../lib/flows.js";
 
 const RANGES = [
   { label: "24 hours", hours: 24, days: 1 },
@@ -75,6 +79,51 @@ export function initInsights() {
   const logLevel = h("select", LEVELS.map((l) => h("option", { value: String(l.p) }, l.label)));
   const logBox = h("div.log-results");
 
+  // Flows: connections recorded by the 24/7 server, and blocked attempts from the firewall log
+  let cfg = {};
+  let flowKind = "";
+  const flowQuery = h("input", { type: "search", placeholder: "Device, address, port or rule" });
+  const flowNote = h("div.hint");
+  const flowBanner = h("div");
+  const when = (ms) => new Date(ms).toLocaleString([], { dateStyle: "short", timeStyle: "medium" });
+  const who = (ip) => names.get(ip) || ip;
+  const flowTable = makeTable([
+    { key: "t", label: "Time", width: "150px", render: (r) => when(r.t) },
+    { key: "src", label: "From", width: "170px", sortValue: (r) => who(r.src), render: (r) => h("span", { title: r.src }, who(r.src)) },
+    { key: "dst", label: "To", width: "170px", sortValue: (r) => who(r.dst), render: (r) => h("span", { title: r.dst }, who(r.dst)) },
+    { key: "port", label: "Service", width: "150px", render: (r) => (r.port ? `${r.port}${portName(r.port) ? ` ${portName(r.port)}` : ""}` : r.proto === "icmp" ? "ping" : "") + (r.proto && r.proto !== "icmp" ? ` (${r.proto})` : "") },
+    { key: "blocked", label: "Result", width: "220px", sortValue: (r) => (r.blocked ? 1 : 0), render: (r) => (r.blocked ? h("span", { title: r.rule }, h("span.pill.bad", r.count > 1 ? `blocked ×${r.count}` : "blocked"), " ", h("span.hint", ruleLabel(cfg, r.rule))) : h("span.pill.ok", r.count > 1 ? `allowed ×${r.count}` : "allowed")) },
+    { key: "data", label: "Data", className: "num", sortValue: (r) => r.up + r.down, render: (r) => (r.blocked ? "" : `↓ ${formatBytes(r.down)} ↑ ${formatBytes(r.up)}`) },
+  ], { rowKey: (r, i) => `${r.t}-${r.src}-${r.dst}-${r.port}-${i}` });
+  const flowKinds = h("span.seg", [["", "All"], ["allowed", "Allowed"], ["blocked", "Blocked"]].map(([k, l]) => h(`button${k === flowKind ? ".on" : ""}`, { on: { click: (e) => {
+    flowKind = k;
+    for (const b of flowKinds.children) b.classList.toggle("on", b === e.currentTarget);
+    loadFlows();
+  } } }, l)));
+  async function loadFlows() {
+    flowNote.textContent = "Loading…";
+    try {
+      const rows = await api.watchFlows(range.hours, flowQuery.value.trim(), flowKind, 2000);
+      flowTable.setRows(rows);
+      flowNote.textContent = rows.length >= 2000 ? "Showing the newest 2,000. Search to narrow it down." : rows.length ? "" : "Nothing recorded for this period yet. Connections are recorded when they end.";
+    } catch (e) {
+      flowNote.textContent = errorText(e);
+    }
+    const missing = unloggedBlocks(cfg);
+    flowBanner.replaceChildren(...(missing.length ? [h("div.wan-notice",
+      h("span.grow", `${missing.length} of VyGi's blocking rules don't log what they block, so those attempts aren't listed.`),
+      h("button", { on: { click: async () => {
+        try {
+          await applyChanges(logBlocksCommands(cfg), "log blocked connections");
+          cfg = (await api.getConfig([])) || {};
+          loadFlows();
+        } catch (e) {
+          if (!/^Cancelled/.test(e?.message || "")) alertBox("Flows", errorText(e));
+        }
+      } } }, "Log them"))] : []));
+  }
+  flowQuery.addEventListener("keydown", (e) => e.key === "Enter" && loadFlows());
+
   async function render() {
     const mine = ++seq;
     if (!isConnected()) {
@@ -107,11 +156,13 @@ export function initInsights() {
         on)));
       return;
     }
-    const [traffic, devices, clients] = await Promise.all([
+    const [traffic, devices, clients, conf] = await Promise.all([
       api.watchTraffic(range.hours).catch(() => []),
       api.watchDevices(range.days).catch(() => []),
       collectClients().then((r) => r.clients).catch(() => []),
+      api.getConfig([]).catch(() => ({})),
     ]);
+    cfg = conf || {};
     if (mine !== seq) return;
     names = new Map();
     for (const c of clients) {
@@ -134,10 +185,16 @@ export function initInsights() {
     clear(root).append(h("div.page", head,
       h("div.card", h("h3", h("span", `Internet traffic, last ${range.label}`)), trafficChart(traffic)),
       h("div.card", h("h3", h("span", `Data per device, last ${range.label}`)), devTable),
+      h("div.card.flows-card", h("h3", h("span", `Flows, last ${range.label}`)),
+        h("div.hint", "Connections your devices made (recorded when they end; lookups to the router itself are left out) and attempts a firewall rule blocked."),
+        flowBanner,
+        h("div.log-bar", flowKinds, flowQuery, h("button", { on: { click: loadFlows } }, "Search"), h("span.grow"), filterBox(flowTable)),
+        flowNote, flowTable.wrap, flowTable.count),
       h("div.card", h("h3", h("span", "System log")),
         h("div.log-bar", logQuery, logLevel, h("button", { on: { click: searchLogs } }, "Search")),
         logBox)));
     searchLogs();
+    loadFlows();
   }
 
   async function searchLogs() {

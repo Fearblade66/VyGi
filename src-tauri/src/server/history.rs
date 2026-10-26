@@ -337,8 +337,249 @@ impl Store {
     }
 }
 
+/// One finished connection (or identical ones that ended in the same minute).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct FlowRec {
+    /// last seen (ms)
+    pub t: u64,
+    /// first seen (ms)
+    pub f: u64,
+    /// the side that opened it: a local device, or an internet address for a port forward
+    pub s: String,
+    /// where it went, as the device asked for it (or the device a port forward reached)
+    pub d: String,
+    /// destination port (0 for ping and the like)
+    pub p: u16,
+    pub pr: String,
+    pub up: u64,
+    pub down: u64,
+    #[serde(default = "one")]
+    pub n: u32,
+}
+
+fn one() -> u32 {
+    1
+}
+
+/// A row of the Flows view: a connection that went through, or one a firewall rule blocked.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FlowRow {
+    pub t: u64,
+    pub first: u64,
+    pub src: String,
+    pub dst: String,
+    pub port: u16,
+    pub proto: String,
+    pub blocked: bool,
+    /// the firewall rule that logged a block, e.g. "ipv4-FWD-filter-3"
+    pub rule: String,
+    pub up: u64,
+    pub down: u64,
+    pub count: u32,
+}
+
+/// A VyOS firewall log line ("[ipv4-FWD-filter-3-D]IN=eth1 OUT=eth3 ... SRC=a DST=b ... PROTO=TCP SPT=1 DPT=443")
+/// as a blocked-connection row. Only drops and rejects.
+pub fn parse_fw_log(t: u64, msg: &str) -> Option<FlowRow> {
+    let open = msg.find('[')?;
+    let close = open + msg[open..].find(']')?;
+    let tag = &msg[open + 1..close];
+    let (rule, verdict) = tag.rsplit_once('-')?;
+    if !rule.contains("-filter-") || !matches!(verdict, "D" | "R") {
+        return None;
+    }
+    let field = |k: &str| {
+        msg[close..]
+            .split_whitespace()
+            .find_map(|w| w.strip_prefix(k).and_then(|v| v.strip_prefix('=')))
+            .map(str::to_string)
+    };
+    Some(FlowRow {
+        t,
+        first: t,
+        src: field("SRC")?,
+        dst: field("DST")?,
+        port: field("DPT").and_then(|p| p.parse().ok()).unwrap_or(0),
+        proto: field("PROTO").unwrap_or_default().to_lowercase(),
+        blocked: true,
+        rule: rule.to_string(),
+        up: 0,
+        down: 0,
+        count: 1,
+    })
+}
+
+impl Store {
+    pub fn add_flows(&self, flows: &[FlowRec]) {
+        let mut by_day: HashMap<String, Vec<&FlowRec>> = HashMap::new();
+        for f in flows {
+            by_day.entry(day(f.t)).or_default().push(f);
+        }
+        for (d, fs) in by_day {
+            append_lines(&self.dir.join(format!("flows-{d}.jsonl")), &fs);
+        }
+    }
+
+    /// Connections from `from` to `to`, newest first: finished ones (`kind`
+    /// "allowed"), blocked attempts from the firewall log ("blocked"), or both.
+    /// `query` matches an address, port, protocol or rule.
+    pub fn flows(&self, from: u64, to: u64, query: &str, kind: &str, limit: usize) -> Vec<FlowRow> {
+        let q = query.trim().to_lowercase();
+        let matches = |r: &FlowRow| {
+            q.is_empty()
+                || [&r.src, &r.dst, &r.proto, &r.rule]
+                    .iter()
+                    .any(|s| s.to_lowercase().contains(&q))
+                || r.port.to_string() == q
+        };
+        let mut out = Vec::new();
+        for d in days(from, to).into_iter().rev() {
+            let mut rows = Vec::new();
+            if kind != "blocked" {
+                let recs: Vec<FlowRec> = read_lines(&self.dir.join(format!("flows-{d}.jsonl")));
+                rows.extend(recs.into_iter().map(|f| FlowRow {
+                    t: f.t,
+                    first: f.f,
+                    src: f.s,
+                    dst: f.d,
+                    port: f.p,
+                    proto: f.pr,
+                    blocked: false,
+                    rule: String::new(),
+                    up: f.up,
+                    down: f.down,
+                    count: f.n,
+                }));
+            }
+            if kind != "allowed" {
+                let lines: Vec<LogLine> = read_lines(&self.dir.join(format!("log-{d}.jsonl")));
+                // one attempt logs every retry: identical blocks within a minute are one row
+                let mut blocked: Vec<FlowRow> = Vec::new();
+                for r in lines.iter().filter_map(|l| parse_fw_log(l.t, &l.m)) {
+                    match blocked.iter_mut().rev().find(|b| {
+                        b.src == r.src
+                            && b.dst == r.dst
+                            && b.port == r.port
+                            && b.proto == r.proto
+                            && b.rule == r.rule
+                            && r.t.abs_diff(b.first) < 60_000
+                    }) {
+                        Some(b) => {
+                            b.count += 1;
+                            b.t = b.t.max(r.t);
+                            b.first = b.first.min(r.t);
+                        }
+                        None => blocked.push(r),
+                    }
+                }
+                rows.extend(blocked);
+            }
+            rows.retain(|r| r.t >= from && r.t <= to && matches(r));
+            rows.sort_by_key(|r| std::cmp::Reverse(r.t));
+            for r in rows {
+                out.push(r);
+                if out.len() >= limit {
+                    return out;
+                }
+            }
+        }
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn firewall_log_lines() {
+        let r = parse_fw_log(5, "[ipv4-FWD-filter-3-D]IN=eth1 OUT=eth3 MAC=aa SRC=10.20.2.42 DST=93.184.216.34 LEN=60 TOS=0x00 PROTO=TCP SPT=40000 DPT=443 WINDOW=64240").unwrap();
+        assert_eq!(
+            (
+                r.src.as_str(),
+                r.dst.as_str(),
+                r.port,
+                r.proto.as_str(),
+                r.rule.as_str(),
+                r.blocked
+            ),
+            (
+                "10.20.2.42",
+                "93.184.216.34",
+                443,
+                "tcp",
+                "ipv4-FWD-filter-3",
+                true
+            )
+        );
+        let ping = parse_fw_log(5, "kernel: [ipv4-INP-filter-9900-D] IN=eth3 SRC=1.2.3.4 DST=203.0.113.5 PROTO=ICMP TYPE=8").unwrap();
+        assert_eq!((ping.port, ping.proto.as_str()), (0, "icmp"));
+        assert!(
+            parse_fw_log(5, "[ipv4-FWD-filter-5-A]IN=eth1 SRC=a DST=b").is_none(),
+            "accepts aren't blocks"
+        );
+        assert!(parse_fw_log(5, "sshd[123]: Accepted password").is_none());
+    }
+
+    #[test]
+    fn flows_saved_and_listed() {
+        let mut b = [0u8; 8];
+        getrandom::fill(&mut b).unwrap();
+        let dir = std::env::temp_dir().join(format!("vygi-flows-{}", hex::encode(b)));
+        let st = Store::new(&dir, "r");
+        let t = 1_792_962_427_161;
+        st.add_flows(&[FlowRec {
+            t,
+            f: t - 60_000,
+            s: "10.20.2.42".into(),
+            d: "1.1.1.1".into(),
+            p: 443,
+            pr: "tcp".into(),
+            up: 10,
+            down: 20,
+            n: 2,
+        }]);
+        st.add_logs(&[LogLine {
+            t: t + 1,
+            p: 4,
+            id: "kernel".into(),
+            m: "[ipv4-FWD-filter-3-D]IN=eth1 SRC=10.20.2.42 DST=9.9.9.9 PROTO=UDP SPT=1 DPT=53"
+                .into(),
+        }]);
+        let all = st.flows(t - 3_600_000, t + 10, "", "", 10);
+        assert_eq!(
+            all.iter()
+                .map(|r| (r.dst.as_str(), r.blocked))
+                .collect::<Vec<_>>(),
+            [("9.9.9.9", true), ("1.1.1.1", false)]
+        );
+        assert_eq!(st.flows(t - 3_600_000, t + 10, "", "allowed", 10).len(), 1);
+        assert_eq!(st.flows(t - 3_600_000, t + 10, "443", "", 10).len(), 1);
+        // retries of one blocked attempt are one row
+        st.add_logs(&[2, 3].map(|i| {
+            LogLine {
+                t: t + i * 1000,
+                p: 4,
+                id: "kernel".into(),
+                m: "[ipv4-FWD-filter-3-D]IN=eth1 SRC=10.20.2.42 DST=9.9.9.9 PROTO=UDP SPT=1 DPT=53"
+                    .into(),
+            }
+        }));
+        let b = st.flows(t - 3_600_000, t + 10_000, "", "blocked", 10);
+        assert_eq!((b.len(), b[0].count), (1, 3));
+        // log lines out of time order don't upset it
+        st.add_logs(&[LogLine {
+            t: t - 5000,
+            p: 4,
+            id: "kernel".into(),
+            m: "[ipv4-FWD-filter-3-D]IN=eth1 SRC=10.20.2.42 DST=9.9.9.9 PROTO=UDP SPT=1 DPT=53"
+                .into(),
+        }]);
+        assert_eq!(
+            st.flows(t - 3_600_000, t + 10_000, "", "blocked", 10)[0].count,
+            4
+        );
+    }
+
     use super::*;
 
     fn tmp() -> PathBuf {

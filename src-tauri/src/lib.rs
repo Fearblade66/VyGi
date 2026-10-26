@@ -93,6 +93,7 @@ pub fn run() {
             updates::update_check,
             checkup::accounting_sync,
             checkup::client_address,
+            monitor::port_info,
             sysinfo::image_add,
             sysinfo::image_set_default,
             sysinfo::image_delete,

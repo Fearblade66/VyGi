@@ -186,6 +186,8 @@ In the alerts bell, switch on **Watch this router 24/7 on the VyGi server**. Fro
 - every 6 hours, saves a backup of the router's config when it changed (so changes made outside VyGi are kept too; under `backups/`, the last 30 per router);
 - once a day, checks for a new VyOS version and alerts once per new version.
 
+**Flows** (Insights, web version): every connection your devices made, recorded by the 24/7 server when it ends (who, to where, which port/service, data, identical ones merged; lookups to the router itself left out), and every attempt one of VyGi's blocking rules stopped, from the router's firewall log (with the rule that blocked it, e.g. "IoT: isolated" or "Traffic Rule: Kids bedtime"). Blocks are logged only by rules with logging on: the Flows card offers to turn it on for VyGi's blocking rules. Claude can read it with the `get_flows` tool. Kept as long as the rest of the history.
+
 **Insights** (sidebar) shows what was recorded: internet traffic for the last 24 hours, 7 or 30 days, data per device, and the system log with search and a level filter. History is kept for 30 days (`VYGI_KEEP_DAYS` to change), in the data volume under `history/`.
 
 Changing the web password logs out every other browser session.
