@@ -12,6 +12,9 @@ use serde_json::{json, Value};
 use crate::error::{AppError, AppResult};
 use crate::tls::pinned_client_config;
 
+/// Marks an HTTP 500 from the router (see `post_with_timeout`).
+const TRANSIENT: &str = "router busy (HTTP 500): ";
+
 /// One `set` / `delete` / `comment` operation for `/configure`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigCommand {
@@ -98,7 +101,37 @@ impl VyosApi {
         self.post_with_timeout(endpoint, body, None).await
     }
 
+    /// Reads (`/retrieve`, `/show`) are retried when the router answers HTTP
+    /// 500 "An internal error occurred": VyOS gives that for a few seconds
+    /// while a commit or save is rewriting the config. Changes are never retried.
     async fn post_with_timeout(
+        &self,
+        endpoint: &str,
+        body: Value,
+        timeout: Option<Duration>,
+    ) -> AppResult<Value> {
+        let read_only = matches!(endpoint, "/retrieve" | "/show");
+        let mut attempt = 0u64;
+        loop {
+            match self.post_once(endpoint, body.clone(), timeout).await {
+                Err(AppError::Api(m)) if read_only && attempt < 5 && m.starts_with(TRANSIENT) => {
+                    attempt += 1;
+                    tokio::time::sleep(Duration::from_millis(400 * attempt)).await;
+                }
+                Err(AppError::Api(m)) if read_only && m.starts_with(TRANSIENT) => {
+                    return Err(AppError::Api(
+                        "The router is busy saving a change and couldn't answer. Try again in a moment.".into(),
+                    ))
+                }
+                Err(AppError::Api(m)) if m.starts_with(TRANSIENT) => {
+                    return Err(AppError::Api(clean_error(&m[TRANSIENT.len()..])))
+                }
+                other => return other,
+            }
+        }
+    }
+
+    async fn post_once(
         &self,
         endpoint: &str,
         mut body: Value,
@@ -131,6 +164,12 @@ impl VyosApi {
         if status == reqwest::StatusCode::NOT_FOUND {
             return Err(AppError::Api(format!(
                 "{endpoint} not found. Enable it on the router with `set service https api rest` and commit."
+            )));
+        }
+        if status == reqwest::StatusCode::INTERNAL_SERVER_ERROR {
+            return Err(AppError::Api(format!(
+                "{TRANSIENT}{}",
+                truncate(&text, 300)
             )));
         }
         let parsed: ApiResponse = serde_json::from_str(&text).map_err(|_| {
