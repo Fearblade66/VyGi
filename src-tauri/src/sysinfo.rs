@@ -877,6 +877,63 @@ fn sum_rates(text: &str) -> f64 {
         .sum()
 }
 
+/// Why the router can't reach the speed test server: gateway, internet,
+/// name lookups, then the HTTPS request itself.
+const SPEED_PROBE: &str = "echo \"route:$(ip -4 route show default | head -1)\"; \
+ping -c1 -W3 1.1.1.1 >/dev/null 2>&1 && echo ping:ok || echo ping:fail; \
+getent hosts speed.cloudflare.com >/dev/null 2>&1 && echo dns:ok || echo dns:fail; \
+curl -sS -o /dev/null --max-time 8 'https://speed.cloudflare.com/__down?bytes=1' >/dev/null 2>&1; echo \"curl:$?\"; \
+echo \"date:$(date -u +%Y)\"";
+
+/// A plain explanation from SPEED_PROBE's output.
+fn speed_failure(probe: &str) -> String {
+    let get = |k: &str| {
+        probe
+            .lines()
+            .find_map(|l| l.strip_prefix(&format!("{k}:")))
+            .map(str::trim)
+            .unwrap_or("")
+    };
+    let route = get("route");
+    let gw = route
+        .split_whitespace()
+        .skip_while(|w| *w != "via")
+        .nth(1)
+        .unwrap_or("");
+    let base = "The speed test couldn't reach speed.cloudflare.com";
+    if probe.trim().is_empty() {
+        return format!("{base}, and VyGi couldn't check why.");
+    }
+    if route.is_empty() {
+        return format!("{base}: the router has no internet connection (no default route / gateway). Connect its internet (WAN) port to your modem and check it gets an address (Settings > Internet), or set a gateway.");
+    }
+    if get("ping") == "fail" && get("dns") == "fail" {
+        let via = if gw.is_empty() {
+            String::new()
+        } else {
+            format!(" through its gateway {gw}")
+        };
+        return format!("{base}: the router can't reach the internet{via} (no reply from 1.1.1.1). Check the modem and cable, and that the WAN port has a working address.");
+    }
+    if get("dns") == "fail" {
+        return format!("{base}: the router reaches the internet but can't look up names. It has no working DNS server for itself: set one (Advanced > System Settings > name-server, e.g. 1.1.1.1).");
+    }
+    match get("curl") {
+        "0" => "The speed test got no data from speed.cloudflare.com, although the router can reach it now. Try again.".into(),
+        "127" => "The speed test needs curl on the router, and it isn't there.".into(),
+        "35" | "51" | "53" | "54" | "58" | "59" | "60" | "77" | "83" | "90" | "91" => {
+            let year = get("date");
+            if year.parse::<u32>().is_ok_and(|y| y < 2024) {
+                format!("{base}: the secure connection failed because the router's clock is wrong (year {year}). Set the time zone / NTP in Advanced > System > Identity & Clock.")
+            } else {
+                format!("{base}: the secure (HTTPS) connection failed. Something between the router and the internet may be intercepting HTTPS.")
+            }
+        }
+        "6" => format!("{base}: the router couldn't look up its address (DNS)."),
+        _ => format!("{base}: the router reaches the internet, but Cloudflare's speed test server didn't answer (blocked by a firewall or the provider?)."),
+    }
+}
+
 /// Measures the router's own internet speed against Cloudflare's speed test
 /// servers: several parallel downloads, then uploads, each limited in time.
 #[cfg_attr(feature = "desktop", tauri::command)]
@@ -895,9 +952,13 @@ pub async fn speed_test(state: Win) -> AppResult<SpeedResult> {
     let d = conn.ssh.exec(&down, limit).await?;
     let down_bps = sum_rates(&d.stdout) * 8.0;
     if down_bps <= 0.0 {
-        return Err(AppError::Api(
-            "The router couldn't reach the speed test server (speed.cloudflare.com).".into(),
-        ));
+        let probe = conn
+            .ssh
+            .exec(SPEED_PROBE, Duration::from_secs(25))
+            .await
+            .map(|o| o.stdout)
+            .unwrap_or_default();
+        return Err(AppError::Api(speed_failure(&probe)));
     }
     let u = conn.ssh.exec(&up, limit).await?;
     Ok(SpeedResult {
@@ -911,6 +972,42 @@ pub async fn speed_test(state: Win) -> AppResult<SpeedResult> {
 #[cfg(test)]
 mod speed_tests {
     use super::sum_rates;
+
+    #[test]
+    fn explains_failures() {
+        use super::speed_failure;
+        let p = |route: &str, ping: &str, dns: &str, curl: &str, year: &str| {
+            speed_failure(&format!(
+                "route:{route}\nping:{ping}\ndns:{dns}\ncurl:{curl}\ndate:{year}\n"
+            ))
+        };
+        assert!(p("", "fail", "fail", "6", "2026").contains("no default route"));
+        assert!(p(
+            "default via 192.168.1.1 dev eth0",
+            "fail",
+            "fail",
+            "6",
+            "2026"
+        )
+        .contains("through its gateway 192.168.1.1"));
+        assert!(p(
+            "default via 192.168.1.1 dev eth0",
+            "ok",
+            "fail",
+            "6",
+            "2026"
+        )
+        .contains("name-server"));
+        assert!(
+            p("default via 192.168.1.1 dev eth0", "ok", "ok", "60", "2016")
+                .contains("clock is wrong (year 2016)")
+        );
+        assert!(
+            p("default via 192.168.1.1 dev eth0", "ok", "ok", "7", "2026")
+                .contains("didn't answer")
+        );
+        assert!(speed_failure("").contains("couldn't check why"));
+    }
 
     #[test]
     fn sums_parallel_rates() {
