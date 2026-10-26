@@ -40,7 +40,7 @@ export const groupsOf = (groups, mac) => groups.filter((g) => g.macs.includes(St
 export function groupUsers(cfg, g) {
   const users = [];
   for (const r of Object.values(cfg?.firewall?.ipv4?.forward?.filter?.rule || {})) {
-    if (r?.source?.group?.["mac-group"] === g.gname) users.push({ kind: "rule", name: String(r.description || "").replace(/^VyGi rule \d+: /, "") });
+    if (r?.source?.group?.["mac-group"] === g.gname) users.push({ kind: "rule", name: String(r.description || "").replace(/^VyGi (rule|policy) \d+: /, "") });
   }
   for (const p of Object.values(cfg?.policy?.route || {})) {
     for (const r of Object.values(p?.rule || {})) if (r?.source?.group?.["mac-group"] === g.gname) users.push({ kind: "vpn", name: String(r.description || "VPN route") });

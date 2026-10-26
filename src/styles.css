@@ -715,3 +715,19 @@ table.grid th.sorted.desc::after { content: " ▼"; }
 .popup-sep { height: 1px; margin: 4px 0; background: var(--border); }
 .row-menu { border: none; background: transparent; padding: 0 6px; font-size: 16px; line-height: 1; color: var(--muted); cursor: pointer; }
 .row-menu:hover { color: var(--text); }
+
+/* Networks: who can reach whom */
+.policy-section { margin-top: 16px; padding: 14px 16px; }
+.reach-wrap { overflow-x: auto; margin: 10px 0 12px; }
+.reach-grid { border-collapse: separate; border-spacing: 3px; font-size: 12.5px; }
+.reach-grid th { text-align: left; font-weight: 600; padding: 4px 8px; color: var(--muted); white-space: nowrap; }
+.reach-grid thead th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+.reach { padding: 6px 10px; border-radius: 6px; white-space: nowrap; min-width: 92px; }
+.reach.ok { background: color-mix(in srgb, var(--ok, #12a150) 12%, transparent); color: var(--ok, #12a150); }
+.reach.no { background: color-mix(in srgb, var(--bad, #e2453c) 10%, transparent); color: var(--bad, #e2453c); }
+.reach.self { color: var(--muted); text-align: center; }
+.reach-ex { color: var(--text); font-size: 11.5px; }
+.policy-list { display: flex; flex-direction: column; gap: 6px; }
+.policy-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
+.policy-row.off { opacity: 0.55; }
+.policy-name { font-weight: 600; }

@@ -8,6 +8,7 @@ import { applyChanges, isConnected, session, onSessionChange } from "../lib/sess
 import { registerView, welcome, loadingPage } from "../lib/views.js";
 import { icon } from "../lib/icons.js";
 import { toArray, ipv4InCidr, parseIpv4Cidr } from "../lib/vyos.js";
+import { policySection } from "./policies_view.js";
 import { readNetworks, suggestSubnet, suggestVlan, suggestPool, networkCommands, deleteNetworkCommands } from "../lib/netplan.js";
 
 const ipNum = (ip) => ip.split(".").reduce((a, b) => a * 256 + Number(b), 0);
@@ -75,7 +76,7 @@ export function initNetworks() {
       h("button.primary", { on: { click: () => edit(null) } }, icon("plus", 16), "New network"));
     const grid = h("div.net-grid", nets.map((n) => card(n)));
     if (!nets.length) grid.append(h("div.empty", "No local networks yet. Create one, or use Quick Set for a basic home setup."));
-    clear(root).append(h("div.page", head, grid));
+    clear(root).append(h("div.page", head, grid, nets.length ? policySection(st, nets, render) : ""));
   }
 
   function card(n) {

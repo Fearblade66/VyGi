@@ -9,6 +9,7 @@
 // and is never offered automatically. Pure: no API calls.
 import { toArray, flattenInterfaces, parseIpv4Cidr, ipv4InCidr } from "./vyos.js";
 import { securityFindings } from "./secure.js";
+import { readPolicies, policyCommands, misplacedPolicies } from "./policies.js";
 
 const PRIVATE = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"];
 const isPrivate = (ip) => PRIVATE.some((c) => ipv4InCidr(ip, c));
@@ -287,6 +288,12 @@ export function diagnose(cfg, env = {}) {
         }
       }
     }
+  }
+
+  // ---- network policies must run before isolation and Traffic Rules
+  const late = misplacedPolicies(cfg);
+  if (late.length) {
+    add({ id: "policy-order", level: "bad", title: "A network policy comes too late", text: `The policy ${late.map((n) => `"${n}"`).join(", ")} runs after an isolation or Traffic Rule, so its exception has no effect. The fix moves VyGi's network policies back in front.`, fix: policyCommands(cfg, readPolicies(cfg)) });
   }
 
   // ---- features that don't mix
