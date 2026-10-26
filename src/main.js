@@ -182,6 +182,50 @@ async function toggleConnect() {
   }
 }
 
+/** Drag the left menu's right edge to make it wider (double-click: back to normal). */
+function initSidebarResize() {
+  const app = document.getElementById("app");
+  const side = document.getElementById("sidebar");
+  const KEY = "vygi.sidebar.width";
+  const set = (w) => (w ? app.style.setProperty("--sidebar-w", `${w}px`) : app.style.removeProperty("--sidebar-w"));
+  try {
+    set(Number(localStorage.getItem(KEY)) || 0);
+  } catch {
+    /* no storage: default width */
+  }
+  const grip = h("div#sidebar-grip", { title: "Drag to resize the menu (double-click to reset)" });
+  side.append(grip);
+  grip.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    grip.setPointerCapture(e.pointerId);
+    const left = side.getBoundingClientRect().left;
+    const move = (ev) => set(Math.round(Math.min(Math.max(ev.clientX - left, 160), 520)));
+    const up = () => {
+      grip.removeEventListener("pointermove", move);
+      grip.removeEventListener("pointerup", up);
+      app.classList.remove("resizing");
+      try {
+        localStorage.setItem(KEY, String(parseInt(app.style.getPropertyValue("--sidebar-w"), 10) || ""));
+      } catch {
+        /* not remembered */
+      }
+      window.dispatchEvent(new Event("resize")); // windows and charts re-fit
+    };
+    app.classList.add("resizing");
+    grip.addEventListener("pointermove", move);
+    grip.addEventListener("pointerup", up);
+  });
+  grip.addEventListener("dblclick", () => {
+    set(0);
+    try {
+      localStorage.removeItem(KEY);
+    } catch {
+      /* nothing stored */
+    }
+    window.dispatchEvent(new Event("resize"));
+  });
+}
+
 /** Web version: the VyGi server's own password, before anything else. */
 let loginOpen = false;
 async function webLoginDialog() {
@@ -226,6 +270,7 @@ function initWebAccount() {
 
 window.addEventListener("DOMContentLoaded", async () => {
   initToolbar();
+  initSidebarResize();
   initViews();
   initDashboard();
   initSettings();
