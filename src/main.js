@@ -27,6 +27,7 @@ import { openDns } from "./components/dns.js";
 import { openUsers } from "./components/users.js";
 import { runCheckup } from "./components/checkup.js";
 import { initViews, showView, onAnyView } from "./lib/views.js";
+import { initPhone } from "./lib/phone.js";
 import { initNetworks } from "./components/networks.js";
 import { initRules } from "./components/rules_view.js";
 import { initPortForwards } from "./components/portfwd_view.js";
@@ -315,6 +316,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initToolbar();
   initSidebarResize();
   initViews();
+  initPhone();
   initDashboard();
   initSettings();
   initClients();

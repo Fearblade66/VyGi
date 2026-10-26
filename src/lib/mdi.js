@@ -47,7 +47,9 @@ export function openWindow({ key, title, width = 640, height = 380 }) {
   const body = h("div.mdi-body");
   const btnMax = h("button", { title: "Maximize" }, "□");
   const btnClose = h("button", { title: "Close" }, "✕");
-  const bar = h("div.mdi-title", titleText, btnMax, btnClose);
+  // phones: every window fills the screen; this lists the others
+  const btnSwitch = h("button.mdi-switch", { title: "Open windows", on: { click: (e) => switchMenu(e) } }, "⧉");
+  const bar = h("div.mdi-title", titleText, btnSwitch, btnMax, btnClose);
   const grip = h("div.mdi-resize");
   const el = h("div.mdi-win", bar, body, grip);
 
@@ -121,6 +123,14 @@ export function openWindow({ key, title, width = 640, height = 380 }) {
   if (key) open.set(key, win);
   win.focus();
   return { ...win, isNew: true };
+}
+
+function switchMenu(e) {
+  e.stopPropagation();
+  const anchor = e.currentTarget;
+  const items = [...open.values()].map((w) => ({ label: w.el.querySelector(".mdi-title span").textContent, fn: () => w.focus() }));
+  items.push("-", { label: "Close all (back to the tool list)", fn: () => closeAllWindows() });
+  import("./menu.js").then(({ popupMenu }) => popupMenu(items, { anchor }));
 }
 
 function drag(handle, move) {
