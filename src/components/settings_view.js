@@ -13,6 +13,8 @@ import { isDesktop, webSessions, webSessionEnd } from "../lib/platform.js";
 import { openActivityLog } from "./activity.js";
 import { openClaudeSetup } from "./claude_setup.js";
 import { wanInfo, wanProblem } from "../lib/wan.js";
+import { readInternet, internetCommands, describeInternet, PD_LENGTHS } from "../lib/wanconf.js";
+import { readNetworks } from "../lib/netplan.js";
 import { protectStatus, protectOn, protectOff, smoothStatus, smoothOn, smoothOff, smoothBandwidth, adblockStatus, BLOCKLISTS } from "../lib/switches.js";
 import { failoverStatus, failoverLines, failoverOn, failoverOff, backupCandidates, parseLbStatus } from "../lib/failover.js";
 import { dnsState, dnsCommands, DNS_PRESETS } from "../lib/internet.js";
@@ -161,9 +163,11 @@ export function initSettings() {
       render();
     });
 
+    const conn = readInternet(cfg, wan);
     return [
       section("Internet (WAN)",
-        row("Port", "The router's port connected to your modem or ONT.", value(wan || "unknown")),
+        row("Connection", "How the router gets online: automatically from the modem (DHCP), with a username and password (PPPoE), or a fixed address. Some providers also need a VLAN tag.",
+          conn.manual ? handMade("Connection") : h("span.set-inline", value(describeInternet(conn)), button("Change…", () => changeConnection(st, conn)))),
         row("Internet address", dhcp ? "Given by your provider (DHCP)." : "Set by hand.", value(w.wanIp || "none"),
           problem ? h("div.warn-box", { style: { marginTop: "6px" } }, problem.text) : null),
         row("Gateway", "Your provider's router that all internet traffic goes through.", value(st.wanGateway || "–")),
@@ -174,6 +178,53 @@ export function initSettings() {
       dnsSection(st),
       backupLine(st),
     ];
+  }
+
+  async function changeConnection(st, cur) {
+    const { cfg } = st;
+    const ports = Object.keys(cfg?.interfaces?.ethernet || {}).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    const lans = readNetworks(cfg, cur.wan);
+    const lanOpt = (n) => `${n.name} (${n.iface})`;
+    let cmds = null;
+    await formDialog("Internet connection", [
+      { name: "port", label: "Port to the modem / ONT", type: "select", value: cur.port, options: ports },
+      { name: "mode", label: "Connection type", type: "select", value: cur.mode, options: [
+        { value: "dhcp", label: "Automatic (DHCP): cable, most fibre, a modem/router in front" },
+        { value: "pppoe", label: "PPPoE: DSL or fibre with a username and password" },
+        { value: "static", label: "Fixed address from your provider" },
+      ] },
+      { name: "vlan", label: "VLAN tag", value: cur.vlan, placeholder: "empty = none", hint: "Only if your provider says so (some fibre lines use e.g. 6, 7, 10 or 35). A wrong tag means no internet." },
+      { name: "user", label: "PPPoE username", value: cur.user },
+      { name: "password", label: "PPPoE password", type: "password", placeholder: cur.hasPassword ? "unchanged" : "" },
+      { name: "staticAddr", label: "Address", value: cur.staticAddr, placeholder: "203.0.113.10/24" },
+      { name: "gateway", label: "Gateway", value: cur.gateway, placeholder: "203.0.113.1" },
+      { name: "dns", label: "DNS servers", value: cur.dns, placeholder: "1.1.1.1 9.9.9.9" },
+      { name: "ipv6", label: "IPv6 from my provider", type: "checkbox", value: cur.ipv6 },
+      { name: "pdLength", label: "Prefix size", type: "select", value: cur.pdLength, options: PD_LENGTHS.map((l) => ({ value: l, label: `/${l}${l === "56" ? " (most common)" : l === "64" ? " (one network only)" : ""}` })), hint: "What your provider hands out; /56 if unsure." },
+      { name: "pdLans", label: "Networks that get IPv6", type: "multicheck", value: cur.ipv6 ? lans.filter((n) => cur.pdLans.includes(n.iface)).map(lanOpt) : lans.map(lanOpt), options: lans.map(lanOpt) },
+    ], (v) => {
+      const pdLans = lans.filter((n) => v.pdLans.includes(lanOpt(n))).map((n) => n.iface);
+      cmds = internetCommands(cfg, cur, { ...v, pdLans }, lans.map((n) => n.iface)).cmds;
+      return true;
+    }, {
+      okLabel: "Apply",
+      intro: "The internet drops for a few seconds while the router reconnects. If VyGi reaches the router through this port and loses it, Safe Mode puts the old connection back. Port forwards, the firewall, Smart Queues and failover follow the new connection automatically.",
+      initChange: true,
+      onChange(_f, v, set) {
+        for (const f of ["user", "password"]) set.show(f, v.mode === "pppoe");
+        for (const f of ["staticAddr", "gateway", "dns"]) set.show(f, v.mode === "static");
+        set.show("pdLength", v.ipv6);
+        set.show("pdLans", v.ipv6);
+      },
+    });
+    if (!cmds) return;
+    if (!cmds.length) return toast("Nothing changed.");
+    try {
+      await applyChanges(cmds, "internet connection");
+    } catch (e) {
+      if (!/^Cancelled/.test(e?.message || "")) alertBox("Internet connection", errorText(e));
+    }
+    render();
   }
 
   function smartQueues(st) {
