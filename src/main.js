@@ -26,7 +26,7 @@ import { openDhcp, openDhcpLeases } from "./components/dhcp.js";
 import { openDns } from "./components/dns.js";
 import { openUsers } from "./components/users.js";
 import { runCheckup } from "./components/checkup.js";
-import { initViews, showView } from "./lib/views.js";
+import { initViews, showView, onAnyView } from "./lib/views.js";
 import { initNetworks } from "./components/networks.js";
 import { initRules } from "./components/rules_view.js";
 import { initPortForwards } from "./components/portfwd_view.js";
@@ -141,6 +141,49 @@ function renderMenu() {
     }
   }
   renderLauncher(guard);
+  if (!document.getElementById("adv-links")) initAdvancedLinks(guard);
+}
+
+// The Advanced windows behind each simple page (labels from MENU).
+const RELATED = {
+  dashboard: ["Interfaces", "Resources", "Connections", "Log"],
+  clients: ["DHCP Leases", "ARP / Neighbors", "DHCP Server", "Queues", "Torch", "Connections"],
+  networks: ["Interfaces", "Addresses", "DHCP Server", "Routes", "DNS"],
+  rules: ["Filter Rules", "Address Lists", "Connections"],
+  ports: ["NAT", "Filter Rules"],
+  vpn: ["VPN", "Interfaces", "Routes"],
+  history: ["Revisions / Rollback", "Backup / Restore"],
+  insights: ["Log", "Torch", "DNS Server (Technitium)"],
+  settings: ["Interfaces", "DNS", "Dynamic DNS", "Filter Rules", "Services", "Queues", "Identity & Clock", "Images (Upgrade)", "Backup / Restore", "Users"],
+};
+
+/** "Advanced ▾" next to the page title: opens the related Advanced windows. */
+function initAdvancedLinks(guard) {
+  const items = new Map(MENU.flatMap((m) => (m.children || [m]).map((c) => [c.label, c.open])));
+  const btn = h("button#adv-links", { title: "Open the related Advanced windows (every setting, RouterOS-style)" }, "Advanced ▾");
+  const pop = h("div.adv-pop", { hidden: true });
+  const close = () => (pop.hidden = true);
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    pop.hidden = !pop.hidden;
+  });
+  document.addEventListener("click", close);
+  document.addEventListener("keydown", (e) => e.key === "Escape" && close());
+  document.getElementById("page-title").after(h("span.adv-wrap", btn, pop));
+  const render = (view) => {
+    const labels = (RELATED[view] || []).filter((l) => items.has(l));
+    btn.hidden = !labels.length;
+    close();
+    clear(pop).append(...labels.map((l) => h("button.adv-item", { on: { click: () => {
+      close();
+      guard(items.get(l))();
+    } } }, l)), h("div.adv-sep"), h("button.adv-item", { on: { click: () => {
+      close();
+      showView("windows");
+    } } }, "All Advanced tools…"));
+  };
+  onAnyView(render);
+  render(document.getElementById("app").dataset.view);
 }
 
 /** The empty Advanced workspace: every tool on one screen, grouped. */

@@ -53,6 +53,13 @@ export function showView(name, { remember = true } = {}) {
   document.getElementById("page-title").textContent = VIEWS[name].title;
   if (remember) store("vygi.view", name);
   listeners.get(name)?.show?.();
+  anyView.forEach((fn) => fn(name));
+}
+
+const anyView = [];
+/** fn(view) after every view change. */
+export function onAnyView(fn) {
+  anyView.push(fn);
 }
 
 export function savedView() {

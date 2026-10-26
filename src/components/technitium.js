@@ -10,6 +10,8 @@ import { liveChart } from "../lib/chart.js";
 import { toArray } from "../lib/vyos.js";
 import { siteIcon } from "../lib/siteicon.js";
 import { siteOf } from "../lib/sites.js";
+import { domainClients, periodStart } from "../lib/dnsclients.js";
+import { deviceList } from "./groups.js";
 
 /** Table cell: site icon + domain. */
 const domainCell = (key) => (r) => h("span.cell-icon", siteIcon(siteOf(r[key]).icon, r[key]), h("span", r[key]));
@@ -267,23 +269,70 @@ export function openDnsServer(opts = {}) {
     h("button", { on: { click: () => { const r = topClients.selected(); r ? showLogFor({ client: r.name }) : setStatus("Select a client first.", true); } } }, "Show queries"),
     h("span.hint", "Double-click a client to see its queries (needs a query log app)."), h("span.grow"), filterBox(topClients)), topClients.wrap, topClients.count);
 
+  // Under each domain list: which devices look up the selected domain.
+  const whoPanel = (blockedOnly) => {
+    const title = h("div.section-title", "Click a domain to see which devices look it up.");
+    const note = h("div.hint");
+    const table = makeTable([
+      { key: "label", label: "Device", width: "200px" },
+      { key: "ip", label: "Address", width: "130px" },
+      { key: "hits", label: blockedOnly ? "Times blocked" : "Lookups", width: "100px", className: "num" },
+      { key: "blockedText", label: "Blocked", width: "80px", className: "num" },
+      { key: "lastText", label: "Last" },
+    ], { rowKey: (r) => r.ip, onOpen: (r) => showLogFor({ client: r.ip, domain: table.domain }) });
+    let seq = 0;
+    async function show(domain) {
+      const my = ++seq;
+      table.domain = domain;
+      title.textContent = `Devices that ${blockedOnly ? "were blocked from" : "looked up"} ${domain} (${PERIODS[period].toLowerCase()})`;
+      note.textContent = "Loading…";
+      table.setRows([]);
+      const lg = (await queryLoggers())[0];
+      if (!lg) {
+        note.textContent = "Needs a query log in Technitium: install \"Query Logs (Sqlite)\" from its App Store (Apps > App Store). Technitium's own statistics don't say which device asked for which domain.";
+        return;
+      }
+      const params = { name: lg.name, classPath: lg.classPath, pageNumber: "1", entriesPerPage: "5000", descendingOrder: "true", qname: domain, start: periodStart(period) };
+      if (blockedOnly) params.responseType = "Blocked";
+      try {
+        const devs = deviceList(); // slow (several router calls): names fill in when ready
+        const r = await dnsCall("logs/query", params);
+        if (my !== seq) return;
+        const fill = (names) => table.setRows(domainClients(r.entries, names).map((c) => ({ ...c, label: c.name || (names ? "(unknown device)" : "…"), blockedText: c.blocked ? n(c.blocked) : "", lastText: c.last ? new Date(c.last).toLocaleString() : "" })));
+        fill(null);
+        devs.then((d) => my === seq && fill(new Map(d.filter((x) => x.ip).map((x) => [x.ip, x.label])))).catch(() => my === seq && fill(new Map()));
+        const rows = domainClients(r.entries);
+        const total = r.totalEntries || 0;
+        note.textContent = !rows.length ? "No device looked it up in this period (the query log may not reach back that far)."
+          : total > (r.entries || []).length ? `From the newest ${n((r.entries || []).length)} of ${n(total)} lookups. Double-click a device for its lookups in the Query Log.`
+          : "Double-click a device for its lookups in the Query Log.";
+      } catch (e) {
+        if (my === seq) note.textContent = `Couldn't read the query log: ${errorText(e)}`;
+      }
+    }
+    const el = h("div.dns-who", title, note, table.wrap);
+    return { el, show };
+  };
+  const domainsWho = whoPanel(false);
   const topDomains = makeTable([
     { key: "name", label: "Domain", width: "420px", render: domainCell("name") },
     { key: "hits", label: "Queries", width: "90px", className: "num" },
     { key: "share", label: "Share", className: "num" },
-  ], { rowKey: (r) => r.name });
+  ], { rowKey: (r) => r.name, onSelect: (r) => domainsWho.show(r.name) });
   t.pages["Top Domains"].append(h("div.win-toolbar",
     h("button", { on: { click: () => withSel(topDomains, (r) => block(r.name)) } }, "Block"),
-    h("span.grow"), filterBox(topDomains)), topDomains.wrap, topDomains.count);
+    h("span.hint", "Click a domain to see which devices look it up."),
+    h("span.grow"), filterBox(topDomains)), topDomains.wrap, topDomains.count, domainsWho.el);
 
+  const blockedWho = whoPanel(true);
   const topBlocked = makeTable([
     { key: "name", label: "Blocked domain", width: "420px", render: domainCell("name") },
     { key: "hits", label: "Times blocked", width: "110px", className: "num" },
     { key: "share", label: "Share", className: "num" },
-  ], { rowKey: (r) => r.name });
+  ], { rowKey: (r) => r.name, onSelect: (r) => blockedWho.show(r.name) });
   t.pages["Blocked Domains"].append(h("div.win-toolbar",
     h("button", { title: "Add to the allow list so it is never blocked", on: { click: () => withSel(topBlocked, (r) => allow(r.name)) } }, "Allow"),
-    h("span.grow"), filterBox(topBlocked)), topBlocked.wrap, topBlocked.count);
+    h("span.grow"), filterBox(topBlocked)), topBlocked.wrap, topBlocked.count, blockedWho.el);
 
   // Custom block / allow lists
   const lists = {};
@@ -411,9 +460,9 @@ export function openDnsServer(opts = {}) {
     }
   }
 
-  function showLogFor({ client }) {
+  function showLogFor({ client, domain = "" }) {
     qClient.value = client || "";
-    qName.value = "";
+    qName.value = domain;
     page = 1;
     t.select("Query Log");
   }

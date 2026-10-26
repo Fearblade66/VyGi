@@ -653,3 +653,18 @@ table.grid th { position: sticky; }
 /* Connect Claude wizard */
 .claude-steps ol { margin: 0 0 10px; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; }
 code.copy-line { display: block; margin: 4px 0; padding: 6px 8px; font-family: var(--mono, ui-monospace, monospace); font-size: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; user-select: all; word-break: break-all; }
+
+/* DNS Server: devices that look up the selected domain */
+.dns-who { flex: 0 0 38%; min-height: 140px; display: flex; flex-direction: column; border-top: 2px solid var(--border); margin-top: 4px; }
+.dns-who .section-title { margin: 6px 4px 2px; }
+.dns-who > .hint { padding: 0 4px 4px; }
+
+/* "Advanced ▾" next to the page title */
+.adv-wrap { position: relative; margin-left: 10px; }
+#adv-links { font-size: 12px; padding: 3px 10px; }
+.adv-pop { position: absolute; top: calc(100% + 4px); left: 0; z-index: 50; min-width: 200px; display: flex; flex-direction: column; padding: 4px; background: var(--white, #fff); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15); }
+.adv-pop[hidden] { display: none; }
+.adv-item { border: none; background: transparent; text-align: left; padding: 6px 10px; border-radius: 6px; white-space: nowrap; }
+.adv-item:hover { background: var(--select); }
+.adv-sep { height: 1px; margin: 4px 0; background: var(--border); }
+#app[data-view="windows"] .adv-wrap { display: none; }
