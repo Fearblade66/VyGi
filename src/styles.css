@@ -643,3 +643,9 @@ button.danger { color: var(--bad); }
 #sidebar-grip:hover, .resizing #sidebar-grip { background: var(--accent, #3b82f6); opacity: 0.5; }
 .resizing, .resizing * { cursor: col-resize !important; user-select: none; }
 @media (max-width: 1000px) { #app:not([data-view="windows"]) #sidebar-grip { display: none; } }
+
+/* Column resize grips (data grids) */
+table.grid th { position: sticky; }
+.col-grip { position: absolute; top: 0; right: 0; width: 6px; height: 100%; cursor: col-resize; touch-action: none; }
+.col-grip:hover, .col-resizing .col-grip:hover { background: var(--accent, #3b82f6); opacity: 0.4; }
+.col-resizing, .col-resizing * { cursor: col-resize !important; user-select: none !important; }
