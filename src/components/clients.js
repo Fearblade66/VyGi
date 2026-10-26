@@ -9,7 +9,9 @@ import { applyChanges, isConnected } from "../lib/session.js";
 import { collectClients, BLOCK_GROUP } from "../lib/netdata.js";
 import { toArray, ipv4InCidr } from "../lib/vyos.js";
 import { openPing } from "./tools.js";
-import { editQueue } from "./queues.js";
+import { editQueue, openQueues } from "./queues.js";
+import { openDhcp } from "./dhcp.js";
+import { popupMenu } from "../lib/menu.js";
 import { openGroups, editDeviceGroups } from "./groups.js";
 import { readGroups, groupsOf } from "../lib/devgroups.js";
 import { dnsSummary, dnsHitsByIp, openDnsServer } from "./technitium.js";
@@ -95,17 +97,24 @@ export function initClients() {
   const side = h("aside.side", { hidden: true });
   const table = makeTable(
     [
-      { key: "statusDot", label: "", width: "26px", render: (c) => h(`span.dot${c.online ? ".on" : ""}`, { title: c.online ? "online" : "offline" }) },
+      { key: "statusDot", label: "", width: "26px", sortValue: (c) => c.online, render: (c) => h(`span.dot${c.online ? ".on" : ""}`, { title: c.online ? "online" : "offline" }) },
       { key: "label", label: "Name", render: (c) => h("div", h("div.client-name", c.label), h("div.client-sub", c.mac || (c.kind === "vpn" ? "WireGuard peer" : ""))) },
       { key: "ip", label: "IP Address", width: "112px" },
       { key: "network", label: "Network", width: "84px", render: (c) => c.network || c.iface || "" },
-      { key: "kind", label: "Connection", width: "100px", render: (c) => (c.kind === "vpn" ? "VPN" : "Wired / LAN") },
-      { key: "tags", label: "", width: "150px", render: (c) => h("span", c.blocked ? h("span.tag.bad", "blocked") : null, ...groupsOf(groups, c.mac || "").map((g) => h("span.tag.group", g.name)), c.fixedIp ? h("span.tag", "fixed IP") : null, c.privateMac ? h("span.tag", "private MAC") : null, c.source.includes("dhcp") ? h("span.tag", "DHCP") : null) },
-      { key: "activity", label: "Activity", width: "190px", className: "num", render: activity },
+      { key: "kind", label: "Connection", width: "100px", sortValue: (c) => (c.kind === "vpn" ? "VPN" : "Wired"), render: (c) => (c.kind === "vpn" ? "VPN" : "Wired / LAN") },
+      { key: "tags", label: "", width: "150px", sort: false, render: (c) => h("span", c.blocked ? h("span.tag.bad", "blocked") : null, ...groupsOf(groups, c.mac || "").map((g) => h("span.tag.group", g.name)), c.fixedIp ? h("span.tag", "fixed IP") : null, c.privateMac ? h("span.tag", "private MAC") : null, c.source.includes("dhcp") ? h("span.tag", "DHCP") : null) },
+      { key: "activity", label: "Activity", width: "190px", className: "num", sortValue: (c) => (c.down != null ? c.down + c.up : c.connections || 0), render: activity },
+      { key: "menu", label: "", width: "34px", sort: false, render: (c) => {
+        const b = h("button.row-menu", { title: "Actions", "aria-label": `Actions for ${c.label}` }, "⋯");
+        b.addEventListener("mousedown", (e) => e.stopPropagation()); // don't open the side panel too
+        b.addEventListener("click", () => popupMenu(menuItems(c), { anchor: b }));
+        return b;
+      } },
     ],
     {
       rowKey: (c) => c.key,
       onSelect: (c) => { selectedKey = c.key; renderSide(); },
+      onMenu: (c, e) => popupMenu(menuItems(c), { event: e }),
       rowClass: (c) => (c.online ? "" : "disabled"),
     },
   );
@@ -182,17 +191,42 @@ export function initClients() {
         ...row("MAC type", c.privateMac ? "private (randomized)" : c.mac ? "hardware" : "")),
       c.privateMac ? h("div.hint", "This device uses a private MAC address. Phones may change it per network or over time, which breaks fixed IPs and blocking.") : "", // append() would print null
       c.ip && c.down != null ? h("div", h("h3", { style: { margin: "14px 0 4px" } }, "Sites"), sitesBox) : "",
-      h("div.actions",
-        c.ip ? h("button", { on: { click: () => rename(c) } }, "Rename") : null,
-        c.mac && c.iface && c.kind !== "vpn" && !c.online ? h("button", { title: "Send a Wake-on-LAN packet (the device must have Wake-on-LAN turned on)", on: { click: () => wake(c) } }, "Wake up") : null,
-        c.mac && c.ip && c.kind !== "vpn" && !c.fixedIp ? h("button", { on: { click: () => fixIp(c) } }, "Fix IP") : null,
-        c.mac && c.kind !== "vpn" ? h("button", { on: { click: async () => (await editDeviceGroups(c.mac, c.label)) && load() } }, "Groups…") : null,
-        c.mac && c.kind !== "vpn" ? h("button", { style: { color: c.blocked ? "var(--ok)" : "var(--bad)" }, on: { click: () => toggleBlock(c) } }, c.blocked ? "Unblock" : "Block") : null,
-        c.ip && c.kind !== "vpn" && !c.ip.includes(":") ? h("button", { title: "Limit this device's download/upload speed (Simple Queue)", on: { click: () => editQueue({ ip: c.ip, name: c.name }) } }, "Limit speed") : null,
-        c.ip ? h("button", { on: { click: () => { showView("windows"); openPing(); setTimeout(() => { const i = document.querySelector('.mdi-win.active input'); if (i) i.value = c.ip; }, 0); } } }, "Ping") : null,
-        dnsHits && c.ip ? h("button", { title: "This device's DNS queries in Technitium", on: { click: () => { showView("windows"); openDnsServer({ client: c.ip }); } } }, "DNS log") : null,
-        c.ip ? h("button", { on: { click: () => navigator.clipboard?.writeText(c.ip).then(() => setStatus(`Copied ${c.ip}`)).catch(() => setStatus(c.ip)) } }, "Copy IP") : null),
+      h("div.actions", deviceActions(c).map((a) => h("button", { title: a.title || "", style: a.color ? { color: a.color } : {}, on: { click: a.fn } }, a.label))),
     );
+  }
+
+  /** What can be done with a device: the side panel's buttons and the row menu. */
+  function deviceActions(c) {
+    const lan = c.mac && c.kind !== "vpn";
+    return [
+      c.ip ? { label: "Rename", fn: () => rename(c) } : null,
+      lan && c.iface && !c.online ? { label: "Wake up", title: "Send a Wake-on-LAN packet (the device must have Wake-on-LAN turned on)", fn: () => wake(c) } : null,
+      lan && c.ip && !c.fixedIp ? { label: "Fix IP", fn: () => fixIp(c) } : null,
+      lan ? { label: "Groups…", fn: async () => (await editDeviceGroups(c.mac, c.label)) && load() } : null,
+      lan ? { label: c.blocked ? "Unblock" : "Block", color: c.blocked ? "var(--ok)" : "var(--bad)", danger: !c.blocked, fn: () => toggleBlock(c) } : null,
+      c.ip && c.kind !== "vpn" && !c.ip.includes(":") ? { label: "Limit speed", title: "Limit this device's download/upload speed (Simple Queue)", fn: () => editQueue({ ip: c.ip, name: c.name }) } : null,
+      c.ip ? { label: "Ping", fn: () => { showView("windows"); openPing(); setTimeout(() => { const i = document.querySelector(".mdi-win.active input"); if (i) i.value = c.ip; }, 0); } } : null,
+      dnsHits && c.ip ? { label: "DNS log", title: "This device's DNS queries in Technitium", fn: () => { showView("windows"); openDnsServer({ client: c.ip }); } } : null,
+      c.ip ? { label: "Copy IP", fn: () => navigator.clipboard?.writeText(c.ip).then(() => setStatus(`Copied ${c.ip}`)).catch(() => setStatus(c.ip)) } : null,
+    ].filter(Boolean);
+  }
+
+  /** The row menu: the device's actions, then the Advanced windows behind them. */
+  function menuItems(c) {
+    const lan = c.mac && c.kind !== "vpn";
+    const adv = (fn) => () => {
+      showView("windows");
+      fn();
+    };
+    return [
+      { label: "Details", fn: () => { selectedKey = c.key; renderSide(); } },
+      "-",
+      ...deviceActions(c),
+      "-",
+      lan ? { label: "Advanced: DHCP leases", fn: adv(() => openDhcp("Leases")) } : null,
+      lan ? { label: "Advanced: fixed IPs (static mappings)", fn: adv(() => openDhcp("Static Mappings")) } : null,
+      lan && c.ip ? { label: "Advanced: speed limits (Queues)", fn: adv(openQueues) } : null,
+    ];
   }
 
   async function load() {

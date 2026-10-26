@@ -165,3 +165,42 @@ export function tabs(names, onSelect) {
   }
   return { el: wrap, pages, select };
 }
+
+// Winbox-style right-click on a row in any window: select it, then offer the
+// buttons of the toolbar that belongs to that table (Add, Remove, Enable,
+// Disable, Edit, Move up…). Tables with their own menu handle it themselves.
+function toolbarFor(table) {
+  for (let el = table.parentElement; el && !el.classList.contains("mdi-win"); el = el.parentElement) {
+    const bars = [...el.querySelectorAll(":scope > .win-toolbar, :scope > * > .win-toolbar")].filter((b) => !b.closest("table"));
+    if (bars.length) return bars;
+  }
+  return [];
+}
+
+const SYMBOL_NAMES = { "+": "Add", "−": "Remove", "-": "Remove", "✓": "Enable", "✗": "Disable", "▲": "Move up", "▼": "Move down", "⟳": "Reload" };
+
+// Icon-only buttons without a tooltip get their name as one.
+function symbolTitle(e) {
+  const b = e.target.closest?.("button");
+  if (b && !b.title && SYMBOL_NAMES[b.textContent.trim()]) b.title = SYMBOL_NAMES[b.textContent.trim()];
+}
+
+function rowMenu(e) {
+  const tr = e.target.closest(".mdi-win tbody tr");
+  if (!tr || e.defaultPrevented) return;
+  const bars = toolbarFor(tr.closest("table"));
+  const buttons = bars.flatMap((b) => [...b.querySelectorAll("button")]).filter((b) => !b.disabled && b.offsetParent !== null);
+  if (!buttons.length) return;
+  e.preventDefault();
+  tr.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+  const label = (b) => {
+    const text = b.textContent.trim();
+    return /[a-z]{2}/i.test(text) ? text : b.title || SYMBOL_NAMES[text] || text;
+  };
+  import("./menu.js").then(({ popupMenu }) => popupMenu(buttons.map((b) => ({ label: label(b), fn: () => b.click() })), { event: e }));
+}
+
+if (typeof document !== "undefined") {
+  document.addEventListener("contextmenu", rowMenu);
+  document.addEventListener("mouseover", symbolTitle);
+}

@@ -700,3 +700,18 @@ code.copy-line { display: block; margin: 4px 0; padding: 6px 8px; font-family: v
 .wan-notice { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 12px; padding: 8px 12px; font-size: 12.5px; border: 1px solid color-mix(in srgb, var(--warn, #d98c00) 45%, transparent); border-radius: var(--radius, 6px); background: color-mix(in srgb, var(--warn, #d98c00) 8%, transparent); }
 button.link { border: none; background: none; padding: 0; color: var(--accent, #006fff); cursor: pointer; font: inherit; }
 button.link:hover { text-decoration: underline; }
+
+/* sortable table headers */
+table.grid th.sortable { cursor: pointer; }
+table.grid th.sortable:hover { color: var(--text); }
+table.grid th.sorted::after { content: " ▲"; font-size: 9px; }
+table.grid th.sorted.desc::after { content: " ▼"; }
+
+/* popup menu (row ⋯ / right-click) */
+.popup-menu { position: fixed; z-index: 2000; min-width: 190px; display: flex; flex-direction: column; padding: 4px; background: var(--white, #fff); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); }
+.popup-item { border: none; background: transparent; text-align: left; padding: 6px 10px; border-radius: 6px; white-space: nowrap; color: var(--text); }
+.popup-item:hover, .popup-item:focus { background: var(--select); outline: none; }
+.popup-item.danger { color: var(--bad); }
+.popup-sep { height: 1px; margin: 4px 0; background: var(--border); }
+.row-menu { border: none; background: transparent; padding: 0 6px; font-size: 16px; line-height: 1; color: var(--muted); cursor: pointer; }
+.row-menu:hover { color: var(--text); }
