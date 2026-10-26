@@ -9,6 +9,16 @@ import { registerView, welcome, loadingPage } from "../lib/views.js";
 import { icon } from "../lib/icons.js";
 import { toArray, ipv4InCidr, parseIpv4Cidr } from "../lib/vyos.js";
 import { policySection, mdnsSection } from "./policies_view.js";
+import { renderPorts } from "./topology_view.js";
+
+const VIEW_KEY = "vygi.networks.view";
+const getView = () => {
+  try {
+    return localStorage.getItem(VIEW_KEY) === "ports" ? "ports" : "networks";
+  } catch {
+    return "networks";
+  }
+};
 import { readNetworks, suggestSubnet, suggestVlan, suggestPool, networkCommands, deleteNetworkCommands } from "../lib/netplan.js";
 
 const ipNum = (ip) => ip.split(".").reduce((a, b) => a * 256 + Number(b), 0);
@@ -70,10 +80,25 @@ export function initNetworks() {
     if (seq !== renderSeq) return; // a newer refresh is on its way
     st = next;
     const nets = readNetworks(st.cfg, st.wan);
+    const view = getView();
+    const switcher = h("span.seg", [["networks", "Networks"], ["ports", "Ports"]].map(([k, l]) => h(`button${k === view ? ".on" : ""}`, { on: { click: () => {
+      try {
+        localStorage.setItem(VIEW_KEY, k);
+      } catch {
+        /* not remembered */
+      }
+      render();
+    } } }, l)));
     const head = h("div.page-head",
-      h("div.hint", `${nets.length} local network${nets.length === 1 ? "" : "s"} · internet via ${st.wan || "?"}. Click a network to change it.`),
+      switcher,
+      h("div.hint", view === "ports" ? "Each port of the router: cable, speed, networks and the devices behind it." : `${nets.length} local network${nets.length === 1 ? "" : "s"} · internet via ${st.wan || "?"}. Click a network to change it.`),
       h("span.grow"),
       h("button.primary", { on: { click: () => edit(null) } }, icon("plus", 16), "New network"));
+    if (view === "ports") {
+      const box = h("div.topo");
+      clear(root).append(h("div.page", head, box));
+      return renderPorts(box);
+    }
     const grid = h("div.net-grid", nets.map((n) => card(n)));
     if (!nets.length) grid.append(h("div.empty", "No local networks yet. Create one, or use Quick Set for a basic home setup."));
     clear(root).append(h("div.page", head, grid, nets.length ? policySection(st, nets, render) : "", nets.length > 1 ? mdnsSection(st, nets, render) : ""));
