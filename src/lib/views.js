@@ -67,7 +67,8 @@ export function viewTab(view, fallback) {
  * tab picks one of a page's own tabs.
  */
 export function showView(name, { remember = true, tab = null } = {}) {
-  if (GROUPS[name]) name = store(`vygi.group.${name}`) || GROUPS[name].items[0].view;
+  // "settings" is a group and a page: with a tab it means the page
+  if (GROUPS[name] && !(tab && VIEWS[name])) name = store(`vygi.group.${name}`) || GROUPS[name].items[0].view;
   if (!VIEWS[name]) name = "dashboard";
   if (tab) store(`vygi.${name}.tab`, tab);
   const group = groupOf(name);

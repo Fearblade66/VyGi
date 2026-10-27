@@ -14,6 +14,7 @@ const OWNERS = [
   [/^VyGi(?::)? intrusion detection|^VyGi: addresses blocked after an attack/, "Intrusion detection", "ids"],
   [/^VyGi region block/, "Region blocking", "settings", "security"],
   [/^VyGi VPN client(?: \S+)?(?::)? ?(.*)$/, "VPN client", "vpn"],
+  [/^VyGi: (?:send chosen devices through a VPN client|private addresses \(stay off the VPN\))/, "VPN client", "vpn"],
   [/^VyGi(?: VPN|: WireGuard)/, "VPN", "vpn"],
   [/^VyGi: (?:backup internet|block new connections on the backup|DHCPv6 on the backup)/, "Backup internet", "settings", "internet"],
   [/^VyGi: DHCPv6 from the provider/, "Internet connection", "settings", "internet"],

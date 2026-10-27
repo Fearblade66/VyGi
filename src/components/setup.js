@@ -107,16 +107,18 @@ async function checks() {
 
 let body = null;
 async function refresh() {
-  if (!body) return;
+  const el = body; // the checklist may be closed while this runs
+  if (!el) return;
   let list;
   try {
     list = await checks();
   } catch (e) {
-    clear(body).append(h("div.err-box", errorText(e)));
+    if (el.isConnected) clear(el).append(h("div.err-box", errorText(e)));
     return;
   }
+  if (!el.isConnected) return;
   const todo = list.filter((c) => c.ok !== true).length;
-  clear(body).append(
+  clear(el).append(
     h("p.hint", { style: { marginTop: 0 } }, todo ? `${todo} thing${todo === 1 ? "" : "s"} to look at. Every change goes through Safe Mode.` : "All set."),
     h("div.setup-list", list.map((c) => h("div.setup-item",
       h(`span.setup-mark.${c.ok === true ? "ok" : c.ok === "warn" ? "warn" : "bad"}`, c.ok === true ? "✓" : "!"),
