@@ -15,6 +15,7 @@ pub mod tls;
 pub mod torch;
 pub mod transactions;
 pub mod updates;
+pub mod upgrade;
 pub mod vyos_api;
 pub mod wireguard;
 
@@ -96,6 +97,10 @@ pub fn run() {
             checkup::client_address,
             monitor::port_info,
             ids::ids_prepare,
+            upgrade::update_guard_arm,
+            upgrade::update_guard_status,
+            upgrade::update_guard_confirm,
+            upgrade::update_rollback_now,
             ids::ids_status,
             ids::ids_update_rules,
             ids::ids_alerts,

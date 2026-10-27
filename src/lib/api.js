@@ -63,6 +63,10 @@ export const api = {
   routerTime: () => invoke("router_time"),
   wakeOnLan: (iface, mac) => invoke("wake_on_lan", { interface: iface, mac }),
   speedTest: () => invoke("speed_test"),
+  updateGuardArm: (minutes) => invoke("update_guard_arm", { minutes }),
+  updateGuardStatus: () => invoke("update_guard_status"),
+  updateGuardConfirm: () => invoke("update_guard_confirm"),
+  updateRollbackNow: () => invoke("update_rollback_now"),
   // web server only: 24/7 watching and its recordings
   watchGet: () => invoke("watch_get"),
   watchSet: (patch) => invoke("watch_set", patch),

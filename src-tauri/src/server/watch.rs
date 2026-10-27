@@ -337,10 +337,26 @@ impl Watcher {
                     if stopped(&mut stop, Duration::from_secs(backoff)).await {
                         break;
                     }
-                    backoff = (backoff * 2).min(600);
+                    backoff = (backoff * 2).min(240); // short enough to confirm an update in time
                     continue;
                 }
             };
+            // back after a VyOS update: reaching the router is what keeps the new version
+            if let Ok(conn) = ws.conn().await {
+                if let Ok(Some(new)) = crate::upgrade::confirm_if_pending(&conn.ssh).await {
+                    let a = Alert {
+                        kind: "update".into(),
+                        text: format!("VyOS {new} is running and VyGi reaches the router: the update is kept."),
+                        level: "ok".into(),
+                        at: now_ms(),
+                    };
+                    store.add_alerts(std::slice::from_ref(&a));
+                    let name = self.router(&id).name;
+                    let _ = self
+                        .notify(if name.is_empty() { &host } else { &name }, &[a])
+                        .await;
+                }
+            }
             let mut saved = store.load();
             let cursor = Arc::new(StdMutex::new(saved.cursor.clone()));
             let journal = start_journal(&ws, store.clone(), cursor.clone()).await;

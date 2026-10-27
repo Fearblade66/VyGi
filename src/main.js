@@ -39,6 +39,7 @@ import { initSearch } from "./components/search.js";
 import { initInsights } from "./components/insights.js";
 import { initSecurityPages } from "./components/security_pages.js";
 import { initSetup } from "./components/setup.js";
+import { initUpdateGuard } from "./lib/updateguard.js";
 import { openApiAccess } from "./components/apiaccess.js";
 import { openPhoneApp } from "./components/phoneapp.js";
 import { openClaudeReport } from "./components/report.js";
@@ -335,6 +336,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initPortForwards();
   initSecurityPages();
   initSetup();
+  initUpdateGuard();
   initVpnPage();
   initAlerts();
   initHistory();

@@ -17,7 +17,7 @@ use crate::error::{AppError, AppResult};
 use crate::state::{AppState, Out, St, Win, WindowState};
 use crate::{
     backup, checkup, connection, geoip, ids, monitor, siteicons, sysinfo, technitium, torch,
-    transactions, updates, wireguard,
+    transactions, updates, upgrade, wireguard,
 };
 
 fn arg<T: DeserializeOwned>(args: &Value, name: &str) -> AppResult<T> {
@@ -157,6 +157,10 @@ pub async fn call(
         "port_info" => json(monitor::port_info(w()).await),
         "ids_prepare" => json(ids::ids_prepare(w()).await),
         "ids_status" => json(ids::ids_status(w()).await),
+        "update_guard_arm" => json(upgrade::update_guard_arm(w(), arg(&a, "minutes")?).await),
+        "update_guard_status" => json(upgrade::update_guard_status(w()).await),
+        "update_guard_confirm" => json(upgrade::update_guard_confirm(w()).await),
+        "update_rollback_now" => json(upgrade::update_rollback_now(w()).await),
         "ids_update_rules" => json(ids::ids_update_rules(w()).await),
         "ids_alerts" => {
             json(ids::ids_alerts(w(), arg::<Option<u32>>(&a, "limit")?.unwrap_or(200)).await)

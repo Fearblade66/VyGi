@@ -27,6 +27,7 @@ import { openDdns } from "./ddns.js";
 import { openIdentityClock } from "./resources.js";
 import { openBackup } from "./backup.js";
 import { openSetup } from "./setup.js";
+import { rememberUpdate, goBack } from "../lib/updateguard.js";
 
 const TABS = { internet: "Internet", security: "Security", system: "System" };
 const speedKey = () => `vygi.speed.${session.info?.profileId}`;
@@ -479,11 +480,18 @@ export function initSettings() {
       clear(el).append(row("VyOS version", `Up to date (newest is ${c.info.remote}).`, h("span.set-inline", value(c.info.local), again)));
     }
     if (!isDesktop && !c.error && !c.info.unsupported) el.append(h("div.hint.set-note", "With 24/7 watching on, the server checks daily and alerts you when a new version comes out."));
+    // after an update VyGi installed: the way back to the version before it
+    api.updateGuardStatus().then((st) => {
+      const old = st.pending ? st.old : st.previous;
+      if (old && old !== st.running && el.isConnected) {
+        el.append(row("Previous version", st.pending ? `Waiting for VyGi to confirm the update; until then the router goes back to ${old} by itself.` : `Before the last update: ${old}.`, button("Go back…", goBack)));
+      }
+    }).catch(() => {});
   }
 
   async function install(info) {
     const ok = await confirmBox("Update VyOS",
-      `VyGi saves your settings, then the router downloads VyOS ${info.remote} (about 600 MB) and installs it next to the current version. Your settings are copied to the new version. The internet keeps working while it downloads.\n\nAfterwards the router restarts into the new version (about 2 minutes without internet). If something is wrong with it, choose the old version under Advanced → System → Images (Upgrade) and restart.`,
+      `VyGi saves your settings, then the router downloads VyOS ${info.remote} (about 600 MB) and installs it next to the current version. Your settings are copied to the new version. The internet keeps working while it downloads.\n\nAfterwards the router restarts into the new version (about 2 minutes without internet). If VyGi can't reach the router within 10 minutes of it starting, the router goes back to the current version by itself and restarts again.`,
       "Download and install");
     if (!ok) return;
     try {
@@ -500,7 +508,19 @@ export function initSettings() {
     }
     updateCache.delete(session.info?.profileId);
     toast(`VyOS ${info.remote} installed.`);
-    if (await confirmBox("Restart now?", `VyOS ${info.remote} is installed and will be used after a restart. Restart the router now? (About 2 minutes without internet; VyGi reconnects when it's back.)`, "Restart now")) {
+    // the way back: the router returns to this version unless VyGi reaches it after the restart
+    let guard = null;
+    let guardErr = "";
+    try {
+      guard = await api.updateGuardArm(10);
+      rememberUpdate(guard);
+    } catch (e) {
+      guardErr = errorText(e);
+    }
+    const text = guard
+      ? `VyOS ${info.remote} is installed and will be used after a restart. Restart the router now? (About 2 minutes without internet. VyGi reconnects when it's back; if it can't within 10 minutes, the router goes back to ${guard.old} by itself.)`
+      : `VyOS ${info.remote} is installed and will be used after a restart.\n\nThe automatic way back couldn't be set up (${guardErr}): if the new version doesn't work, choose the old one under Advanced > System > Images (Upgrade) and restart. Restart now?`;
+    if (await confirmBox("Restart now?", text, "Restart now")) {
       await api.power("reboot").catch((e) => alertBox("Restart", errorText(e)));
     }
   }
