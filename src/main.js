@@ -38,6 +38,7 @@ import { initHistory } from "./components/history_view.js";
 import { initSearch } from "./components/search.js";
 import { initInsights } from "./components/insights.js";
 import { initSecurityPages } from "./components/security_pages.js";
+import { initSetup } from "./components/setup.js";
 import { openApiAccess } from "./components/apiaccess.js";
 import { openPhoneApp } from "./components/phoneapp.js";
 import { openClaudeReport } from "./components/report.js";
@@ -333,6 +334,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initRules();
   initPortForwards();
   initSecurityPages();
+  initSetup();
   initVpnPage();
   initAlerts();
   initHistory();

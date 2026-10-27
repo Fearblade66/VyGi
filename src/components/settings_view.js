@@ -26,6 +26,7 @@ import { loadDoctor, renderDoctor } from "./doctor.js";
 import { openDdns } from "./ddns.js";
 import { openIdentityClock } from "./resources.js";
 import { openBackup } from "./backup.js";
+import { openSetup } from "./setup.js";
 
 const TABS = { internet: "Internet", security: "Security", system: "System" };
 const speedKey = () => `vygi.speed.${session.info?.profileId}`;
@@ -444,6 +445,7 @@ export function initSettings() {
 
     const out = [
       section("Router",
+        row("Set up", "A checklist of the basics: internet, a home network, the router's password, security, saving, backups and alerts, the clock.", button("Open checklist…", () => openSetup().then(render))),
         row("Name", "", value(cfg?.system?.["host-name"] || "–")),
         row("Time zone", "Schedules (Traffic Rules) follow it.", h("span.set-inline", value(cfg?.system?.["time-zone"] || "UTC"), button("Change…", () => openIdentityClock().then(render))))),
       section("Changes",

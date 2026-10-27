@@ -1,6 +1,7 @@
 // Search bar (top bar, Ctrl+K): pages, Advanced tools, everyday words
 // ("password", "open port"), devices, networks, rules, forwards, VPN devices
 // and any setting in the router's configuration.
+import { openSetup } from "./setup.js";
 import { api } from "../lib/api.js";
 import { vpnServers } from "../lib/vpnclient.js";
 import { h, clear } from "../lib/dom.js";
@@ -82,6 +83,8 @@ export function initSearch(tools) {
         if (t && !out.some((r) => r.label === t.label)) out.push({ group: "Tools", label: t.label, sub: t.parent ? `Advanced → ${t.parent} · related` : "Advanced · related", sc: sc - 5, go: tool(t) });
       } else if (name === "alerts") {
         out.push({ group: "Pages", label: "Alerts", sub: "bell in the top bar", sc: sc - 5, go: () => document.getElementById("btn-alerts").click() });
+      } else if (name === "setup") {
+        out.push({ group: "Pages", label: "Set up this router", sub: "checklist of the basics", sc: sc - 5, go: () => openSetup() });
       }
     }
     return out;
