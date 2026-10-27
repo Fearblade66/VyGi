@@ -865,3 +865,12 @@ table.grid th.sorted.desc::after { content: " ▼"; }
 #workspace.tabbed .mdi-win { left: 0 !important; top: 0 !important; width: 100% !important; height: 100% !important; border: none !important; border-radius: 0 !important; box-shadow: none !important; display: none; }
 #workspace.tabbed .mdi-win.active { display: flex; }
 #workspace.tabbed .mdi-title, #workspace.tabbed .mdi-resize { display: none; }
+
+/* preview before applying */
+.change-list { display: flex; flex-direction: column; gap: 6px; margin: 0 0 10px; }
+.change-item { display: flex; gap: 10px; align-items: flex-start; }
+.change-item .pill { flex: none; min-width: 64px; text-align: center; }
+.change-cmds { margin: 0 0 10px; }
+.change-cmds summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+.change-cmds pre { margin: 6px 0 0; padding: 8px; max-height: 180px; overflow: auto; font: 11.5px var(--mono); background: var(--panel); border: 1px solid var(--border); border-radius: 6px; user-select: text; white-space: pre-wrap; word-break: break-all; }
+.pill.info { color: var(--accent, #2b6cb0); }

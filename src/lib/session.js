@@ -4,6 +4,7 @@ import { setTitle } from "./platform.js";
 import { setStatus, toast, h } from "./dom.js";
 import { confirmBox, modal } from "./dialog.js";
 import { checkChange } from "./doctor.js";
+import { describeChange, wantsPreview, commandLine } from "./describe.js";
 import { wanInfo } from "./wan.js";
 import { addEntry, updateEntry, settlePending, parseRevisions } from "./history.js";
 
@@ -109,6 +110,22 @@ async function routerEnv() {
  * would change (only its own settings) and anything you should know, and
  * asks. Returns the commands to apply; throws if you cancel.
  */
+/** When to show a change before applying it: always, big (removals, many steps), never. */
+export function previewMode() {
+  try {
+    return localStorage.getItem("vygi.preview") || "big";
+  } catch {
+    return "big";
+  }
+}
+export function setPreviewMode(v) {
+  try {
+    localStorage.setItem("vygi.preview", v);
+  } catch {
+    /* not remembered */
+  }
+}
+
 async function reviewChange(commands, what) {
   let cfg;
   let env;
@@ -118,18 +135,26 @@ async function reviewChange(commands, what) {
     return commands; // can't check (e.g. not connected): VyOS still validates the change
   }
   const { extras, warnings } = checkChange(cfg || {}, commands, env);
-  if (!extras.length && !warnings.length) return commands;
+  const preview = wantsPreview(previewMode(), commands);
+  if (!extras.length && !warnings.length && !preview) return commands;
   const boxes = extras.map((x) => h("input", { type: "checkbox", checked: true }));
+  const VERB = { add: ["ok", "Add"], change: ["info", "Change"], remove: ["bad", "Remove"], on: ["ok", "Turn on"], off: ["warn", "Turn off"] };
+  const steps = describeChange(cfg || {}, commands);
   const body = h("div.review", { style: { width: "560px" } },
-    h("p", `Before applying "${what}", VyGi checked how it fits with the rest of your setup.`),
+    h("p", extras.length || warnings.length ? `Before applying "${what}", VyGi checked how it fits with the rest of your setup.` : `"${what}" will:`),
+    h("div.change-list", steps.map((d) => h("div.change-item",
+      h(`span.pill.${VERB[d.verb][0]}`, VERB[d.verb][1]),
+      h("span", h("b", d.label), d.name ? h("span.hint", ` · ${d.name}`) : "",
+        d.details.length ? h("div.hint", d.details.join(" · ") + (d.more ? ` · +${d.more} more` : "")) : "")))),
+    h("details.change-cmds", h("summary", `The ${commands.length} VyOS command${commands.length === 1 ? "" : "s"}`), h("pre", commands.map(commandLine).join("\n"))),
     extras.length ? h("div", h("h4", "VyGi will also change these, so nothing breaks:"),
       extras.map((x, i) => h("label.review-item", boxes[i], h("span", h("b", x.finding.title), h("span.hint", ` ${x.finding.text}`))))) : null,
     warnings.length ? h("div", h("h4", "Worth knowing:"),
       warnings.map((w) => h("div.review-item", h(`span.pill.${w.level === "bad" ? "bad" : "warn"}`, w.level === "bad" ? "problem" : "note"), h("span", h("b", w.title), h("span.hint", ` ${w.text}`))))) : null,
     h("div.hint", "Settings made in Advanced or by hand are never changed automatically."));
-  const r = await modal("Check before applying", body, [
+  const r = await modal(extras.length || warnings.length ? "Check before applying" : "Apply this change?", body, [
     { label: "Cancel", value: "cancel" },
-    { label: extras.length ? "Apply" : "Apply anyway", value: "apply", primary: true },
+    { label: warnings.length && !extras.length ? "Apply anyway" : "Apply", value: "apply", primary: true },
   ]);
   if (r !== "apply") throw new Error("Cancelled: nothing was changed.");
   return [...commands, ...extras.filter((_, i) => boxes[i].checked).flatMap((x) => x.commands)];

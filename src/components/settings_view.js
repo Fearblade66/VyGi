@@ -6,7 +6,7 @@
 import { api, errorText } from "../lib/api.js";
 import { h, clear, toast, formatBits } from "../lib/dom.js";
 import { formDialog, confirmBox, alertBox } from "../lib/dialog.js";
-import { applyChanges, isConnected, onSessionChange, session } from "../lib/session.js";
+import { applyChanges, isConnected, onSessionChange, session, previewMode, setPreviewMode } from "../lib/session.js";
 import { registerView, welcome, loadingPage, viewTab } from "../lib/views.js";
 import { toArray } from "../lib/vyos.js";
 import { isDesktop, webSessions, webSessionEnd } from "../lib/platform.js";
@@ -446,6 +446,8 @@ export function initSettings() {
       section("Router",
         row("Name", "", value(cfg?.system?.["host-name"] || "–")),
         row("Time zone", "Schedules (Traffic Rules) follow it.", h("span.set-inline", value(cfg?.system?.["time-zone"] || "UTC"), button("Change…", () => openIdentityClock().then(render))))),
+      section("Changes",
+        row("Show changes before applying", "A short list of what will change (Add, Change, Remove), with the VyOS commands, before VyGi applies it. Conflict checks still show whenever they find something.", previewSelect())),
       section("Updates", update),
       section("Backups",
         row("Backups", isDesktop
@@ -455,6 +457,12 @@ export function initSettings() {
     ];
     if (!isDesktop) out.push(watchSection());
     return out;
+  }
+
+  function previewSelect() {
+    const sel = h("select", [["big", "For bigger changes"], ["always", "Always"], ["never", "Never"]].map(([v, l]) => h("option", { value: v, selected: previewMode() === v }, l)));
+    sel.addEventListener("change", () => setPreviewMode(sel.value));
+    return sel;
   }
 
   function fillUpdate(el, c) {
