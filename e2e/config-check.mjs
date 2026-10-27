@@ -126,6 +126,10 @@ const wgKey = () => randomBytes(32).toString("base64");
 
 console.log(`VyOS ${await version()} at ${ip} (management ${mgmtPort}; LANs ${LAN1}, ${LAN2}; internet ${WAN})`);
 env.mgmtHost = ip;
+// Docker's interfaces refuse IPv6 link-local addresses; the image turns them off on eth1-3,
+// but Docker may hand out the ports in another order
+const prep = await post("/configure", [LAN1, LAN2, WAN].map((p) => ({ op: "set", path: ["interfaces", "ethernet", p, "ipv6", "address", "no-default-link-local"] })));
+if (!prep.success) console.log(`(test setup: ${String(prep.error).slice(0, 200)})`);
 await post("/config-file", { op: "save" });
 
 await step("network: Home with DHCP", (c) => networkCommands(c, { name: "Home", mode: "port", port: LAN1, cidr: "10.20.1.1/24", dhcp: true, poolStart: "10.20.1.100", poolStop: "10.20.1.200", dnsMode: "router", internet: true, isolate: false }, env),
