@@ -16,6 +16,8 @@ import { loadSites, siteRows, countryRows, sitesFootnote } from "../lib/activity
 import { siteIcon } from "../lib/siteicon.js";
 import { siteOf } from "../lib/sites.js";
 import { loadDoctor, renderDoctor } from "./doctor.js";
+import { renderRouters } from "./routers_card.js";
+import { isDesktop } from "../lib/platform.js";
 
 const PING_TARGET = "1.1.1.1";
 
@@ -47,6 +49,9 @@ export function initDashboard() {
     const vpn = card("span-3", "VPN", { label: "Open", go: () => goWin(openVpn) });
     const alerts = card("span-3", "Alerts");
     const security = card("span-12", "Health check");
+    const routers = card("span-12", "Your routers");
+    routers.el.hidden = true;
+    if (!isDesktop) renderRouters(routers);
     security.el.hidden = true;
     const sites = card("span-7", "Top sites now", { label: "All clients", go: () => showView("clients") });
     const countries = card("span-5", "Traffic by country");
@@ -63,7 +68,7 @@ export function initDashboard() {
     chart.el.style.background = "transparent";
     chart.el.style.border = "none";
     chart.el.style.padding = "0";
-    root.append(h("div.dash", head, security.el, internet.el, gateway.el, clients.el, traffic.el, networks.el, top.el, vpn.el, alerts.el, sites.el, countries.el, dns.el));
+    root.append(h("div.dash", head, routers.el, security.el, internet.el, gateway.el, clients.el, traffic.el, networks.el, top.el, vpn.el, alerts.el, sites.el, countries.el, dns.el));
     return { securityCard: security.el, security: security.body, sitesCard: sites.el, sites: sites.body, countriesCard: countries.el, countries: countries.body, dnsCard: dns.el, dns: dns.body, head, internet: internet.body, gateway: gateway.body, clients: clients.body, networks: networks.body, top: top.body, vpn: vpn.body, alerts: alerts.body };
   }
 

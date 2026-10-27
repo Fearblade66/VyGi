@@ -45,6 +45,29 @@ pub async fn call(
         // keep-alive: the tab is still open (the server already noted it)
         "ping" => Ok(Value::Null),
         "list_routers" => json(connection::list_routers(st())),
+        // every saved router with its 24/7 watching: the overview on the Dashboard
+        "routers_overview" => {
+            let day_ago = now_ms().saturating_sub(86_400_000);
+            let list: Vec<Value> = connection::list_routers(st())?
+                .into_iter()
+                .map(|p| {
+                    let id = p.id();
+                    let alerts = watcher.store(&id).alerts(day_ago, 50);
+                    let bad = alerts.iter().filter(|a| a.level == "bad").count();
+                    serde_json::json!({
+                        "id": id,
+                        "name": p.name,
+                        "host": p.host,
+                        "watch": watcher.router(&id).enabled,
+                        "status": watcher.status(&id),
+                        "alerts24h": alerts.len(),
+                        "bad24h": bad,
+                        "lastAlert": alerts.first(),
+                    })
+                })
+                .collect();
+            Ok(Value::Array(list))
+        }
         "has_saved_secrets" => json(connection::has_saved_secrets(st(), arg(&a, "id")?)),
         "forget_router" => json(connection::forget_router(st(), arg(&a, "id")?)),
         "connect" => json(connection::connect(st(), w(), arg(&a, "req")?).await),

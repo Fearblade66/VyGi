@@ -52,6 +52,7 @@ export function errorText(e) {
 
 export const api = {
   listRouters: () => invoke("list_routers"),
+  routersOverview: () => invoke("routers_overview"),
   hasSavedSecrets: (id) => invoke("has_saved_secrets", { id }),
   forgetRouter: (id) => invoke("forget_router", { id }),
   connect: (req) => invoke("connect", { req }),

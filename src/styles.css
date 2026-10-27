@@ -882,3 +882,11 @@ table.grid th.sorted.desc::after { content: " ▼"; }
 .setup-item button { flex: none; }
 .setup-mark { flex: none; width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; }
 .setup-mark.ok { background: var(--ok); } .setup-mark.warn { background: var(--warn); } .setup-mark.bad { background: var(--bad); }
+
+/* Dashboard: your routers */
+.router-list { display: flex; flex-direction: column; }
+.router-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--border); }
+.router-row:first-child { border-top: none; }
+.router-row .grow { flex: 1; min-width: 0; }
+.router-row .grow .hint:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.router-row .pill { flex: none; min-width: 110px; }

@@ -66,7 +66,14 @@ export async function showConnectDialog() {
     }
   };
   renderList();
-  if (routers.length) fill(routers[0]);
+  // "#router=user@host" (the Dashboard's router overview opens a tab like that): connect to it right away
+  const wanted = new URLSearchParams(location.hash.slice(1)).get("router");
+  const pick = routers.find((p) => `${p.sshUser}@${p.host}` === wanted);
+  if (wanted) history.replaceState(null, "", location.pathname + location.search);
+  if (pick) {
+    fill(pick).then(() => savedFor && setTimeout(() => [...document.querySelectorAll(".dialog-buttons button.primary")].find((b) => b.textContent === "Connect")?.click(), 50));
+    list.children[routers.indexOf(pick)]?.classList.add("sel");
+  } else if (routers.length) fill(routers[0]);
 
   const content = h(
     "div",
@@ -153,9 +160,10 @@ export async function showConnectDialog() {
   });
   if (!connected) return;
   if (connected.revertAction !== "reload") await warnRevertAction();
+  const before = currentView(); // still showing "Connect to a router"
   const shown = await runCheckup();
-  // the check-up can take a while: don't reload the page the user is already on
-  if (!shown && currentView() !== savedView()) showView(savedView());
+  // the check-up can take a while: if the user moved to another page meanwhile, stay there
+  if (!shown && currentView() === before) showView(savedView());
 }
 
 /** Asks the user about an unknown or changed fingerprint. Returns true if accepted. */
