@@ -6,6 +6,8 @@ import { makeTable, filterBox } from "../lib/table.js";
 import { formDialog, confirmBox, alertBox } from "../lib/dialog.js";
 import { applyChanges } from "../lib/session.js";
 import { toArray, diffMulti } from "../lib/vyos.js";
+import { ownerOf, manualDescription } from "../lib/owner.js";
+import { ownerBadge, confirmOwned } from "./owned.js";
 
 const GROUP_TYPES = {
   "address-group": { label: "IPv4 addresses", leaf: "address", re: /^\d+\.\d+\.\d+\.\d+(-\d+\.\d+\.\d+\.\d+)?$/, hint: "192.0.2.5 or 192.0.2.10-192.0.2.20" },
@@ -26,6 +28,7 @@ export function openAddressLists() {
       { key: "name", label: "List", width: "150px" },
       { key: "typeLabel", label: "Type", width: "120px" },
       { key: "count", label: "Entries", width: "60px", className: "num" },
+      { key: "owner", label: "Managed by", width: "150px", render: (r) => ownerBadge(r.description), sortValue: (r) => (ownerOf(r.description) ? r.description : "") },
       { key: "entriesText", label: "Members" },
     ],
     { rowKey: (r) => `${r.type}|${r.name}`, onOpen: (r) => editGroup(r) },
@@ -57,7 +60,23 @@ export function openAddressLists() {
     table.setRows(rows);
   }
 
+  /** Asks before changing a list a simple page made; false = stop. */
+  async function owned(r, again) {
+    const choice = await confirmOwned(r.description, "list");
+    if (choice !== "manual") return choice === "go";
+    try {
+      await applyChanges([{ op: "set", path: [...ROOT, r.type, r.name, "description"], value: manualDescription(r.description) }], `list ${r.name}: make it manual`);
+    } catch (e) {
+      alertBox("Apply failed", errorText(e));
+      return false;
+    }
+    await load();
+    if (again) again({ ...r, description: manualDescription(r.description) });
+    return false;
+  }
+
   async function editGroup(r) {
+    if (r && ownerOf(r.description) && !(await owned(r, editGroup))) return;
     await formDialog(r ? `List <${r.name}>` : "New address list", [
       ...(r ? [] : [
         { name: "name", label: "Name", placeholder: "e.g. TRUSTED, BLOCKED" },
@@ -89,6 +108,7 @@ export function openAddressLists() {
   async function removeGroup() {
     const r = table.selected();
     if (!r) return setStatus("Select a list first.", true);
+    if (ownerOf(r.description) && !(await owned(r, null))) return;
     if (!(await confirmBox("Delete list", `Delete ${r.name}? VyOS refuses if a firewall rule still uses it.`, "Delete"))) return;
     try {
       await applyChanges([{ op: "delete", path: [...ROOT, r.type, r.name] }], `delete list ${r.name}`);

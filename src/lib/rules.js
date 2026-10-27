@@ -6,6 +6,8 @@ import { makeTable, filterBox } from "./table.js";
 import { formDialog, confirmBox, alertBox } from "./dialog.js";
 import { applyChanges } from "./session.js";
 import { getPath, setPath, toCommands, has, toArray, diffMulti } from "./vyos.js";
+import { ownerOf, manualDescription } from "./owner.js";
+import { ownerBadge, confirmOwned } from "../components/owned.js";
 
 const MAX_RULE = 999999;
 
@@ -29,7 +31,12 @@ export function ruleEditor(opts) {
   let rules = []; // [{number, cfg}]
 
   const table = makeTable(
-    [{ key: "flags", label: "", width: "26px", className: "flag" }, { key: "number", label: "#", width: "52px", className: "num" }, ...opts.columns],
+    [
+      { key: "flags", label: "", width: "26px", className: "flag" },
+      { key: "number", label: "#", width: "52px", className: "num" },
+      { key: "owner", label: "Managed by", width: "150px", render: (r) => ownerBadge(r.cfg.description), sortValue: (r) => r.owner },
+      ...opts.columns,
+    ],
     {
       rowKey: (r) => r.number,
       onOpen: (r) => edit(r),
@@ -74,7 +81,8 @@ export function ruleEditor(opts) {
     table.setRows(
       rules.map((r) => {
         const disabled = has(r.cfg, "disable");
-        const row = { number: r.number, cfg: r.cfg, disabled, flags: disabled ? "X" : "" };
+        const o = ownerOf(r.cfg.description);
+        const row = { number: r.number, cfg: r.cfg, disabled, flags: disabled ? "X" : "", owner: o ? `${o.feature} ${o.name}` : "" };
         for (const c of opts.columns) {
           if (c.path) row[c.key] = toArray(getPath(r.cfg, c.path)).join(", ");
           else if (c.value) row[c.key] = c.value(r.cfg);
@@ -94,20 +102,37 @@ export function ruleEditor(opts) {
     await load();
   }
 
-  function setDisabled(r, disable) {
+  /** Asks before touching a rule a simple page made; false = stop. */
+  async function owned(r, action) {
+    const choice = await confirmOwned(r.cfg.description, what, { canDetach: true });
+    if (!choice) return false;
+    if (choice === "manual") {
+      await run([{ op: "set", path: [...ruleBase(), String(r.number), "description"], value: manualDescription(r.cfg.description) }], `${what} ${r.number}: make it manual`);
+      const fresh = rules.find((x) => x.number === r.number);
+      if (fresh && action) action({ ...r, cfg: fresh.cfg });
+      return false;
+    }
+    return true;
+  }
+
+  async function setDisabled(r, disable) {
+    if (!(await owned(r, (fresh) => setDisabled(fresh, disable)))) return;
     run([{ op: disable ? "set" : "delete", path: [...ruleBase(), String(r.number), "disable"] }], `${disable ? "disable" : "enable"} ${what} ${r.number}`);
   }
 
   async function remove(r) {
+    if (ownerOf(r.cfg.description) && !(await owned(r, null))) return;
     if (!(await confirmBox(`Remove ${what}`, `Delete ${what} ${r.number}?`, "Remove"))) return;
     run([{ op: "delete", path: [...ruleBase(), String(r.number)] }], `remove ${what} ${r.number}`);
   }
 
   /** Swaps a rule with its neighbour by exchanging rule numbers, in one commit. */
-  function move(r, dir) {
+  async function move(r, dir) {
     const i = rules.findIndex((x) => x.number === r.number);
     const other = rules[i + dir];
     if (!other) return setStatus(`Already at the ${dir < 0 ? "top" : "bottom"}.`);
+    // VyGi's pages keep their rules in a set order
+    for (const x of [r, other]) if (ownerOf(x.cfg.description) && !(await owned(x, null))) return;
     const base = ruleBase();
     const cmds = [
       { op: "delete", path: [...base, String(r.number)] },
@@ -124,6 +149,7 @@ export function ruleEditor(opts) {
   }
 
   async function edit(r) {
+    if (r && ownerOf(r.cfg.description) && !(await owned(r, (fresh) => edit(fresh)))) return;
     const fields = opts.getFields();
     const cfg = r ? r.cfg : {};
     const formFields = [

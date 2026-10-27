@@ -828,3 +828,7 @@ table.grid th.sorted.desc::after { content: " ▼"; }
 #subnav button.on { color: var(--text); border-bottom-color: var(--accent, #2b6cb0); }
 #subnav button:hover:not(.on) { color: var(--text); }
 @media (max-width: 760px) { #subnav { padding: 0 6px; } #subnav button { padding: 8px 10px 7px; } }
+
+/* Advanced: which simple page made a rule */
+.owner-badge { border: 1px solid color-mix(in srgb, var(--accent, #2b6cb0) 35%, transparent) !important; background: color-mix(in srgb, var(--accent, #2b6cb0) 10%, transparent) !important; color: var(--accent, #2b6cb0) !important; border-radius: 999px !important; padding: 0 8px !important; font-size: 11px; line-height: 18px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; cursor: pointer; }
+.owner-badge:hover { text-decoration: underline; }
