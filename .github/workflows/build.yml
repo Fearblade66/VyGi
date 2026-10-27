@@ -53,12 +53,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xorriso squashfs-tools
           sudo modprobe -a 8021q wireguard sch_cake pppoe nf_tables
+      # VyOS keeps the ISOs of recent nightlies only: "older" is the oldest one still there
       - name: Pick the VyOS version
         id: ver
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          TAGS=$(git ls-remote --tags https://github.com/vyos/vyos-nightly-build | awk -F/ '{print $3}' | grep -v '\^' | grep -E '^[0-9]{4}\.[0-9]{2}\.[0-9]{2}' | sort -V)
-          if [ "${{ matrix.version }}" = newest ]; then TAG=$(echo "$TAGS" | tail -1)
-          else CUT=$(date -d '90 days ago' +%Y.%m.%d); TAG=$(echo "$TAGS" | awk -v c="$CUT" '$0 <= c' | tail -1); fi
+          TAGS=$(gh api --paginate 'repos/vyos/vyos-nightly-build/releases?per_page=100' \
+            --jq '.[] | select(any(.assets[]; .name | endswith("-generic-amd64.iso"))) | .tag_name' | grep -E '^[0-9]{4}\.' | sort -V)
+          if [ "${{ matrix.version }}" = newest ]; then TAG=$(echo "$TAGS" | tail -1); else TAG=$(echo "$TAGS" | head -1); fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "VyOS $TAG"
       - name: Build and start the router

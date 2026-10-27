@@ -26,4 +26,4 @@ Test router credentials: SSH `vyos` / `vyos`, API key `vygi-test-key`.
 node config-check.mjs <router IP>
 ```
 
-Each step starts from the last one that worked (the config is saved after a success and loaded back after a failure). It finds which port is management by its address, so the order Docker hands out ports doesn't matter. The router's kernel needs VLAN, WireGuard and CAKE support (`modprobe -a 8021q wireguard sch_cake pppoe` on the host); `SKIP=vlan,vpn` skips steps a sandbox can't do. CI runs it against the newest VyOS nightly and the one from about 3 months earlier.
+Each step starts from the last one that worked (the config is saved after a success and loaded back after a failure). It finds which port is management by its address, so the order Docker hands out ports doesn't matter. The router's kernel needs VLAN, WireGuard and CAKE support (`modprobe -a 8021q wireguard sch_cake pppoe` on the host); `SKIP=vlan,vpn` skips steps a sandbox can't do. CI runs it against the newest VyOS nightly and the oldest one VyOS still offers for download.
