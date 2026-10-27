@@ -63,7 +63,7 @@ jobs:
           echo "VyOS $TAG"
       - name: Build and start the router
         run: |
-          e2e/vyos-image/build-image.sh "${{ steps.ver.outputs.tag }}"
+          sudo e2e/vyos-image/build-image.sh "${{ steps.ver.outputs.tag }}"
           e2e/vyos-image/run-router.sh
       - name: Commit what VyGi makes
         run: node e2e/config-check.mjs "$(docker inspect -f '{{.NetworkSettings.Networks.bridge.IPAddress}}' vyos)"
