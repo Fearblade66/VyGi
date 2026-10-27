@@ -3,17 +3,74 @@ import { h } from "./dom.js";
 import { currentView, showView } from "./views.js";
 
 const open = new Map(); // key -> window object
+const all = new Set(); // every open window (also the ones without a key)
 let zTop = 10;
 let cascade = 0;
 
+/** Where windows live (below the strip of open windows). */
 function workspace() {
-  return document.getElementById("workspace");
+  return document.getElementById("ws-area");
+}
+const outer = () => document.getElementById("workspace");
+
+// Tabs (one window at a time, full size: the default) or floating windows
+// (Winbox style). Either way a strip lists the open windows.
+const LAYOUT_KEY = "vygi.advanced.layout";
+function layout() {
+  try {
+    return localStorage.getItem(LAYOUT_KEY) === "float" ? "float" : "tabs";
+  } catch {
+    return "tabs";
+  }
+}
+function setLayout(v) {
+  try {
+    localStorage.setItem(LAYOUT_KEY, v);
+  } catch {
+    /* not remembered */
+  }
+  applyLayout();
+}
+function applyLayout() {
+  const ws = outer();
+  if (!ws) return;
+  ws.classList.toggle("tabbed", layout() === "tabs");
+  renderStrip();
+  window.dispatchEvent(new Event("resize"));
+}
+
+/** The strip of open windows at the top of the workspace. */
+function renderStrip() {
+  const ws = outer();
+  const strip = document.getElementById("ws-tabs");
+  if (!ws || !strip) return;
+  ws.classList.toggle("has-windows", all.size > 0);
+  const wins = [...all];
+  const tabs = wins.map((w) => h(`div.ws-tab${w.el.classList.contains("active") && !ws.classList.contains("launcher-open") ? ".on" : ""}`, {
+    title: w.titleText(),
+    on: { click: () => w.focus(), auxclick: (e) => e.button === 1 && w.close() },
+  }, h("span", w.titleText()), h("button.ws-tab-x", { title: "Close", on: { click: (e) => {
+    e.stopPropagation();
+    w.close();
+  } } }, "✕")));
+  const lay = layout();
+  strip.replaceChildren(
+    ...tabs,
+    h(`button.ws-tab-new${ws.classList.contains("launcher-open") ? ".on" : ""}`, { title: "Open another tool", on: { click: () => {
+      ws.classList.add("launcher-open");
+      renderStrip();
+    } } }, "+"),
+    h("span.grow"),
+    h("span.seg.ws-layout",
+      h(`button${lay === "tabs" ? ".on" : ""}`, { title: "One tool at a time, full size", on: { click: () => setLayout("tabs") } }, "Tabs"),
+      h(`button${lay === "float" ? ".on" : ""}`, { title: "Floating windows you can arrange side by side (Winbox style)", on: { click: () => setLayout("float") } }, "Windows")),
+  );
 }
 
 /** Keeps windows reachable when the app window gets smaller. */
 function keepInside() {
   const ws = workspace();
-  if (!ws || ws.hidden || !ws.clientWidth) return;
+  if (!ws || !ws.clientWidth || outer().hidden || outer().classList.contains("tabbed")) return;
   for (const el of ws.querySelectorAll(".mdi-win:not(.maximized)")) {
     const w = Math.min(el.offsetWidth, ws.clientWidth - 10);
     const hgt = Math.min(el.offsetHeight, ws.clientHeight - 10);
@@ -47,9 +104,7 @@ export function openWindow({ key, title, width = 640, height = 380 }) {
   const body = h("div.mdi-body");
   const btnMax = h("button", { title: "Maximize" }, "□");
   const btnClose = h("button", { title: "Close" }, "✕");
-  // phones: every window fills the screen; this lists the others
-  const btnSwitch = h("button.mdi-switch", { title: "Open windows", on: { click: (e) => switchMenu(e) } }, "⧉");
-  const bar = h("div.mdi-title", titleText, btnSwitch, btnMax, btnClose);
+  const bar = h("div.mdi-title", titleText, btnMax, btnClose);
   const grip = h("div.mdi-resize");
   const el = h("div.mdi-win", bar, body, grip);
 
@@ -68,10 +123,14 @@ export function openWindow({ key, title, width = 640, height = 380 }) {
   const win = {
     el,
     body,
+    titleText: () => titleText.textContent,
     focus() {
-      for (const other of open.values()) other.el.classList.remove("active");
+      for (const other of all) other.el.classList.remove("active");
       el.classList.add("active");
       el.style.zIndex = ++zTop;
+      outer().classList.remove("launcher-open");
+      renderStrip();
+      fireResize();
     },
     close() {
       closeHandlers.forEach((fn) => {
@@ -83,9 +142,15 @@ export function openWindow({ key, title, width = 640, height = 380 }) {
       });
       el.remove();
       if (key) open.delete(key);
+      all.delete(win);
+      // the most recently used window comes forward
+      const next = [...all].sort((a, b) => (Number(b.el.style.zIndex) || 0) - (Number(a.el.style.zIndex) || 0))[0];
+      if (next && el.classList.contains("active")) next.focus();
+      else renderStrip();
     },
     setTitle(t) {
       titleText.textContent = t;
+      renderStrip();
     },
     onClose(fn) {
       closeHandlers.push(fn);
@@ -121,16 +186,9 @@ export function openWindow({ key, title, width = 640, height = 380 }) {
   });
 
   if (key) open.set(key, win);
+  all.add(win);
   win.focus();
   return { ...win, isNew: true };
-}
-
-function switchMenu(e) {
-  e.stopPropagation();
-  const anchor = e.currentTarget;
-  const items = [...open.values()].map((w) => ({ label: w.el.querySelector(".mdi-title span").textContent, fn: () => w.focus() }));
-  items.push("-", { label: "Close all (back to the tool list)", fn: () => closeAllWindows() });
-  import("./menu.js").then(({ popupMenu }) => popupMenu(items, { anchor }));
 }
 
 function drag(handle, move) {
@@ -150,9 +208,12 @@ function drag(handle, move) {
 }
 
 export function closeAllWindows() {
-  for (const w of [...open.values()]) w.close();
+  for (const w of [...all]) w.close();
   for (const el of [...workspace().querySelectorAll(".mdi-win")]) el.remove();
+  renderStrip();
 }
+
+if (typeof document !== "undefined") document.addEventListener("DOMContentLoaded", applyLayout);
 
 /** Tab strip; returns { el, pages: {name: element}, select(name) }. */
 export function tabs(names, onSelect) {

@@ -112,7 +112,9 @@ button.primary { font-weight: bold; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---------- MDI workspace ---------- */
-#workspace { flex: 1; position: relative; overflow: hidden; background: var(--bg); }
+#workspace { flex: 1; position: relative; overflow: hidden; background: var(--bg); display: flex; flex-direction: column; }
+#workspace[hidden] { display: none; }
+#ws-area { flex: 1; position: relative; overflow: hidden; min-height: 0; }
 .mdi-win {
   position: absolute;
   display: flex; flex-direction: column;
@@ -618,7 +620,8 @@ button.danger { color: var(--bad); }
 [data-ui="modern"] #app[data-view="windows"] #view-switch .nav-text { display: none; }
 /* tool picker on the empty workspace */
 #launcher { position: absolute; inset: 0; overflow: auto; padding: 18px 20px 24px; display: none; }
-#workspace:not(:has(.mdi-win)) #launcher { display: block; }
+#workspace:not(:has(.mdi-win)) #launcher, #workspace.launcher-open #launcher { display: block; z-index: 5000; background: var(--bg); }
+#workspace.launcher-open .mdi-win { display: none; }
 #workspace:not(:has(.mdi-win))::before { content: none; }
 #app:not(.connected) #launcher { opacity: 0.55; }
 #launcher > .hint { margin-bottom: 12px; }
@@ -746,7 +749,7 @@ table.grid th.sorted.desc::after { content: " ▼"; }
 .ids-alerts { max-height: 360px; border: 1px solid var(--border); border-radius: 6px; margin-top: 6px; }
 
 /* ---------- Phones (and the Android app) ---------- */
-#tabbar, #drawer-back, #btn-search, .mdi-switch { display: none; }
+#tabbar, #drawer-back, #btn-search { display: none; }
 @media (max-width: 760px) {
   #app { height: 100dvh; }
   /* the left menu is a drawer behind "More" */
@@ -790,7 +793,9 @@ table.grid th.sorted.desc::after { content: " ▼"; }
   /* windows (Advanced) fill the screen; ⧉ switches between them */
   .mdi-win { left: 0 !important; top: 0 !important; width: 100% !important; height: 100% !important; min-width: 0; border-radius: 0 !important; }
   .mdi-resize, .mdi-title button[title="Maximize"] { display: none; }
-  .mdi-switch { display: inline-flex; }
+  /* phones: always one window at a time (the strip switches) */
+  #ws-area .mdi-win:not(.active) { display: none; }
+  #ws-area .mdi-win .mdi-title, .ws-layout { display: none; }
   [data-ui="modern"] .mdi-title { height: 42px; }
   [data-ui="modern"] .mdi-title button { height: 30px; padding: 0 12px; }
   .win-toolbar { flex-wrap: wrap; }
@@ -840,3 +845,23 @@ table.grid th.sorted.desc::after { content: " ▼"; }
 .why-line { font-size: 12.5px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
 .why-line.limit { color: var(--muted); }
 .owner-badge.manual { border-color: var(--border) !important; background: var(--panel) !important; color: var(--text) !important; }
+
+/* Advanced: the strip of open windows (tabs, or a window list for floating windows) */
+#ws-tabs { display: none; align-items: stretch; gap: 2px; padding: 4px 8px 0; border-bottom: 1px solid var(--border); background: var(--panel); overflow-x: auto; scrollbar-width: thin; flex: none; }
+#workspace.has-windows #ws-tabs { display: flex; }
+.ws-tab { display: flex; align-items: center; gap: 4px; padding: 5px 4px 5px 12px; border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0; color: var(--muted); cursor: pointer; white-space: nowrap; max-width: 220px; user-select: none; }
+.ws-tab span { overflow: hidden; text-overflow: ellipsis; }
+.ws-tab:hover { color: var(--text); background: color-mix(in srgb, var(--select) 50%, transparent); }
+.ws-tab.on { color: var(--text); background: var(--bg); border-color: var(--border); margin-bottom: -1px; font-weight: 600; }
+.ws-tab-x { border: none !important; background: transparent !important; padding: 0 5px !important; font-size: 11px; color: var(--muted) !important; border-radius: 4px !important; }
+.ws-tab-x:hover { color: var(--text) !important; background: var(--select) !important; }
+.ws-tab-new { border: none !important; background: transparent !important; padding: 2px 10px !important; font-size: 16px; color: var(--muted) !important; }
+.ws-tab-new.on, .ws-tab-new:hover { color: var(--accent, #2b6cb0) !important; }
+#ws-tabs .grow { flex: 1; }
+.ws-layout { align-self: center; margin: 0 0 4px 8px; flex: none; }
+.ws-layout button { border: none !important; border-radius: 0 !important; padding: 2px 10px !important; font-size: 12px; background: transparent !important; color: var(--muted) !important; }
+.ws-layout button.on { background: var(--select) !important; color: var(--text) !important; }
+/* Tabs: the active window fills the area, without its own title bar */
+#workspace.tabbed .mdi-win { left: 0 !important; top: 0 !important; width: 100% !important; height: 100% !important; border: none !important; border-radius: 0 !important; box-shadow: none !important; display: none; }
+#workspace.tabbed .mdi-win.active { display: flex; }
+#workspace.tabbed .mdi-title, #workspace.tabbed .mdi-resize { display: none; }

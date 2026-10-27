@@ -194,7 +194,7 @@ function initAdvancedLinks(guard) {
 
 /** The empty Advanced workspace: every tool on one screen, grouped. */
 function renderLauncher(guard) {
-  const ws = document.getElementById("workspace");
+  const ws = document.getElementById("ws-area");
   ws.querySelector("#launcher")?.remove();
   const loose = MENU.filter((m) => !m.children);
   const card = (title, items) => h("section.launch-group", h("h3", title),
