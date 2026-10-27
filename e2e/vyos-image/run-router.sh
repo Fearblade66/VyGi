@@ -10,7 +10,7 @@ docker create --name vyos --privileged --hostname vyos --tmpfs /run --tmpfs /tmp
 for n in 1 2 3; do docker network connect "vnet$n" vyos; done
 docker start vyos >/dev/null
 docker run -d --name lanclient --network vnet2 alpine:3.20 sleep 86400 >/dev/null
-IP=$(docker inspect -f '{{.NetworkSettings.IPAddress}}' vyos)
+IP=$(docker inspect -f '{{.NetworkSettings.Networks.bridge.IPAddress}}' vyos)
 printf 'Waiting for the API on %s' "$IP"
 until curl -sk --max-time 3 -o /dev/null "https://$IP/"; do printf .; sleep 3; done
 echo " ready."
