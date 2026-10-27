@@ -5,10 +5,9 @@ import { api, errorText } from "../lib/api.js";
 import { h, clear, setStatus, every } from "../lib/dom.js";
 import { formDialog, confirmBox, alertBox } from "../lib/dialog.js";
 import { applyChanges, isConnected, session, onSessionChange } from "../lib/session.js";
-import { registerView, welcome, loadingPage } from "../lib/views.js";
+import { registerView, welcome, loadingPage, showView } from "../lib/views.js";
 import { icon } from "../lib/icons.js";
 import { toArray, ipv4InCidr, parseIpv4Cidr } from "../lib/vyos.js";
-import { policySection, mdnsSection } from "./policies_view.js";
 import { renderPorts } from "./topology_view.js";
 
 const VIEW_KEY = "vygi.networks.view";
@@ -101,7 +100,8 @@ export function initNetworks() {
     }
     const grid = h("div.net-grid", nets.map((n) => card(n)));
     if (!nets.length) grid.append(h("div.empty", "No local networks yet. Create one, or use Quick Set for a basic home setup."));
-    clear(root).append(h("div.page", head, grid, nets.length ? policySection(st, nets, render) : "", nets.length > 1 ? mdnsSection(st, nets, render) : ""));
+    const access = nets.length ? h("div.hint", "Which networks can reach each other: ", h("button.link", { on: { click: () => showView("access") } }, "Security → Network access")) : "";
+    clear(root).append(h("div.page", head, grid, access));
   }
 
   function card(n) {

@@ -9,13 +9,27 @@ const VIEWS = {
   clients: { title: "Clients", icon: "clients", el: "clients" },
   networks: { title: "Networks", icon: "networks", el: "networks" },
   rules: { title: "Traffic Rules", icon: "rules", el: "rules" },
+  access: { title: "Network access", icon: "networks", el: "access" },
   ports: { title: "Port Forwarding", icon: "forward", el: "ports" },
+  ids: { title: "Intrusion detection", icon: "shield", el: "idspage" },
   vpn: { title: "VPN", icon: "vpn", el: "vpnpage" },
   history: { title: "History", icon: "clock", el: "history" },
   insights: { title: "Insights", icon: "dashboard", el: "insights" },
   settings: { title: "Settings", icon: "gear", el: "settings" },
   windows: { title: "Advanced", icon: "advanced", el: "workspace" },
 };
+// Sidebar entries that hold several pages, shown as tabs under the top bar.
+// An item is a view, or a view plus one of its own tabs (Settings).
+const GROUPS = {
+  security: { title: "Security", icon: "rules", items: [{ view: "rules" }, { view: "access" }, { view: "ports" }, { view: "ids" }] },
+  settings: { title: "Settings", icon: "gear", items: [
+    { view: "settings", tab: "internet", label: "Internet" },
+    { view: "settings", tab: "security", label: "Router security" },
+    { view: "settings", tab: "system", label: "System" },
+    { view: "history", label: "Change history" },
+  ] },
+};
+const groupOf = (view) => Object.keys(GROUPS).find((g) => GROUPS[g].items.some((i) => i.view === view)) || null;
 const listeners = new Map(); // view -> { show(), hide() }
 let current = null;
 
@@ -42,18 +56,47 @@ export function currentView() {
   return current;
 }
 
-/** Switches page; choosing the current page again reloads it. remember: save as the page to reopen. */
-export function showView(name, { remember = true } = {}) {
+/** The tab a view with its own tabs (Settings) shows. */
+export function viewTab(view, fallback) {
+  return store(`vygi.${view}.tab`) || fallback;
+}
+
+/**
+ * Switches page; choosing the current page again reloads it. remember: save
+ * as the page to reopen. A group name (security) opens its last-used page;
+ * tab picks one of a page's own tabs.
+ */
+export function showView(name, { remember = true, tab = null } = {}) {
+  if (GROUPS[name]) name = store(`vygi.group.${name}`) || GROUPS[name].items[0].view;
   if (!VIEWS[name]) name = "dashboard";
+  if (tab) store(`vygi.${name}.tab`, tab);
+  const group = groupOf(name);
+  if (group) store(`vygi.group.${group}`, name);
   if (current) listeners.get(current)?.hide?.();
   current = name;
   for (const [v, def] of Object.entries(VIEWS)) document.getElementById(def.el).hidden = v !== name;
-  for (const b of document.querySelectorAll("#view-switch button")) b.classList.toggle("on", b.dataset.view === name);
+  for (const b of document.querySelectorAll("#view-switch button")) b.classList.toggle("on", b.dataset.view === name || b.dataset.view === group);
   document.getElementById("app").dataset.view = name;
-  document.getElementById("page-title").textContent = VIEWS[name].title;
+  document.getElementById("page-title").textContent = group ? GROUPS[group].title : VIEWS[name].title;
+  renderSubnav(group, name);
   if (remember) store("vygi.view", name);
   listeners.get(name)?.show?.();
   anyView.forEach((fn) => fn(name));
+}
+
+/** The group's pages as tabs under the top bar. */
+function renderSubnav(group, name) {
+  const nav = document.getElementById("subnav");
+  if (!nav) return;
+  nav.hidden = !group;
+  nav.replaceChildren();
+  if (!group) return;
+  const items = GROUPS[group].items;
+  const tab = viewTab(name, items.find((x) => x.view === name).tab);
+  for (const it of items) {
+    const on = it.view === name && (!it.tab || it.tab === tab);
+    nav.append(h(`button${on ? ".on" : ""}`, { on: { click: () => showView(it.view, { tab: it.tab }) } }, it.label || VIEWS[it.view].title));
+  }
 }
 
 const anyView = [];
@@ -65,6 +108,11 @@ export function onAnyView(fn) {
 export function savedView() {
   const v = store("vygi.view");
   return VIEWS[v] ? v : "dashboard";
+}
+
+/** The sidebar entry a view belongs to (its group, or itself). */
+export function navEntry(view) {
+  return groupOf(view) || view;
 }
 
 export function applyTheme(value) {
@@ -118,7 +166,7 @@ export function initViews() {
     const label = b.textContent.trim();
     b.textContent = "";
     b.title = label; // shown when the sidebar is narrow (icons only)
-    b.append(icon(VIEWS[b.dataset.view].icon), h("span.nav-text", label));
+    b.append(icon((VIEWS[b.dataset.view] || GROUPS[b.dataset.view]).icon), h("span.nav-text", label));
     b.addEventListener("click", () => showView(b.dataset.view));
   }
   const connect = document.getElementById("btn-connect");

@@ -23,10 +23,8 @@
           <button data-view="dashboard">Dashboard</button>
           <button data-view="clients">Clients</button>
           <button data-view="networks">Networks</button>
-          <button data-view="rules">Traffic Rules</button>
-          <button data-view="ports">Port Forwarding</button>
+          <button data-view="security">Security</button>
           <button data-view="vpn">VPN</button>
-          <button data-view="history">History</button>
           <button data-view="insights" class="web-only" hidden>Insights</button>
           <button data-view="settings">Settings</button>
           <button data-view="windows">Advanced</button>
@@ -63,12 +61,15 @@
           <button id="btn-save" class="tb-btn" disabled title="Write running config to the boot config">Save</button>
           <button id="btn-terminal" class="tb-btn" disabled title="Open an SSH terminal">Terminal</button>
         </header>
+        <nav id="subnav" hidden></nav>
         <div id="body">
           <section id="dashboard" class="view" hidden></section>
           <section id="clients" class="view" hidden></section>
           <section id="networks" class="view" hidden></section>
           <section id="rules" class="view" hidden></section>
+          <section id="access" class="view" hidden></section>
           <section id="ports" class="view" hidden></section>
+          <section id="idspage" class="view" hidden></section>
           <section id="vpnpage" class="view" hidden></section>
           <section id="history" class="view" hidden></section>
           <section id="insights" class="view" hidden></section>

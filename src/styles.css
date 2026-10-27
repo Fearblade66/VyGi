@@ -820,3 +820,11 @@ table.grid th.sorted.desc::after { content: " ▼"; }
 .app-qr > div { flex: 1 1 200px; min-width: 0; }
 .app-qr canvas { border-radius: 8px; background: #fff; }
 [data-app="android"] #web-phone { display: none; }
+
+/* Pages of one sidebar entry (Security, Settings), as tabs under the top bar */
+#subnav { display: flex; gap: 2px; padding: 0 16px; border-bottom: 1px solid var(--border); background: var(--panel); overflow-x: auto; scrollbar-width: none; flex: none; }
+#subnav[hidden] { display: none; }
+#subnav button { border: none; background: transparent; border-bottom: 2px solid transparent; border-radius: 0; padding: 9px 12px 8px; color: var(--muted); white-space: nowrap; font-weight: 500; }
+#subnav button.on { color: var(--text); border-bottom-color: var(--accent, #2b6cb0); }
+#subnav button:hover:not(.on) { color: var(--text); }
+@media (max-width: 760px) { #subnav { padding: 0 6px; } #subnav button { padding: 8px 10px 7px; } }

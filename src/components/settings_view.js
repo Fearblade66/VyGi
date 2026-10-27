@@ -7,11 +7,10 @@ import { api, errorText } from "../lib/api.js";
 import { h, clear, toast, formatBits } from "../lib/dom.js";
 import { formDialog, confirmBox, alertBox } from "../lib/dialog.js";
 import { applyChanges, isConnected, onSessionChange, session } from "../lib/session.js";
-import { registerView, welcome, loadingPage } from "../lib/views.js";
+import { registerView, welcome, loadingPage, viewTab } from "../lib/views.js";
 import { toArray } from "../lib/vyos.js";
 import { isDesktop, webSessions, webSessionEnd } from "../lib/platform.js";
 import { openActivityLog } from "./activity.js";
-import { idsSection } from "./ids_view.js";
 import { openClaudeSetup } from "./claude_setup.js";
 import { wanInfo, wanProblem } from "../lib/wan.js";
 import { readInternet, internetCommands, describeInternet, PD_LENGTHS } from "../lib/wanconf.js";
@@ -113,7 +112,6 @@ const handMade = (what) => h("span.badge", { title: "Set up by hand (Advanced or
 
 export function initSettings() {
   const root = document.getElementById("settings");
-  let tab = TABS[store("vygi.settings.tab")] ? store("vygi.settings.tab") : "internet";
   let seq = 0;
 
   async function render() {
@@ -131,13 +129,10 @@ export function initSettings() {
       return;
     }
     if (my !== seq) return;
-    const tabs = h("div.seg", Object.entries(TABS).map(([k, label]) => h(`button${k === tab ? ".on" : ""}`, { on: { click: () => {
-      tab = k;
-      store("vygi.settings.tab", k);
-      render();
-    } } }, label)));
+    // the tabs are under the top bar (views.js: Internet, Router security, System, Change history)
+    const tab = TABS[viewTab("settings", "internet")] ? viewTab("settings", "internet") : "internet";
     const body = { internet, security, system }[tab](st, my);
-    clear(root).append(h("div.page.settings", h("div.page-head", tabs), ...body));
+    clear(root).append(h("div.page.settings", ...body));
   }
 
   // ================================================================ Internet
@@ -364,7 +359,6 @@ export function initSettings() {
           ? `No traffic to or from: ${countries.slice(0, 8).map((c) => `${flagEmoji(c)} ${countryName(c.toUpperCase())}`).join(", ")}${countries.length > 8 ? ", …" : ""}`
           : "Block all traffic to and from chosen countries, for every device and the router.",
         h("span.set-inline", value(countries.length ? `${countries.length} blocked` : "off"), button("Choose countries…", () => editRegions(cfg, render))))),
-      section("Intrusion detection (IDS)", idsSection(st, render)),
       section("Ad and tracker blocking", adblock),
       isDesktop ? null : accessSection(),
     ].filter(Boolean);

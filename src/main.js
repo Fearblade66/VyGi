@@ -37,6 +37,7 @@ import { initAlerts } from "./components/alerts.js";
 import { initHistory } from "./components/history_view.js";
 import { initSearch } from "./components/search.js";
 import { initInsights } from "./components/insights.js";
+import { initSecurityPages } from "./components/security_pages.js";
 import { openApiAccess } from "./components/apiaccess.js";
 import { openPhoneApp } from "./components/phoneapp.js";
 import { openClaudeReport } from "./components/report.js";
@@ -153,6 +154,8 @@ const RELATED = {
   clients: ["DHCP Leases", "ARP / Neighbors", "DHCP Server", "Queues", "Torch", "Connections"],
   networks: ["Interfaces", "Addresses", "DHCP Server", "Routes", "DNS"],
   rules: ["Filter Rules", "Address Lists", "Connections"],
+  access: ["Filter Rules", "Address Lists", "Interfaces"],
+  ids: ["Filter Rules", "Address Lists", "Log"],
   ports: ["NAT", "Filter Rules"],
   vpn: ["VPN", "Interfaces", "Routes"],
   history: ["Revisions / Rollback", "Backup / Restore"],
@@ -329,6 +332,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initNetworks();
   initRules();
   initPortForwards();
+  initSecurityPages();
   initVpnPage();
   initAlerts();
   initHistory();

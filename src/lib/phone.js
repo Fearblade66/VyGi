@@ -3,14 +3,14 @@
 // moved into that drawer and search behind an icon, so the top bar is one row.
 import { h } from "./dom.js";
 import { icon } from "./icons.js";
-import { showView, onAnyView } from "./views.js";
+import { showView, onAnyView, navEntry } from "./views.js";
 
 export const PHONE = "(max-width: 760px)";
 const TABS = [
   ["dashboard", "dashboard", "Home"],
   ["clients", "clients", "Clients"],
   ["networks", "networks", "Networks"],
-  ["rules", "rules", "Rules"],
+  ["security", "rules", "Security"],
 ];
 
 export function isPhone() {
@@ -42,8 +42,9 @@ export function initPhone() {
   } } }, icon(ic, 20), h("span", label)));
   app.append(h("nav#tabbar", ...tabs, more));
   onAnyView((view) => {
-    for (const t of tabs) t.classList.toggle("on", t.dataset.view === view);
-    more.classList.toggle("on", !TABS.some(([v]) => v === view));
+    const entry = navEntry(view);
+    for (const t of tabs) t.classList.toggle("on", t.dataset.view === entry);
+    more.classList.toggle("on", !TABS.some(([v]) => v === entry));
   });
 
   // search: an icon that opens the field as a second row
