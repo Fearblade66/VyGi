@@ -65,6 +65,8 @@ pub fn run() {
             connection::new_window,
             connection::change_login_password,
             connection::use_own_login,
+            checkup::router_backups,
+            checkup::restore_over_ssh,
             sysinfo::wake_on_lan,
             sysinfo::speed_test,
             transactions::tx_status,

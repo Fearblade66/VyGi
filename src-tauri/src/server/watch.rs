@@ -315,6 +315,17 @@ impl Watcher {
     ) {
         let store = Arc::new(self.store(&id));
         let mut backoff = 30;
+        // can't reach the router: since when (ms), and whether that was alerted
+        let mut down_since: Option<u64> = None;
+        let mut down_alerted = false;
+        let label = |me: &Self, fallback: &str| {
+            let n = me.router(&id).name;
+            if n.is_empty() {
+                fallback.to_string()
+            } else {
+                n
+            }
+        };
         loop {
             if *stop.borrow() {
                 break;
@@ -323,9 +334,27 @@ impl Watcher {
             let host = match self.connect(&ws, &id).await {
                 Ok(h) => {
                     backoff = 30;
-                    let mut s = lock(&status);
-                    s.connected = true;
-                    s.error = None;
+                    {
+                        let mut s = lock(&status);
+                        s.connected = true;
+                        s.error = None;
+                    }
+                    if let Some(since) = down_since.take() {
+                        if down_alerted && self.router(&id).on("reach") {
+                            let a = Alert {
+                                kind: "reach".into(),
+                                text: format!(
+                                    "VyGi reaches the router again (couldn't for {}).",
+                                    alerts::duration(now_ms().saturating_sub(since))
+                                ),
+                                level: "ok".into(),
+                                at: now_ms(),
+                            };
+                            store.add_alerts(std::slice::from_ref(&a));
+                            let _ = self.notify(&label(&self, &h), &[a]).await;
+                        }
+                    }
+                    down_alerted = false;
                     h
                 }
                 Err(e) => {
@@ -333,6 +362,32 @@ impl Watcher {
                         let mut s = lock(&status);
                         s.connected = false;
                         s.error = Some(e.to_string());
+                    }
+                    let since = *down_since.get_or_insert(now_ms());
+                    if !down_alerted
+                        && now_ms().saturating_sub(since) >= UNREACHABLE_ALERT_MS
+                        && self.router(&id).on("reach")
+                    {
+                        down_alerted = true;
+                        let a = Alert {
+                            kind: "reach".into(),
+                            text: format!(
+                                "VyGi can't reach the router (for {}): {e}{}",
+                                alerts::duration(now_ms().saturating_sub(since)),
+                                if e.to_string().ends_with('?') {
+                                    ""
+                                } else {
+                                    ". Is it on, and does it still have its address?"
+                                }
+                            )
+                            .chars()
+                            .take(700)
+                            .collect(),
+                            level: "bad".into(),
+                            at: now_ms(),
+                        };
+                        store.add_alerts(std::slice::from_ref(&a));
+                        let _ = self.notify(&label(&self, &id), &[a]).await;
                     }
                     if stopped(&mut stop, Duration::from_secs(backoff)).await {
                         break;
@@ -358,6 +413,17 @@ impl Watcher {
                 }
             }
             let mut saved = store.load();
+            // before anything backs up the settings again
+            let rebooted: Vec<Alert> = watch_boot(&self.app, &ws, &mut saved)
+                .await
+                .into_iter()
+                .filter(|a| self.router(&id).on(&a.kind))
+                .collect();
+            if !rebooted.is_empty() {
+                store.add_alerts(&rebooted);
+                let _ = self.notify(&label(&self, &host), &rebooted).await;
+            }
+            store.save(&saved);
             let cursor = Arc::new(StdMutex::new(saved.cursor.clone()));
             let journal = start_journal(&ws, store.clone(), cursor.clone()).await;
             let mut ctx = Counters::default();
@@ -493,6 +559,9 @@ pub async fn connect_saved(
         Err(e) => Err(e),
     }
 }
+
+/// How long the router can't be reached before that's an alert (restarts and updates take less).
+const UNREACHABLE_ALERT_MS: u64 = 5 * 60 * 1000;
 
 /// Waits; true if watching was switched off meanwhile.
 async fn stopped(stop: &mut watch::Receiver<bool>, d: Duration) -> bool {
@@ -761,14 +830,6 @@ pub fn parse_commits(text: &str) -> Vec<(u32, String, String, String)> {
 /// `show system commit diff N` ("[path]" then "- old" / "+ new" lines) as
 /// "set path value" / "delete path value" lines, secrets masked.
 pub fn diff_lines(text: &str) -> Vec<String> {
-    const SECRET: [&str; 6] = [
-        "password",
-        "secret",
-        "private-key",
-        "pre-shared",
-        "key ",
-        "community",
-    ];
     let mut path = String::new();
     let mut out = Vec::new();
     for l in text.lines() {
@@ -788,16 +849,27 @@ pub fn diff_lines(text: &str) -> Vec<String> {
         if rest.is_empty() || rest == "}" {
             continue; // the closing brace of a node
         }
-        let mut line = format!("{op} {path} {rest}").trim().to_string();
-        if SECRET.iter().any(|s| format!("{line} ").contains(s)) {
-            // keep the setting's name, hide its value
-            if let Some(i) = line.rfind(' ') {
-                line = format!("{} ••••", &line[..i]);
-            }
-        }
-        out.push(line);
+        out.push(mask_secret(format!("{op} {path} {rest}").trim()));
     }
     out
+}
+
+/// A "set …" line with a password, key or similar: the setting's name stays, its value goes.
+pub fn mask_secret(line: &str) -> String {
+    const SECRET: [&str; 6] = [
+        "password",
+        "secret",
+        "private-key",
+        "pre-shared",
+        "key ",
+        "community",
+    ];
+    if SECRET.iter().any(|s| format!("{line} ").contains(s)) {
+        if let Some(i) = line.rfind(' ') {
+            return format!("{} ••••", &line[..i]);
+        }
+    }
+    line.to_string()
 }
 
 /// New commits since the last look, oldest first, that VyGi didn't make
@@ -897,6 +969,58 @@ async fn watch_config(ws: &WindowState, saved: &mut Saved) -> Vec<Alert> {
         });
     }
     alerts
+}
+
+/// After the router restarted: do its settings still match the newest backup?
+/// (A router that didn't load its saved config comes up nearly empty.)
+async fn watch_boot(app: &AppState, ws: &WindowState, saved: &mut Saved) -> Vec<Alert> {
+    let Ok(conn) = ws.conn().await else {
+        return Vec::new();
+    };
+    let Ok(out) = conn
+        .ssh
+        .exec_ok("awk '/^btime/{print $2}' /proc/stat")
+        .await
+    else {
+        return Vec::new();
+    };
+    let boot = out.trim().to_string();
+    if boot.is_empty() || boot == saved.boot_seen {
+        return Vec::new();
+    }
+    let first = saved.boot_seen.is_empty();
+    saved.boot_seen = boot;
+    if first {
+        return Vec::new();
+    }
+    match checkup::compare_with_backup(&app.dirs, &conn).await {
+        Ok(Some((since, added, removed))) => vec![Alert {
+            kind: "config".into(),
+            text: boot_text(since, &added, &removed),
+            level: "bad".into(),
+            at: now_ms(),
+        }],
+        _ => Vec::new(),
+    }
+}
+
+fn boot_text(since: u64, added: &[String], removed: &[String]) -> String {
+    let when = alerts::duration((now_ms() / 1000).saturating_sub(since) * 1000);
+    let sample: Vec<String> = removed
+        .iter()
+        .map(|l| format!("missing: {}", mask_secret(l)))
+        .chain(added.iter().map(|l| format!("new: {}", mask_secret(l))))
+        .take(5)
+        .collect();
+    format!(
+        "The router restarted and its settings don't match the last backup (taken {when} ago): {} missing, {} new. {}. If you didn't expect this, restore the backup in Settings > Change history.",
+        removed.len(),
+        added.len(),
+        sample.join(" · ")
+    )
+    .chars()
+    .take(700)
+    .collect()
 }
 
 async fn watch_ids(ws: &WindowState, rw: &RouterWatch, saved: &mut Saved) -> Vec<Alert> {
@@ -1205,6 +1329,21 @@ async fn record_traffic(
 
 #[cfg(test)]
 mod config_tests {
+
+    #[test]
+    fn boot_alert_text() {
+        let t = super::boot_text(
+            0,
+            &["set system domain-name 'x.example'".into()],
+            &[
+                "set interfaces ethernet eth0 address '192.168.88.6/24'".into(),
+                "set service https api keys id vygi key 'abc'".into(),
+            ],
+        );
+        assert!(t.contains("2 missing, 1 new"));
+        assert!(t.contains("missing: set interfaces ethernet eth0 address '192.168.88.6/24'"));
+        assert!(t.contains("key ••••") && !t.contains("abc"));
+    }
     use super::*;
 
     #[test]

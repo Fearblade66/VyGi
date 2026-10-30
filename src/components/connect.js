@@ -144,7 +144,7 @@ export async function showConnectDialog() {
       trustSsh: trust.ssh,
     });
     // Up to two trust prompts (HTTPS certificate, then SSH key) can come back.
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 5; attempt++) {
       setStatus(`Connecting to ${f.host.value}…`);
       try {
         connected = await api.connect(req());
@@ -156,10 +156,9 @@ export async function showConnectDialog() {
         const accepted = await handleTrust(e, trust);
         if (accepted) continue;
         if (e?.kind === "ApiDown" && !prepare) {
-          const ok = await confirmBox("The router's API is off",
-            `${e.message}\n\nVyGi can log in over SSH and turn it back on, with a new random key that it remembers. It runs these commands on the router and saves them:\n  set service https api keys id vygi key <new key>\n  set service https api rest\n  set system config-management commit-confirm action reload`,
-            "Turn it on");
-          if (ok) {
+          const choice = await apiDown(e, savedFor === id ? id : null, trust);
+          if (choice === "restored") continue;
+          if (choice === "enable") {
             const bytes = crypto.getRandomValues(new Uint8Array(24));
             preparedKey = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
             prepare = true;
@@ -180,6 +179,53 @@ export async function showConnectDialog() {
   const shown = await runCheckup();
   // the check-up can take a while: if the user moved to another page meanwhile, stay there
   if (!shown && currentView() === before) showView(savedView());
+}
+
+/**
+ * The router answers over SSH but its API doesn't: turn the API back on, or
+ * (a saved router that lost its settings) put a backup back over SSH.
+ * Returns "enable", "restored" or null.
+ */
+async function apiDown(e, id, trust) {
+  const backups = id ? (await api.routerBackups(id).catch(() => [])).filter((b) => b.restorable) : [];
+  const enableText = "Turn the API back on: VyGi logs in over SSH and runs\n  set service https api keys id vygi key <new key>\n  set service https api rest\n  set system config-management commit-confirm action reload";
+  const r = await modal("The router's API is off", h("div", { style: { width: "520px", whiteSpace: "pre-wrap" } },
+    h("p", { style: { marginTop: 0 } }, e.message),
+    h("p", "If the router restarted and lost its settings (no addresses, no API), put your last good backup back. If only the API was switched off, turn it back on."),
+    h("p.hint", enableText)), [
+    { label: "Cancel", value: "cancel" },
+    ...(backups.length ? [{ label: "Restore a backup…", value: "restore" }] : []),
+    { label: "Turn the API on", value: "enable", primary: true },
+  ]);
+  if (r === "enable") return "enable";
+  if (r !== "restore") return null;
+  // newest first; a backup much smaller than the one before it is likely the lost settings
+  const small = (i) => i + 1 < backups.length && backups[i].lines < backups[i + 1].lines / 2;
+  let pick = backups.find((_, i) => !small(i)) || backups[0];
+  const rows = backups.map((b, i) => h("label.review-item",
+    h("input", { type: "radio", name: "restore-pick", checked: b === pick, on: { change: () => { pick = b; } } }),
+    h("span", h("b", new Date(b.id * 1000).toLocaleString()), h("span.hint", ` · ${b.lines} settings`),
+      small(i) ? h("span.pill.warn", { style: { marginLeft: "6px" } }, "much smaller than the one before") : "")));
+  const ok = await modal("Restore a backup", h("div", { style: { width: "520px" } },
+    h("p", { style: { marginTop: 0 } }, "VyGi copies the backup to the router over SSH, loads it and saves it. It replaces the router's current settings, with no Safe Mode undo."),
+    h("div", { style: { maxHeight: "300px", overflow: "auto" } }, rows)), [
+    { label: "Cancel", value: "cancel" },
+    { label: "Restore", value: "restore", primary: true },
+  ]);
+  if (ok !== "restore") return null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    setStatus("Restoring the backup over SSH…");
+    try {
+      await api.restoreOverSsh(id, pick.id, trust.ssh);
+      setStatus("Backup restored. Connecting…");
+      return "restored";
+    } catch (err) {
+      if (await handleTrust(err, trust)) continue;
+      await alertBox("Restore a backup", errorText(err));
+      return null;
+    }
+  }
+  return null;
 }
 
 /** A saved router's id: user@host, or the first one if VyGi's login changed later. */

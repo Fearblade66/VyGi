@@ -72,6 +72,8 @@ pub struct Saved {
     pub ids_blocked: Vec<(String, u64)>,
     /// the newest commit already looked at ("YYYY-MM-DD HH:MM:SS", the router's clock)
     pub commit_seen: String,
+    /// when the router last started (unix seconds, /proc/stat btime)
+    pub boot_seen: String,
 }
 
 pub struct Store {

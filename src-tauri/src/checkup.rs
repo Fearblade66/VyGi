@@ -450,6 +450,125 @@ pub async fn history_restore(
     Ok(status(&state, msg).await)
 }
 
+/// The running settings against the newest backup (24/7 watching, after a
+/// restart): (backup id, added, removed), or None when they match or there's
+/// no backup yet.
+pub async fn compare_with_backup(
+    dirs: &Dirs,
+    conn: &Connection,
+) -> AppResult<Option<(u64, Vec<String>, Vec<String>)>> {
+    let dir = router_dir(dirs, &conn.profile_id)?;
+    let Some(&last) = snapshot_ids(&dir)?.last() else {
+        return Ok(None);
+    };
+    let prev = std::fs::read_to_string(dir.join(format!("{last}{CMDS_EXT}")))?;
+    let now = conn.api.show(&path(&["configuration", "commands"])).await?;
+    let (added, removed) = diff_commands(&prev, &now);
+    Ok((!added.is_empty() || !removed.is_empty()).then_some((last, added, removed)))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedBackup {
+    id: u64,
+    /// number of settings (command lines): a backup of a wiped router is much smaller
+    lines: usize,
+    /// has a config.boot copy, so it can be restored
+    restorable: bool,
+}
+
+/// A saved router's backups, newest first (no connection needed).
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub fn router_backups(app: St, id: String) -> AppResult<Vec<SavedBackup>> {
+    let dir = router_dir(&app.dirs, &app.profiles.find(&id)?.id())?;
+    let mut out: Vec<SavedBackup> = snapshot_ids(&dir)?
+        .into_iter()
+        .map(|i| SavedBackup {
+            id: i,
+            lines: command_lines(
+                &std::fs::read_to_string(dir.join(format!("{i}{CMDS_EXT}"))).unwrap_or_default(),
+            )
+            .len(),
+            restorable: dir.join(format!("{i}{BOOT_EXT}")).exists(),
+        })
+        .collect();
+    out.reverse();
+    Ok(out)
+}
+
+/// Puts a backup back on a router whose API doesn't answer, over SSH:
+/// copies its config.boot over, loads it, commits and saves.
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn restore_over_ssh(
+    app: St,
+    id: String,
+    snapshot: u64,
+    trust_ssh: Option<String>,
+) -> AppResult<()> {
+    let profile = app.profiles.find(&id)?;
+    let secrets = crate::security::load_secrets(&app.profiles.dir(), &profile)?
+        .ok_or_else(|| AppError::Invalid("the router's password isn't saved".into()))?;
+    let text = std::fs::read_to_string(
+        router_dir(&app.dirs, &profile.id())?.join(format!("{snapshot}{BOOT_EXT}")),
+    )
+    .map_err(|_| AppError::Invalid("this backup has no config.boot copy to restore".into()))?;
+    let ssh = crate::ssh::SshClient::connect(
+        &profile.host,
+        profile.ssh_port,
+        &profile.ssh_user,
+        &secrets.ssh_password,
+        trust_ssh.or(profile.ssh_fingerprint.clone()),
+    )
+    .await?;
+    const FILE: &str = "/tmp/vygi-restore.boot";
+    let b64 = {
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD.encode(text.as_bytes())
+    };
+    ssh.exec_ok(&format!(": > {FILE}.b64")).await?;
+    // one command line holds at most 128 KB
+    for chunk in b64.as_bytes().chunks(60_000) {
+        let chunk = std::str::from_utf8(chunk).unwrap_or_default();
+        ssh.exec_ok(&format!("printf %s {chunk} >> {FILE}.b64"))
+            .await?;
+    }
+    ssh.exec_ok(&format!(
+        "base64 -d {FILE}.b64 > {FILE} && rm -f {FILE}.b64"
+    ))
+    .await?;
+    let out = ssh
+        .exec(
+            &format!(
+                "/bin/vbash -c 'source /opt/vyatta/etc/functions/script-template\n\
+                 configure\n\
+                 load {FILE}\n\
+                 commit\n\
+                 save\n\
+                 exit'; rm -f {FILE}"
+            ),
+            Duration::from_secs(300),
+        )
+        .await?;
+    let all = format!("{}\n{}", out.stdout, out.stderr);
+    if all.contains("Commit failed") || all.contains("Load failed") {
+        let detail: Vec<&str> = all
+            .lines()
+            .filter(|l| {
+                let l = l.trim();
+                !l.is_empty()
+                    && !l.contains("locale")
+                    && !l.starts_with("perl:")
+                    && !l.contains("unable to resolve")
+            })
+            .collect();
+        return Err(AppError::Api(format!(
+            "the router didn't take the backup: {}",
+            detail.join(" ").chars().take(400).collect::<String>()
+        )));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

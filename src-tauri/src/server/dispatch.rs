@@ -69,6 +69,16 @@ pub async fn call(
             Ok(Value::Array(list))
         }
         "has_saved_secrets" => json(connection::has_saved_secrets(st(), arg(&a, "id")?)),
+        "router_backups" => json(checkup::router_backups(st(), arg(&a, "id")?)),
+        "restore_over_ssh" => json(
+            checkup::restore_over_ssh(
+                st(),
+                arg(&a, "id")?,
+                arg(&a, "snapshot")?,
+                arg(&a, "trustSsh").ok(),
+            )
+            .await,
+        ),
         "forget_router" => json(connection::forget_router(st(), arg(&a, "id")?)),
         "connect" => json(connection::connect(st(), w(), arg(&a, "req")?).await),
         "disconnect" => json(connection::disconnect(w()).await),
@@ -344,6 +354,7 @@ pub fn audit_entry(cmd: &str, a: &Value) -> Option<(String, String)> {
         "image_delete" => entry("VyOS image deleted", s("name")),
         "change_login_password" => entry("router password changed", String::new()),
         "use_own_login" => entry("VyGi's own router login made", String::new()),
+        "restore_over_ssh" => entry("backup restored over SSH", String::new()),
         "connect" => {
             let p = a.pointer("/req/profile").cloned().unwrap_or(Value::Null);
             let host = p.get("host").and_then(Value::as_str).unwrap_or("");
