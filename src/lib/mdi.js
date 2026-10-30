@@ -13,15 +13,45 @@ function workspace() {
 }
 const outer = () => document.getElementById("workspace");
 
-// Tabs (one window at a time, full size: the default) or floating windows
-// (Winbox style). Either way a strip lists the open windows.
+// Floating windows (Winbox style: the default on a desktop-sized screen) or
+// tabs (one window at a time, full size: the default on smaller screens).
+// Either way a strip lists the open windows.
 const LAYOUT_KEY = "vygi.advanced.layout";
 function layout() {
+  let saved = null;
   try {
-    return localStorage.getItem(LAYOUT_KEY) === "float" ? "float" : "tabs";
+    saved = localStorage.getItem(LAYOUT_KEY);
   } catch {
-    return "tabs";
+    /* not remembered */
   }
+  if (saved === "float" || saved === "tabs") return saved;
+  return window.innerWidth > 1000 ? "float" : "tabs";
+}
+
+/** Floating windows: arrange them all side by side, in a grid that fills the area. */
+function tile() {
+  const ws = workspace();
+  const wins = [...all];
+  const n = wins.length;
+  if (!n || !ws) return;
+  const gap = 6;
+  const cols = Math.ceil(Math.sqrt(n));
+  const rows = Math.ceil(n / cols);
+  const rh = (ws.clientHeight - gap * (rows + 1)) / rows;
+  wins.forEach((w, i) => {
+    const r = Math.floor(i / cols);
+    const inRow = r === rows - 1 ? n - cols * (rows - 1) : cols; // the last row shares its width
+    const c = i - r * cols;
+    const cw = (ws.clientWidth - gap * (inRow + 1)) / inRow;
+    w.el.classList.remove("maximized");
+    Object.assign(w.el.style, {
+      left: `${Math.round(gap + c * (cw + gap))}px`,
+      top: `${Math.round(gap + r * (rh + gap))}px`,
+      width: `${Math.round(cw)}px`,
+      height: `${Math.round(rh)}px`,
+    });
+    w.refit();
+  });
 }
 function setLayout(v) {
   try {
@@ -61,6 +91,7 @@ function renderStrip() {
       renderStrip();
     } } }, "+"),
     h("span.grow"),
+    lay === "float" && wins.length > 1 ? h("button.ws-tile", { title: "Arrange all windows side by side", on: { click: tile } }, "Tile") : null,
     h("span.seg.ws-layout",
       h(`button${lay === "tabs" ? ".on" : ""}`, { title: "One tool at a time, full size", on: { click: () => setLayout("tabs") } }, "Tabs"),
       h(`button${lay === "float" ? ".on" : ""}`, { title: "Floating windows you can arrange side by side (Winbox style)", on: { click: () => setLayout("float") } }, "Windows")),
@@ -158,6 +189,7 @@ export function openWindow({ key, title, width = 640, height = 380 }) {
     onResize(fn) {
       resizeHandlers.push(fn);
     },
+    refit: fireResize,
   };
 
   el.addEventListener("mousedown", () => win.focus());
