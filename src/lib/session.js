@@ -5,7 +5,7 @@ import { setStatus, toast, h } from "./dom.js";
 import { confirmBox, modal } from "./dialog.js";
 import { checkChange } from "./doctor.js";
 import { describeChange, wantsPreview, commandLine } from "./describe.js";
-import { wanInfo, mgmtAddress } from "./wan.js";
+import { routerContext } from "./routerctx.js";
 import { addEntry, updateEntry, settlePending, parseRevisions } from "./history.js";
 
 const listeners = new Set();
@@ -94,17 +94,6 @@ function remember(what, minutes) {
   }).catch(() => {});
 }
 
-// What the conflict checks need to know about the router, kept for a minute.
-let envCache = { at: 0, router: null, env: null };
-async function routerEnv() {
-  const router = session.info?.profileId;
-  if (envCache.router === router && Date.now() - envCache.at < 60_000) return envCache.env;
-  const host = session.info?.profile?.host;
-  const [w, mgmt] = await Promise.all([wanInfo(), mgmtAddress(host)]);
-  const env = { wan: w.wan, wanCidr: w.wanCidr, mgmtHost: host, mgmtIface: mgmt?.iface, defaultPassword: !!session.info?.defaultPassword, user: session.info?.profile?.sshUser };
-  envCache = { at: Date.now(), router, env };
-  return env;
-}
 
 /**
  * Before a change: would it cause problems elsewhere? Shows what else VyGi
@@ -131,7 +120,7 @@ async function reviewChange(commands, what) {
   let cfg;
   let env;
   try {
-    [cfg, env] = await Promise.all([api.getConfig([]), routerEnv()]);
+    [cfg, env] = await Promise.all([api.getConfig([]), routerContext()]);
   } catch {
     return commands; // can't check (e.g. not connected): VyOS still validates the change
   }

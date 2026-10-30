@@ -5,21 +5,11 @@ import { h, clear } from "../lib/dom.js";
 import { formDialog, alertBox } from "../lib/dialog.js";
 import { applyChanges, session } from "../lib/session.js";
 import { securityFindings } from "../lib/secure.js";
-import { wanInfo } from "../lib/wan.js";
+import { routerContext } from "../lib/routerctx.js";
 
 export async function loadFindings() {
-  const [cfg, w, vygiAddr, facts] = await Promise.all([api.getConfig([]), wanInfo(), api.clientAddress().catch(() => ""), api.routerFacts().catch(() => ({}))]);
-  return securityFindings(cfg || {}, {
-    live: facts.live === true,
-    defaultUsers: facts.defaultPasswordUsers || [],
-    version: session.info?.version || "",
-    wan: w.wan,
-    wanCidr: w.wanCidr,
-    mgmtHost: session.info?.profile?.host,
-    defaultPassword: !!session.info?.defaultPassword,
-    user: session.info?.profile?.sshUser || "vyos",
-    vygiAddr,
-  });
+  const [cfg, ctx] = await Promise.all([api.getConfig([]), routerContext({ fresh: true })]);
+  return securityFindings(cfg || {}, ctx);
 }
 
 /** Renders findings into `el`; `reload` runs after a fix. */

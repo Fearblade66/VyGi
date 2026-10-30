@@ -5,27 +5,17 @@
 import { api, errorText } from "../lib/api.js";
 import { h, clear } from "../lib/dom.js";
 import { confirmBox, alertBox } from "../lib/dialog.js";
-import { applyChanges, session } from "../lib/session.js";
+import { applyChanges } from "../lib/session.js";
 import { diagnose } from "../lib/doctor.js";
-import { wanInfo } from "../lib/wan.js";
+import { routerContext } from "../lib/routerctx.js";
 import { changePassword } from "./security.js";
 
 const ORDER = { bad: 0, warn: 1, info: 2 };
 const line = (c) => `${c.op} ${c.path.join(" ")}${c.value !== undefined ? ` '${c.value}'` : ""}`;
 
 export async function loadDoctor() {
-  const [cfg, w, vygiAddr, facts] = await Promise.all([api.getConfig([]), wanInfo(), api.clientAddress().catch(() => ""), api.routerFacts().catch(() => ({}))]);
-  return diagnose(cfg || {}, {
-    live: facts.live === true,
-    defaultUsers: facts.defaultPasswordUsers || [],
-    version: session.info?.version || "",
-    wan: w.wan,
-    wanCidr: w.wanCidr,
-    mgmtHost: session.info?.profile?.host,
-    defaultPassword: !!session.info?.defaultPassword,
-    user: session.info?.profile?.sshUser || "vyos",
-    vygiAddr,
-  }).sort((a, b) => ORDER[a.level] - ORDER[b.level]);
+  const [cfg, ctx] = await Promise.all([api.getConfig([]), routerContext({ fresh: true })]);
+  return diagnose(cfg || {}, ctx).sort((a, b) => ORDER[a.level] - ORDER[b.level]);
 }
 
 const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;

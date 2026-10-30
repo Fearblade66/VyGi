@@ -13,6 +13,7 @@ import { isDesktop, webSessions, webSessionEnd } from "../lib/platform.js";
 import { openActivityLog } from "./activity.js";
 import { openClaudeSetup } from "./claude_setup.js";
 import { wanInfo, wanProblem } from "../lib/wan.js";
+import { routerContext } from "../lib/routerctx.js";
 import { readInternet, internetCommands, describeInternet, PD_LENGTHS } from "../lib/wanconf.js";
 import { readNetworks } from "../lib/netplan.js";
 import { protectStatus, protectOn, protectOff, smoothStatus, smoothOn, smoothOff, smoothBandwidth, adblockStatus, BLOCKLISTS } from "../lib/switches.js";
@@ -51,19 +52,13 @@ function lastSpeed() {
 }
 
 async function loadState() {
-  const [cfg, w, routes] = await Promise.all([
+  const [cfg, w, routes, env] = await Promise.all([
     api.getConfig([]).then((c) => c || {}),
     wanInfo(),
     api.routes(4, "default").catch(() => []),
+    routerContext(),
   ]);
   const def = routes.find((r) => r.dst === "default");
-  const env = {
-    wan: w.wan,
-    wanCidr: w.wanCidr,
-    mgmtHost: session.info?.profile?.host,
-    defaultPassword: !!session.info?.defaultPassword,
-    user: session.info?.profile?.sshUser || "vyos",
-  };
   return { cfg, env, w, wan: w.wan, wanGateway: def?.gateway || (def?.nexthops || [])[0]?.gateway || "" };
 }
 
