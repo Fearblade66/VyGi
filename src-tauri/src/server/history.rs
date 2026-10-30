@@ -70,6 +70,8 @@ pub struct Saved {
     pub ids_offset: u64,
     /// internet addresses blocked automatically after an attack: (address, until ms)
     pub ids_blocked: Vec<(String, u64)>,
+    /// the newest commit already looked at ("YYYY-MM-DD HH:MM:SS", the router's clock)
+    pub commit_seen: String,
 }
 
 pub struct Store {

@@ -203,6 +203,8 @@ In the alerts bell, switch on **Watch this router 24/7 on the VyGi server**. Fro
 
 Changing the web password logs out every other browser session.
 
+**Settings changed outside VyGi:** every minute the watcher reads the router's commit log. A commit VyGi didn't make (the command line, another tool) or a Safe Mode undo becomes an alert with who made it and what changed (up to 6 lines like `set service ntp server …`, passwords and keys masked). VyGi's own changes go through the router's HTTPS API and are left out, so another program using that API isn't reported either.
+
 **Phone notifications:** in the bell, **Phone notifications**. The simplest is [ntfy](https://ntfy.sh): install the free app, subscribe to a topic with a hard-to-guess name (anyone who knows it can read it), and paste its URL (e.g. `https://ntfy.sh/vygi-6f3a9c2e`); or use your own ntfy server, with an access token for protected topics. A webhook URL works too: Discord and Slack webhooks get a message, anything else (Home Assistant, n8n…) gets JSON `{title, text, level, kind, at}`. **Save and test** sends a test message.
 
 The server needs the router's password and API key saved (tick **Remember** when connecting) and the router trusted once from VyGi.

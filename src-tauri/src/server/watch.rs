@@ -392,6 +392,17 @@ impl Watcher {
                         lock(&status).error = Some(format!("Couldn't send a notification: {e}"));
                     }
                 }
+                let changed: Vec<Alert> = watch_config(&ws, &mut saved)
+                    .await
+                    .into_iter()
+                    .filter(|a| rw.on(&a.kind))
+                    .collect();
+                if !changed.is_empty() {
+                    store.add_alerts(&changed);
+                    if let Err(e) = self.notify(&name, &changed).await {
+                        lock(&status).error = Some(format!("Couldn't send a notification: {e}"));
+                    }
+                }
                 upkeep(&self.app, &ws, &rw, &store, &mut saved).await;
                 saved.cursor = lock(&cursor).clone();
                 store.save(&saved);
@@ -729,6 +740,165 @@ const IDS_BLOCK_MS: u64 = 24 * 3600 * 1000;
 /// Intrusion detection: new serious alerts (priority 1-2) as alerts, grouped
 /// by attack and source; with automatic blocking on, internet addresses
 /// behind a priority-1 attack are blocked for 24 hours. Expired blocks go.
+/// One line of `show system commit`: (revision, "YYYY-MM-DD HH:MM:SS", user, via).
+pub fn parse_commits(text: &str) -> Vec<(u32, String, String, String)> {
+    text.lines()
+        .filter_map(|l| {
+            let mut w = l.split_whitespace();
+            let rev = w.next()?.parse().ok()?;
+            let stamp = format!("{} {}", w.next()?, w.next()?);
+            (w.next()? == "by").then_some(())?;
+            let by = w.next()?.to_string();
+            let via = match w.next() {
+                Some("via") => w.collect::<Vec<_>>().join(" "),
+                _ => String::new(),
+            };
+            (stamp.len() == 19).then_some((rev, stamp, by, via))
+        })
+        .collect()
+}
+
+/// `show system commit diff N` ("[path]" then "- old" / "+ new" lines) as
+/// "set path value" / "delete path value" lines, secrets masked.
+pub fn diff_lines(text: &str) -> Vec<String> {
+    const SECRET: [&str; 6] = [
+        "password",
+        "secret",
+        "private-key",
+        "pre-shared",
+        "key ",
+        "community",
+    ];
+    let mut path = String::new();
+    let mut out = Vec::new();
+    for l in text.lines() {
+        let l = l.trim_end();
+        if let Some(p) = l.strip_prefix('[').and_then(|x| x.strip_suffix(']')) {
+            path = p.to_string();
+            continue;
+        }
+        let (op, rest) = if let Some(r) = l.strip_prefix("+ ") {
+            ("set", r)
+        } else if let Some(r) = l.strip_prefix("- ") {
+            ("delete", r)
+        } else {
+            continue;
+        };
+        let rest = rest.trim().trim_end_matches(['{', ' ']).replace('"', "");
+        if rest.is_empty() || rest == "}" {
+            continue; // the closing brace of a node
+        }
+        let mut line = format!("{op} {path} {rest}").trim().to_string();
+        if SECRET.iter().any(|s| format!("{line} ").contains(s)) {
+            // keep the setting's name, hide its value
+            if let Some(i) = line.rfind(' ') {
+                line = format!("{} ••••", &line[..i]);
+            }
+        }
+        out.push(line);
+    }
+    out
+}
+
+/// New commits since the last look, oldest first, that VyGi didn't make
+/// (VyGi changes the router through its HTTPS API) and that aren't the boot.
+pub fn foreign_commits(
+    list: &[(u32, String, String, String)],
+    seen: &str,
+) -> Vec<(u32, String, String, String)> {
+    let mut out: Vec<_> = list
+        .iter()
+        .filter(|c| c.1.as_str() > seen)
+        .filter(|c| {
+            let via = c.3.to_ascii_lowercase();
+            !via.contains("http-api")
+                && !via.contains("boot-config-loader")
+                && !via.starts_with("init")
+        })
+        .cloned()
+        .collect();
+    out.reverse();
+    out
+}
+
+/// Settings changed outside VyGi (the command line, another tool) or undone
+/// by Safe Mode: an alert each, with what changed.
+async fn watch_config(ws: &WindowState, saved: &mut Saved) -> Vec<Alert> {
+    let Ok(conn) = ws.conn().await else {
+        return Vec::new();
+    };
+    let Ok(text) = conn.api.show(&["system".into(), "commit".into()]).await else {
+        return Vec::new();
+    };
+    let list = parse_commits(&text);
+    let Some(newest) = list.first().map(|c| c.1.clone()) else {
+        return Vec::new();
+    };
+    // first look at this router: start from now
+    if saved.commit_seen.is_empty() {
+        saved.commit_seen = newest;
+        return Vec::new();
+    }
+    let new = foreign_commits(&list, &saved.commit_seen);
+    saved.commit_seen = newest;
+    let mut alerts = Vec::new();
+    for (rev, _, by, via) in new.iter().rev().take(3).rev() {
+        let undo = via.to_ascii_lowercase().contains("commit-confirm")
+            || via.to_ascii_lowercase().contains("rollback");
+        let diff = conn
+            .api
+            .show(&[
+                "system".into(),
+                "commit".into(),
+                "diff".into(),
+                rev.to_string(),
+            ])
+            .await
+            .map(|t| diff_lines(&t))
+            .unwrap_or_default();
+        let shown: Vec<&str> = diff.iter().take(6).map(String::as_str).collect();
+        let more = diff.len().saturating_sub(shown.len());
+        let what = if shown.is_empty() {
+            String::new()
+        } else {
+            format!(
+                ": {}{}",
+                shown.join(" · "),
+                if more > 0 {
+                    format!(" (and {more} more)")
+                } else {
+                    String::new()
+                }
+            )
+        };
+        let who = if undo {
+            "Safe Mode undid a change (nobody pressed Confirm in time)".to_string()
+        } else if via.is_empty() || via == "cli" {
+            format!("Settings changed on the router's command line by {by}")
+        } else {
+            format!("Settings changed by {by} ({via})")
+        };
+        alerts.push(Alert {
+            kind: "config".into(),
+            text: format!("{who}{what}").chars().take(700).collect(),
+            level: "warn".into(),
+            at: now_ms(),
+        });
+    }
+    if new.len() > 3 {
+        alerts.push(Alert {
+            kind: "config".into(),
+            text: format!(
+                "{} more changes made outside VyGi: see Settings > Change history.",
+                new.len() - 3
+            ),
+            level: "warn".into(),
+            at: now_ms(),
+        });
+    }
+    alerts
+}
+
 async fn watch_ids(ws: &WindowState, rw: &RouterWatch, saved: &mut Saved) -> Vec<Alert> {
     let Ok(conn) = ws.conn().await else {
         return Vec::new();
@@ -1031,6 +1201,43 @@ async fn record_traffic(
         })
         .collect();
     store.add_devices(now, &totals);
+}
+
+#[cfg(test)]
+mod config_tests {
+    use super::*;
+
+    #[test]
+    fn commits_and_diffs() {
+        let log = " 0  2026-10-30 04:40:14  by vyos  via cli\n 1  2026-10-30 04:40:10  by root  via vyos-http-api\n 2  2026-10-26 20:47:30  by root  via commit-confirm\n 3  2026-10-26 20:47:25  by root  via boot-config-loader\n12  2026-10-26 19:17:20  by vyos\n";
+        let list = parse_commits(log);
+        assert_eq!(list.len(), 5);
+        assert_eq!(
+            list[4],
+            (
+                12,
+                "2026-10-26 19:17:20".into(),
+                "vyos".into(),
+                String::new()
+            )
+        );
+        // VyGi's own (API) and the boot are left out; oldest first
+        let new = foreign_commits(&list, "2026-10-26 20:47:25");
+        assert_eq!(new.iter().map(|c| c.0).collect::<Vec<_>>(), [2, 0]);
+        assert!(foreign_commits(&list, "2026-10-30 04:40:14").is_empty());
+        let diff = "[firewall ipv4 input filter rule 9900 inbound-interface]\n- name \"eth5\"\n+ name \"eth2\"\n[system login user bob authentication]\n+ plaintext-password \"hunter2\"\n+ encrypted-password \"$6$x\"\n[interfaces wireguard wg0]\n+ private-key \"abc=\"\n[service ntp]\n+ server time4.example.net {\n+ }\n\n";
+        assert_eq!(
+            diff_lines(diff),
+            [
+                "delete firewall ipv4 input filter rule 9900 inbound-interface name eth5",
+                "set firewall ipv4 input filter rule 9900 inbound-interface name eth2",
+                "set system login user bob authentication plaintext-password ••••",
+                "set system login user bob authentication encrypted-password ••••",
+                "set interfaces wireguard wg0 private-key ••••",
+                "set service ntp server time4.example.net",
+            ]
+        );
+    }
 }
 
 #[cfg(test)]
