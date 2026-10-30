@@ -115,6 +115,7 @@ const handMade = (what) => h("span.badge", { title: "Set up by hand (Advanced or
 export function initSettings() {
   const root = document.getElementById("settings");
   let seq = 0;
+  let shownTab = null;
 
   async function render() {
     const my = ++seq;
@@ -122,7 +123,8 @@ export function initSettings() {
       clear(root).append(welcome(() => document.getElementById("btn-connect").click()));
       return;
     }
-    if (!root.querySelector(".page")) clear(root).append(loadingPage(3));
+    // a different tab: don't leave the old one up while this one loads
+    if (!root.querySelector(".page") || shownTab !== viewTab("settings", "internet")) clear(root).append(loadingPage(3));
     let st;
     try {
       st = await loadState();
@@ -133,6 +135,7 @@ export function initSettings() {
     if (my !== seq) return;
     // the tabs are under the top bar (views.js: Internet, Router security, System, Change history)
     const tab = TABS[viewTab("settings", "internet")] ? viewTab("settings", "internet") : "internet";
+    shownTab = tab;
     const body = { internet, security, system }[tab](st, my);
     clear(root).append(h("div.page.settings", ...body));
   }
