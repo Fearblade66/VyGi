@@ -150,6 +150,17 @@ export async function showConnectDialog() {
       } catch (e) {
         const accepted = await handleTrust(e, trust);
         if (accepted) continue;
+        if (e?.kind === "ApiDown" && !prepare) {
+          const ok = await confirmBox("The router's API is off",
+            `${e.message}\n\nVyGi can log in over SSH and turn it back on, with a new random key that it remembers. It runs these commands on the router and saves them:\n  set service https api keys id vygi key <new key>\n  set service https api rest\n  set system config-management commit-confirm action reload`,
+            "Turn it on");
+          if (ok) {
+            const bytes = crypto.getRandomValues(new Uint8Array(24));
+            preparedKey = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+            prepare = true;
+            continue;
+          }
+        }
         errBox.textContent = errorText(e);
         errBox.hidden = false;
         setStatus("Connection failed.", true);

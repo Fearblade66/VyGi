@@ -132,7 +132,30 @@ pub async fn connect(state: St, win: Win, req: ConnectRequest) -> AppResult<Conn
             Err(e @ (AppError::UntrustedCert { .. } | AppError::CertMismatch { .. })) => {
                 return Err(e)
             }
-            Err(e) if tries == 0 => return Err(e),
+            Err(e) if tries == 0 => {
+                // Nothing on the API port: SSH tells "router down / wrong address"
+                // from "only the API is off".
+                let unreachable = matches!(&e, AppError::Http(m) if m.starts_with("cannot reach"))
+                    || matches!(e, AppError::Timeout(_));
+                if !unreachable || req.prepare_api {
+                    return Err(e);
+                }
+                return Err(match connect_ssh().await {
+                    Ok(_)
+                    | Err(
+                        AppError::AuthFailed(_)
+                        | AppError::UntrustedHostKey { .. }
+                        | AppError::HostKeyMismatch { .. },
+                    ) => AppError::ApiDown(format!(
+                        "The router answers over SSH, but its HTTPS API (port {}) doesn't: `service https` is off or not running.",
+                        profile.api_port
+                    )),
+                    Err(_) => AppError::Http(format!(
+                        "the router doesn't answer at {}: not over HTTPS (port {}) and not over SSH (port {}). Is it turned on, and is that still its address?",
+                        profile.host, profile.api_port, profile.ssh_port
+                    )),
+                });
+            }
             Err(_) => tokio::time::sleep(std::time::Duration::from_secs(2)).await,
         }
     };

@@ -39,6 +39,9 @@ pub enum AppError {
     Invalid(String),
     #[error("Timed out: {0}")]
     Timeout(String),
+    /// The router answers over SSH, but not its HTTPS API.
+    #[error("{0}")]
+    ApiDown(String),
     #[error("Another change is waiting for Confirm on this router (from another VyGi window, the CLI or someone else). Keep it with Confirm, or let it revert, before making a new change.")]
     ForeignPending,
 }
@@ -59,6 +62,7 @@ impl AppError {
             AppError::Io(_) => "Io",
             AppError::Invalid(_) => "Invalid",
             AppError::Timeout(_) => "Timeout",
+            AppError::ApiDown(_) => "ApiDown",
             AppError::ForeignPending => "ForeignPending",
         }
     }
