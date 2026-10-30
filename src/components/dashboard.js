@@ -265,7 +265,7 @@ export function initDashboard() {
         pool ? h("span", { style: { width: "70px" } }, h("div.bar", h("span", { style: { width: `${Math.min(100, (used / pool.size) * 100)}%` } }))) : h("span.hint", "no DHCP"),
         h("span.num", `${inNet} online`));
     });
-    clear(ui.networks).append(rows.length ? h("div.list-rows", rows) : h("div.empty", "No LAN networks configured yet. Try Quick Set."));
+    clear(ui.networks).append(rows.length ? h("div.list-rows", rows) : h("div.empty", "No local networks yet. Create one on the Networks page."));
   }
 
   function renderTop() {

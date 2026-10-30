@@ -23,7 +23,7 @@ try {
     log(`[${v}]`, (await js(`return document.getElementById('${v === "vpn" ? "vpnpage" : v}').innerText.replace(/\\s+/g, ' ').slice(0, 200)`)));
   }
   const windows = [
-    ["Quick Set"], ["Interfaces"], ["Addresses", "IP"], ["Routes", "IP"], ["ARP / Neighbors", "IP"], ["DHCP Server", "IP"],
+    ["Interfaces"], ["Addresses", "IP"], ["Routes", "IP"], ["ARP / Neighbors", "IP"], ["DHCP Server", "IP"],
     ["DHCP Leases", "IP"], ["DNS", "IP"], ["DNS Server (Technitium)", "IP"], ["Dynamic DNS", "IP"], ["Services", "IP"], ["Filter Rules", "Firewall"], ["NAT", "Firewall"],
     ["Address Lists", "Firewall"], ["Connections", "Firewall"], ["VPN"], ["Log"], ["Resources", "System"], ["Users", "System"],
     ["Images (Upgrade)", "System"], ["Revisions / Rollback", "System"], ["Backup / Restore", "System"], ["IP Scan", "Tools"],

@@ -99,7 +99,7 @@ export function initNetworks() {
       return renderPorts(box);
     }
     const grid = h("div.net-grid", nets.map((n) => card(n)));
-    if (!nets.length) grid.append(h("div.empty", "No local networks yet. Create one, or use Quick Set for a basic home setup."));
+    if (!nets.length) grid.append(h("div.empty", "No local networks yet. Create one, or open Set up this router for the basics."));
     const access = nets.length ? h("div.hint", "Which networks can reach each other: ", h("button.link", { on: { click: () => showView("access") } }, "Security → Network access")) : "";
     clear(root).append(h("div.page", head, grid, access));
   }

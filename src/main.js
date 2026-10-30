@@ -19,7 +19,6 @@ import { openAddresses } from "./components/addresses.js";
 import { openNeighbors } from "./components/neighbors.js";
 import { openServices } from "./components/services.js";
 import { openAddressLists, openConnections } from "./components/fwextra.js";
-import { openQuickSet } from "./components/quickset.js";
 import { openFirewall } from "./components/firewall.js";
 import { openNat } from "./components/nat.js";
 import { openDhcp, openDhcpLeases } from "./components/dhcp.js";
@@ -53,7 +52,6 @@ import { openDdns } from "./components/ddns.js";
 
 // Left menu. Sections without a dedicated window use the generic config editor.
 const MENU = [
-  { label: "Quick Set", open: openQuickSet },
   { label: "Interfaces", open: openInterfaces },
   {
     label: "IP",

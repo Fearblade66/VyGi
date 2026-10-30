@@ -36,7 +36,6 @@ export const SYNONYMS = [
   [["ping", "traceroute", "scan", "torch", "sniffer", "capture"], ["t:Ping", "t:Traceroute", "t:IP Scan", "t:Torch"]],
   [["cpu", "memory", "temperature", "disk", "uptime"], ["t:Resources"]],
   [["route", "routing", "gateway", "bgp", "ospf"], ["t:Routes", "t:Routing Protocols"]],
-  [["setup", "wizard", "quick", "start"], ["t:Quick Set"]],
   [["claude", "ai", "report", "support", "help", "diagnose"], ["t:Report for Claude"]],
 ];
 

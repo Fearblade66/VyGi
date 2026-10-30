@@ -70,7 +70,6 @@ The sidebar shows the connected router, with a button to open **another window f
 
 | Area | What you get |
 |---|---|
-| Quick Set | Winbox-style one-page home router setup: internet port (DHCP, static or PPPoE), LAN port(s) (several make a bridge), router address, DHCP server, DNS for devices, NAT, and an optional basic firewall. You see the exact commands before anything is applied. |
 | IP → Addresses | Every address on every interface, including ones from DHCP. Add and remove static addresses. |
 | IP → ARP / Neighbors | The ARP/NDP table (with static ARP entries), and devices found by **LLDP** (switches, access points, other routers). One click turns LLDP on. |
 | IP → Services | SSH, HTTPS API, DNS, DHCP, NTP, LLDP, SNMP, mDNS repeater and more, with on/off, ports and details. You can't switch off the access VyGi itself needs. |
@@ -351,6 +350,6 @@ Run the backend tests with `cd src-tauri && cargo test` (and `cargo test --no-de
 
 Licensed under the GNU GPL v3 (see `LICENSE`).
 
-The Dashboard and Clients views take their layout ideas from Ubiquiti's UniFi Network app; Quick Set, IP Services, Address Lists, IP Scan and Profile follow MikroTik Winbox. No code or assets come from either.
+The Dashboard and Clients views take their layout ideas from Ubiquiti's UniFi Network app; IP Services, Address Lists, IP Scan and Profile follow MikroTik Winbox. No code or assets come from either.
 
 Several features were designed after [VyManager](https://github.com/Community-VyProjects/VyManager) (GPLv3): the WireGuard Quick Setup flow and client config, the VyOS 1.5 DHCP option layout, and DNS forwarding paths. VyGi re-implements them in its own code and checks them against the vyos-1x interface definitions.
