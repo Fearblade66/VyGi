@@ -13,8 +13,11 @@ use serde::{Deserialize, Serialize};
 
 const COOKIE: &str = "vygi_session";
 const SESSION_TTL: Duration = Duration::from_secs(30 * 24 * 3600);
-/// After this many wrong passwords in [`LOCK_WINDOW`], logins are refused until it passes.
+/// After this many wrong passwords from one address in [`LOCK_WINDOW`], that
+/// address is refused until it passes (so someone else can't lock you out);
+/// after [`MAX_FAILS_ALL`] from all addresses together, everyone is.
 const MAX_FAILS: usize = 10;
+const MAX_FAILS_ALL: usize = 50;
 const LOCK_WINDOW: Duration = Duration::from_secs(5 * 60);
 const MIN_PASSWORD: usize = 10;
 const LOCKED: &str = "Too many wrong passwords. Wait 5 minutes, or restart VyGi (e.g. docker restart vygi) to clear it.";
@@ -53,7 +56,7 @@ pub struct Auth {
     hash: StdMutex<String>,
     known_ips: StdMutex<Vec<String>>,
     sessions: StdMutex<HashMap<String, Session>>,
-    fails: StdMutex<Vec<Instant>>,
+    fails: StdMutex<Vec<(Instant, String)>>,
     secure: bool,
 }
 
@@ -252,9 +255,9 @@ impl Auth {
         fresh
     }
 
-    /// Whether logins are refused right now (too many wrong passwords).
-    pub fn is_locked(&self) -> bool {
-        self.locked()
+    /// Whether logins from `ip` are refused right now (too many wrong passwords).
+    pub fn is_locked(&self, ip: &str) -> bool {
+        self.locked(ip)
     }
 
     /// Checks the password; returns the Set-Cookie value and the new session's token.
@@ -264,7 +267,7 @@ impl Auth {
         ip: &str,
         agent: &str,
     ) -> Result<(String, String), String> {
-        if self.locked() {
+        if self.locked(ip) {
             return Err(LOCKED.into());
         }
         let hash = self.hash.lock().unwrap_or_else(|e| e.into_inner()).clone();
@@ -273,7 +276,7 @@ impl Auth {
             .await
             .unwrap_or(false);
         if !ok {
-            self.failed();
+            self.failed(ip);
             tokio::time::sleep(Duration::from_secs(1)).await; // slows down guessing
             return Err("Wrong password".into());
         }
@@ -315,7 +318,9 @@ impl Auth {
         if new.chars().count() < MIN_PASSWORD {
             return Err(format!("Use at least {MIN_PASSWORD} characters"));
         }
-        if self.locked() {
+        // a logged-in session guessing the current password counts on its own
+        let who = format!("session:{}", session_id(keep));
+        if self.locked(&who) {
             return Err(LOCKED.into());
         }
         let hash = self.hash.lock().unwrap_or_else(|e| e.into_inner()).clone();
@@ -324,7 +329,7 @@ impl Auth {
             .await
             .unwrap_or(false)
         {
-            self.failed();
+            self.failed(&who);
             tokio::time::sleep(Duration::from_secs(1)).await;
             return Err("The current password is wrong".into());
         }
@@ -341,17 +346,17 @@ impl Auth {
         Ok(())
     }
 
-    fn locked(&self) -> bool {
+    fn locked(&self, ip: &str) -> bool {
         let mut fails = self.fails.lock().unwrap_or_else(|e| e.into_inner());
-        fails.retain(|t| t.elapsed() < LOCK_WINDOW);
-        fails.len() >= MAX_FAILS
+        fails.retain(|(t, _)| t.elapsed() < LOCK_WINDOW);
+        fails.len() >= MAX_FAILS_ALL || fails.iter().filter(|(_, a)| a == ip).count() >= MAX_FAILS
     }
 
-    fn failed(&self) {
+    fn failed(&self, ip: &str) {
         self.fails
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .push(Instant::now());
+            .push((Instant::now(), ip.to_string()));
     }
 
     /// Drops expired sessions.
@@ -367,6 +372,33 @@ impl Auth {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lockout_is_per_address() {
+        let a = Auth {
+            file: PathBuf::new(),
+            hash: StdMutex::new(String::new()),
+            known_ips: StdMutex::new(Vec::new()),
+            sessions: StdMutex::new(HashMap::new()),
+            fails: StdMutex::new(Vec::new()),
+            secure: true,
+        };
+        for _ in 0..MAX_FAILS {
+            a.failed("10.0.0.9");
+        }
+        assert!(a.is_locked("10.0.0.9"));
+        assert!(
+            !a.is_locked("10.0.0.2"),
+            "someone else's guesses don't lock you out"
+        );
+        for i in 0..MAX_FAILS_ALL {
+            a.failed(&format!("10.1.0.{i}"));
+        }
+        assert!(
+            a.is_locked("10.0.0.2"),
+            "many addresses together still lock"
+        );
+    }
 
     #[test]
     fn hash_and_verify() {

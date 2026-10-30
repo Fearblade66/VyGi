@@ -109,6 +109,15 @@ impl Config {
 
 pub async fn run(cfg: Config) -> Result<(), String> {
     std::fs::create_dir_all(&cfg.data).map_err(|e| format!("{}: {e}", cfg.data.display()))?;
+    // router secrets, backups, logs and traffic history: only VyGi's own user may read them
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Err(e) = std::fs::set_permissions(&cfg.data, std::fs::Permissions::from_mode(0o700))
+        {
+            eprintln!("Couldn't make {} private: {e}", cfg.data.display());
+        }
+    }
     let dirs = Dirs {
         data: cfg.data.clone(),
         cache: cfg.data.join("cache"),
@@ -369,7 +378,7 @@ async fn login(
         .get(header::USER_AGENT)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    let was_locked = s.auth.is_locked();
+    let was_locked = s.auth.is_locked(&ip);
     match s.auth.login(&req.password, &ip, agent).await {
         Ok((cookie, token)) => {
             s.log(
@@ -388,7 +397,7 @@ async fn login(
         Err(msg) => {
             if !was_locked {
                 s.log("", &ip, "login failed", "", msg.clone(), false);
-                if s.auth.is_locked() {
+                if s.auth.is_locked(&ip) {
                     s.log(
                         "",
                         &ip,

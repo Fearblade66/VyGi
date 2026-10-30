@@ -520,20 +520,32 @@ pub async fn restore_over_ssh(
         trust_ssh.or(profile.ssh_fingerprint.clone()),
     )
     .await?;
-    const FILE: &str = "/tmp/vygi-restore.boot";
+    // a private folder: the backup holds password hashes and keys
+    let dir = ssh
+        .exec_ok("umask 077; mktemp -d /tmp/vygi-restore.XXXXXXXX")
+        .await?;
+    let dir = dir.trim();
+    if !dir.starts_with("/tmp/vygi-restore.")
+        || !dir[18..].chars().all(|c| c.is_ascii_alphanumeric())
+    {
+        return Err(AppError::Api(
+            "couldn't make a temporary folder on the router".into(),
+        ));
+    }
+    let file = format!("{dir}/config.boot");
     let b64 = {
         use base64::Engine;
         base64::engine::general_purpose::STANDARD.encode(text.as_bytes())
     };
-    ssh.exec_ok(&format!(": > {FILE}.b64")).await?;
+    ssh.exec_ok(&format!(": > {file}.b64")).await?;
     // one command line holds at most 128 KB
     for chunk in b64.as_bytes().chunks(60_000) {
         let chunk = std::str::from_utf8(chunk).unwrap_or_default();
-        ssh.exec_ok(&format!("printf %s {chunk} >> {FILE}.b64"))
+        ssh.exec_ok(&format!("printf %s {chunk} >> {file}.b64"))
             .await?;
     }
     ssh.exec_ok(&format!(
-        "base64 -d {FILE}.b64 > {FILE} && rm -f {FILE}.b64"
+        "base64 -d {file}.b64 > {file} && rm -f {file}.b64"
     ))
     .await?;
     let out = ssh
@@ -541,10 +553,10 @@ pub async fn restore_over_ssh(
             &format!(
                 "/bin/vbash -c 'source /opt/vyatta/etc/functions/script-template\n\
                  configure\n\
-                 load {FILE}\n\
+                 load {file}\n\
                  commit\n\
                  save\n\
-                 exit'; rm -f {FILE}"
+                 exit'; rm -rf {dir}"
             ),
             Duration::from_secs(300),
         )
