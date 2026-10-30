@@ -246,7 +246,12 @@ pub async fn connect(state: St, win: Win, req: ConnectRequest) -> AppResult<Conn
 /// right away (no Safe Mode: a revert would leave the saved password wrong),
 /// and updates the password VyGi remembers.
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub async fn change_login_password(state: St, win: Win, new_password: String) -> AppResult<()> {
+pub async fn change_login_password(
+    state: St,
+    win: Win,
+    new_password: String,
+    user: Option<String>,
+) -> AppResult<()> {
     if new_password.chars().count() < 8 {
         return Err(AppError::Invalid("Use at least 8 characters".into()));
     }
@@ -261,13 +266,23 @@ pub async fn change_login_password(state: St, win: Win, new_password: String) ->
         ));
     }
     let profile = state.profiles.find(&conn.profile_id)?;
+    // another login on the router (not the one VyGi uses): nothing to remember
+    let user = user.filter(|u| !u.is_empty() && *u != profile.ssh_user);
+    if let Some(u) = &user {
+        if !u
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
+        {
+            return Err(AppError::Invalid("unexpected login name".into()));
+        }
+    }
     let cmd = crate::vyos_api::ConfigCommand {
         op: "set".into(),
         path: [
             "system",
             "login",
             "user",
-            &profile.ssh_user,
+            user.as_deref().unwrap_or(&profile.ssh_user),
             "authentication",
             "plaintext-password",
         ]
@@ -278,6 +293,9 @@ pub async fn change_login_password(state: St, win: Win, new_password: String) ->
     };
     conn.api.configure(&[cmd], 0).await?;
     conn.api.save().await?;
+    if user.is_some() {
+        return Ok(());
+    }
     let dir = state.profiles.dir();
     if let Some(mut secrets) = security::load_secrets(&dir, &profile)? {
         secrets.ssh_password = new_password;

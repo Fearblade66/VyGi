@@ -14,8 +14,11 @@ const ORDER = { bad: 0, warn: 1, info: 2 };
 const line = (c) => `${c.op} ${c.path.join(" ")}${c.value !== undefined ? ` '${c.value}'` : ""}`;
 
 export async function loadDoctor() {
-  const [cfg, w, vygiAddr] = await Promise.all([api.getConfig([]), wanInfo(), api.clientAddress().catch(() => "")]);
+  const [cfg, w, vygiAddr, facts] = await Promise.all([api.getConfig([]), wanInfo(), api.clientAddress().catch(() => ""), api.routerFacts().catch(() => ({}))]);
   return diagnose(cfg || {}, {
+    live: facts.live === true,
+    defaultUsers: facts.defaultPasswordUsers || [],
+    version: session.info?.version || "",
     wan: w.wan,
     wanCidr: w.wanCidr,
     mgmtHost: session.info?.profile?.host,
@@ -69,7 +72,7 @@ export function renderDoctor(el, findings, reload, { compact = false } = {}) {
 }
 
 async function fix(f, reload) {
-  if (f.needs === "password") return changePassword(reload);
+  if (f.needs === "password") return changePassword(reload, f.user || null);
   if (f.manual && !(await confirmBox("Change hand-made settings?", `To fix "${f.title}", VyGi would run:\n\n${f.fix.map(line).join("\n")}\n\nThese change settings that weren't made by VyGi's simple pages. Safe Mode applies.`, "Fix it"))) return;
   try {
     await applyChanges(f.fix, `fix: ${f.title.toLowerCase()}`, { check: false });

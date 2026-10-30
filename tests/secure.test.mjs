@@ -65,3 +65,29 @@ test("API limited, long key, SSH protected: no API/SSH findings", () => {
   assert.ok(!securityFindings(cfg, ctx).some((x) => ["api-open", "api-key-short", "ssh-guess"].includes(x.id)));
   assert.ok(!securityFindings({ service: { ssh: { "disable-password-authentication": {} } } }, ctx).some((x) => x.id === "ssh-guess"));
 });
+
+test("edge readiness: installer, nightly build, other logins, IPv6 to devices", async () => {
+  const { securityFindings, usesIpv6, wanBlocked } = await import("../src/lib/secure.js");
+  const ids = (cfg, ctx) => securityFindings(cfg, ctx).map((f) => f.id);
+  const base = { wan: "eth0", user: "vygi" };
+  assert.ok(ids({}, { ...base, live: true }).includes("live"));
+  assert.ok(ids({}, { ...base, version: "2026.10.23-0026-rolling" }).includes("rolling"));
+  assert.ok(!ids({}, { ...base, version: "1.5.0" }).includes("rolling"));
+  const pw = securityFindings({}, { ...base, defaultUsers: ["vyos"] }).find((f) => f.id === "password:vyos");
+  assert.equal(pw.user, "vyos");
+  assert.equal(pw.needs, "password");
+  // VyGi's own login found both ways: reported once
+  assert.equal(securityFindings({}, { ...base, defaultPassword: true, defaultUsers: ["vygi"] }).filter((f) => f.id.startsWith("password")).length, 1);
+
+  const v6 = { interfaces: { ethernet: { eth0: { address: "dhcp", "dhcpv6-options": { pd: { 0: {} } } }, eth1: { address: ["10.0.0.1/24"] } } } };
+  assert.ok(usesIpv6(v6, "eth0"));
+  assert.ok(!usesIpv6({ interfaces: { ethernet: { eth0: { address: "dhcp" }, eth1: { address: ["10.0.0.1/24"] } } } }, "eth0"));
+  const f = securityFindings(v6, base).find((x) => x.id === "wan-forward6");
+  assert.ok(f && f.fix.length === 4);
+  // after the fix, the forward chain counts as blocked and the finding goes
+  const rule = {};
+  for (const c of f.fix) if (c.op === "set") rule[c.path[6] === "inbound-interface" ? "inbound-interface" : c.path[6]] = c.path[6] === "inbound-interface" ? { name: c.value } : c.value;
+  const fixed = { ...v6, firewall: { ipv6: { forward: { filter: { rule: { 9900: rule } } } } } };
+  assert.ok(wanBlocked(fixed.firewall.ipv6.forward.filter, "eth0"));
+  assert.ok(!ids(fixed, base).includes("wan-forward6"));
+});

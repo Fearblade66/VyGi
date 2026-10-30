@@ -314,7 +314,7 @@ export function diagnose(cfg, env = {}) {
 
   // ---- security (the Dashboard's checks)
   for (const f of securityFindings(cfg, env)) {
-    out.push({ id: `security:${f.id}`, level: f.level, title: f.title, text: f.text, fix: f.fix || null, manual: false, needs: f.needs, fixLabel: f.fixLabel, security: true });
+    out.push({ id: `security:${f.id}`, level: f.level, title: f.title, text: f.text, fix: f.fix || null, manual: false, needs: f.needs, user: f.user, fixLabel: f.fixLabel, security: true });
   }
 
   // a fix that changes something VyGi didn't make is advice, not automatic

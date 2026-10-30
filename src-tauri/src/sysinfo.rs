@@ -233,6 +233,47 @@ pub async fn system_load(state: Win) -> AppResult<Load> {
     Ok(parse_load(&out.stdout))
 }
 
+/// Is VyOS installed (or running from the installer ISO, so nothing survives a
+/// restart), and which logins still have the factory password "vyos". The
+/// password check runs on the router: password hashes never leave it.
+const FACTS_SCRIPT: &str = r#"sudo -n python3 -W ignore - <<'PY'
+import json, subprocess
+live = None
+try:
+    from vyos.system import image
+    live = bool(image.is_live_boot())
+except Exception:
+    pass
+def is_vyos(h):
+    try:
+        import crypt
+        return crypt.crypt('vyos', h) == h
+    except ImportError:
+        p = h.split('$')
+        if len(p) < 4 or p[1] != '6':
+            return False
+        r = subprocess.run(['openssl', 'passwd', '-6', '-salt', p[2], 'vyos'], capture_output=True, text=True)
+        return r.stdout.strip() == h
+weak = []
+for l in open('/etc/shadow'):
+    f = l.split(':')
+    if len(f) > 1 and f[1].startswith('$') and is_vyos(f[1]):
+        weak.append(f[0])
+print(json.dumps({'live': live, 'defaultPasswordUsers': weak}))
+PY"#;
+
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn router_facts(state: Win) -> AppResult<Value> {
+    let conn = state.conn().await?;
+    let out = conn.ssh.exec(FACTS_SCRIPT, Duration::from_secs(20)).await?;
+    serde_json::from_str(out.stdout.trim()).map_err(|_| {
+        AppError::Api(format!(
+            "couldn't read the router's facts: {}",
+            out.stderr.trim()
+        ))
+    })
+}
+
 /// Slow-changing facts: version, CPU model/count, storage.
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn system_info(state: Win) -> AppResult<Value> {

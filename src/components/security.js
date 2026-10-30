@@ -8,8 +8,11 @@ import { securityFindings } from "../lib/secure.js";
 import { wanInfo } from "../lib/wan.js";
 
 export async function loadFindings() {
-  const [cfg, w, vygiAddr] = await Promise.all([api.getConfig([]), wanInfo(), api.clientAddress().catch(() => "")]);
+  const [cfg, w, vygiAddr, facts] = await Promise.all([api.getConfig([]), wanInfo(), api.clientAddress().catch(() => ""), api.routerFacts().catch(() => ({}))]);
   return securityFindings(cfg || {}, {
+    live: facts.live === true,
+    defaultUsers: facts.defaultPasswordUsers || [],
+    version: session.info?.version || "",
     wan: w.wan,
     wanCidr: w.wanCidr,
     mgmtHost: session.info?.profile?.host,
@@ -33,7 +36,7 @@ export function renderFindings(el, findings, reload) {
 }
 
 async function fix(f, reload) {
-  if (f.needs === "password") return changePassword(reload);
+  if (f.needs === "password") return changePassword(reload, f.user || null);
   try {
     await applyChanges(f.fix, f.fixLabel ? `${f.fixLabel}: ${f.title.toLowerCase()}` : f.title);
   } catch (e) {
@@ -42,21 +45,22 @@ async function fix(f, reload) {
   reload();
 }
 
-export async function changePassword(reload) {
-  const user = session.info?.profile?.sshUser || "vyos";
+/** New password for VyGi's login, or (other) for another login on the router. */
+export async function changePassword(reload, other = null) {
+  const user = other || session.info?.profile?.sshUser || "vyos";
   const ok = await formDialog(`New password for ${user}`, [
-    { name: "pw", label: "New password", type: "password", hint: "At least 8 characters. Something long and unique; VyGi remembers it for you." },
+    { name: "pw", label: "New password", type: "password", hint: other ? "At least 8 characters. Something long and unique: VyGi doesn't keep this one, so store it in your password manager." : "At least 8 characters. Something long and unique; VyGi remembers it for you." },
     { name: "pw2", label: "Again", type: "password" },
   ], async (v) => {
     if (v.pw !== v.pw2) throw new Error("The two passwords don't match");
-    await api.changeLoginPassword(v.pw);
+    await api.changeLoginPassword(v.pw, other);
     return true;
   }, {
     okLabel: "Change password",
     intro: "This takes effect right away and is saved to the router's boot config (together with any other unsaved changes). Safe Mode doesn't apply to it.",
   });
   if (ok) {
-    session.info.defaultPassword = false;
+    if (!other) session.info.defaultPassword = false;
     reload();
   }
 }

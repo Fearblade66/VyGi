@@ -83,9 +83,15 @@ pub async fn call(
         "connect" => json(connection::connect(st(), w(), arg(&a, "req")?).await),
         "disconnect" => json(connection::disconnect(w()).await),
         "use_own_login" => json(connection::use_own_login(st(), w()).await),
-        "change_login_password" => {
-            json(connection::change_login_password(st(), w(), arg(&a, "newPassword")?).await)
-        }
+        "change_login_password" => json(
+            connection::change_login_password(
+                st(),
+                w(),
+                arg(&a, "newPassword")?,
+                arg(&a, "user").ok(),
+            )
+            .await,
+        ),
 
         "tx_status" => json(transactions::tx_status(w()).await),
         "get_config" => json(transactions::get_config(w(), arg(&a, "path")?).await),
@@ -116,6 +122,7 @@ pub async fn call(
 
         "dhcp_leases" => json(sysinfo::dhcp_leases(w(), arg(&a, "family")?).await),
         "system_load" => json(sysinfo::system_load(w()).await),
+        "router_facts" => json(sysinfo::router_facts(w()).await),
         "system_info" => json(sysinfo::system_info(w()).await),
         "neighbors" => json(sysinfo::neighbors(w()).await),
         "lldp_neighbors" => json(sysinfo::lldp_neighbors(w()).await),

@@ -85,6 +85,7 @@ pub fn run() {
             sysinfo::dhcp_leases,
             sysinfo::system_load,
             sysinfo::system_info,
+            sysinfo::router_facts,
             sysinfo::neighbors,
             sysinfo::lldp_neighbors,
             sysinfo::ddns_status,

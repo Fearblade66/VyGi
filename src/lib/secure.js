@@ -8,6 +8,20 @@ const PRIVATE = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"];
 export const WAN_BLOCK_DESC = "VyGi: block new connections from the internet";
 const WAN_BLOCK_RULE = "9900"; // late, so the user's own allow rules (e.g. WireGuard) still run first
 const DHCP6_RULE = "9890";
+export const WAN_FORWARD6_DESC = "VyGi: block new connections from the internet to your networks";
+
+/** Does the router hand out IPv6 to devices (a prefix from the provider, or a LAN with IPv6)? Pure. */
+export function usesIpv6(cfg, wan) {
+  const ifs = flattenInterfaces(cfg?.interfaces);
+  const wanCfg = ifs.get(wan)?.cfg;
+  if (wanCfg?.["dhcpv6-options"]?.pd) return true;
+  if (Object.keys(cfg?.service?.["router-advert"]?.interface || {}).length) return true;
+  for (const [name, c] of ifs) {
+    if (name === wan || c.type === "loopback") continue;
+    if (toArray(c.cfg.address).some((a) => String(a).includes(":")) || c.cfg.ipv6?.address?.autoconf != null) return true;
+  }
+  return false;
+}
 
 /** True if the rules (or default) already stop new connections from the internet port. */
 export function wanBlocked(chain, wan) {
@@ -33,11 +47,28 @@ export function securityFindings(cfg, ctx) {
   const out = [];
   const fw = cfg?.firewall || {};
 
-  if (ctx.defaultPassword) {
+  // ---- VyOS itself
+  if (ctx.live) {
     out.push({
-      id: "password", level: "bad", title: "The router still uses the default password",
-      text: `The "${ctx.user}" login still has the password "vyos", which everyone knows. Anyone who can reach the router can log in and change anything.`,
-      fix: null, needs: "password", fixLabel: "Change password",
+      id: "live", level: "bad", title: "VyOS isn't installed: it runs from the installer",
+      text: "Nothing survives a restart: the router comes back with no addresses, no firewall and the factory password. On the router's console run \"install image\" (accept the defaults and keep the running config), then remove the installer ISO or USB stick and make the disk boot first.",
+    });
+  }
+  if (/rolling/i.test(ctx.version || "")) {
+    out.push({
+      id: "rolling", level: "warn", title: "A nightly (rolling) VyOS build",
+      text: `${ctx.version} is a nightly build: VyOS says it isn't meant for production, and a nightly can break things a release wouldn't. For the router your network depends on, use VyOS Stream (free, released every few months) from vyos.net/get/stream.`,
+    });
+  }
+
+  // ---- logins with the factory password ("vyos")
+  const weak = [...new Set([...(ctx.defaultPassword ? [ctx.user] : []), ...(ctx.defaultUsers || [])])];
+  for (const u of weak) {
+    const mine = u === ctx.user;
+    out.push({
+      id: mine ? "password" : `password:${u}`, level: "bad", title: mine ? "The router still uses the default password" : `The "${u}" login still has the default password`,
+      text: `The "${u}" login still has the password "vyos", which everyone knows. Anyone who can reach the router can log in and change anything.${mine ? "" : " VyGi doesn't use this login, so it won't remember the new password: keep it somewhere safe."}`,
+      fix: null, needs: "password", fixLabel: "Change password", ...(mine ? {} : { user: u }),
     });
   }
 
@@ -79,6 +110,23 @@ export function securityFindings(cfg, ctx) {
         ...(viaWan ? { text: `Nothing stops new connections from the internet (${ctx.wan}) to the router itself. VyGi is connected through ${ctx.wan}, so it won't block this for you: blocking it would cut VyGi off. Connect from your home network and fix it from there.` } : {}),
       });
     }
+  }
+
+  // ---- IPv6: devices have public addresses, so without a forward rule the internet reaches them directly
+  if (ctx.wan && usesIpv6(cfg, ctx.wan) && !wanBlocked(fw.ipv6?.forward?.filter, ctx.wan)) {
+    const b = ["firewall", "ipv6", "forward", "filter", "rule", WAN_BLOCK_RULE];
+    out.push({
+      id: "wan-forward6", level: "bad", title: "Your devices can be reached from the internet over IPv6",
+      text: `Over IPv4, NAT keeps the internet from starting connections to your devices. Over IPv6 every device has its own public address, and nothing stops new connections from ${ctx.wan} to them. The fix blocks new connections from the internet to your networks; your devices' own traffic and its replies keep working.`,
+      fix: [
+        ...(fw.ipv6?.forward?.filter?.rule?.[WAN_BLOCK_RULE] ? [{ op: "delete", path: b }] : []),
+        { op: "set", path: [...b, "action"], value: "drop" },
+        { op: "set", path: [...b, "inbound-interface", "name"], value: ctx.wan },
+        { op: "set", path: [...b, "state"], value: "new" },
+        { op: "set", path: [...b, "description"], value: WAN_FORWARD6_DESC },
+      ],
+      fixLabel: "Block it",
+    });
   }
 
   const fwd = cfg?.service?.dns?.forwarding;
