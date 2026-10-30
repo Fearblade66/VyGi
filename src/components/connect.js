@@ -26,7 +26,9 @@ export async function showConnectDialog() {
   const errBox = h("div.err-box", { hidden: true });
 
   const list = h("div.saved-list");
+  let selected = null; // the saved router picked in the list
   const fill = async (p) => {
+    selected = p;
     f.host.value = p.host;
     f.name.value = p.name;
     f.apiPort.value = p.apiPort;
@@ -34,8 +36,8 @@ export async function showConnectDialog() {
     f.sshUser.value = p.sshUser;
     f.sshPassword.value = "";
     f.apiKey.value = "";
-    const has = await api.hasSavedSecrets(`${p.sshUser}@${p.host}`).catch(() => false);
-    savedFor = has ? `${p.sshUser}@${p.host}` : null;
+    const has = await api.hasSavedSecrets(profileId(p)).catch(() => false);
+    savedFor = has ? profileId(p) : null;
     f.sshPassword.placeholder = f.apiKey.placeholder = has ? "•••••••• (saved)" : "";
     savedHint.textContent = has ? `Password and API key are saved on ${isDesktop ? "this computer" : "the VyGi server"}. Just press Connect, or type new ones to replace them.` : "";
   };
@@ -55,7 +57,7 @@ export async function showConnectDialog() {
             click: async (e) => {
               e.stopPropagation();
               if (!(await confirmBox("Forget router", `Remove ${p.host} and its saved password/API key?`, "Remove"))) return;
-              await api.forgetRouter(`${p.sshUser}@${p.host}`).catch((err) => alertBox("Error", errorText(err)));
+              await api.forgetRouter(profileId(p)).catch((err) => alertBox("Error", errorText(err)));
               routers.splice(routers.indexOf(p), 1);
               renderList();
             },
@@ -68,7 +70,7 @@ export async function showConnectDialog() {
   renderList();
   // "#router=user@host" (the Dashboard's router overview opens a tab like that): connect to it right away
   const wanted = new URLSearchParams(location.hash.slice(1)).get("router");
-  const pick = routers.find((p) => `${p.sshUser}@${p.host}` === wanted);
+  const pick = routers.find((p) => profileId(p) === wanted);
   if (wanted) history.replaceState(null, "", location.pathname + location.search);
   if (pick) {
     fill(pick).then(() => savedFor && setTimeout(() => [...document.querySelectorAll(".dialog-buttons button.primary")].find((b) => b.textContent === "Connect")?.click(), 50));
@@ -105,7 +107,9 @@ export async function showConnectDialog() {
   ], async () => {
     errBox.hidden = true;
     // No API key and none saved: offer to turn the API on over SSH.
-    const id = `${f.sshUser.value.trim() || "vyos"}@${f.host.value.trim()}`;
+    const user = f.sshUser.value.trim() || "vyos";
+    const same = selected && selected.host === f.host.value.trim() && selected.sshUser === user;
+    const id = same ? profileId(selected) : `${user}@${f.host.value.trim()}`;
     let prepare = false;
     if (!f.apiKey.value.trim() && savedFor !== id) {
       if (!f.sshPassword.value) {
@@ -130,6 +134,7 @@ export async function showConnectDialog() {
         apiPort: Number(f.apiPort.value) || 443,
         sshPort: Number(f.sshPort.value) || 22,
         sshUser: f.sshUser.value.trim() || "vyos",
+        ...(same && selected.key ? { key: selected.key } : {}),
       },
       apiKey: prepare ? preparedKey : f.apiKey.value,
       prepareApi: prepare,
@@ -176,6 +181,9 @@ export async function showConnectDialog() {
   // the check-up can take a while: if the user moved to another page meanwhile, stay there
   if (!shown && currentView() === before) showView(savedView());
 }
+
+/** A saved router's id: user@host, or the first one if VyGi's login changed later. */
+const profileId = (p) => p.key || `${p.sshUser}@${p.host}`;
 
 /** Asks the user about an unknown or changed fingerprint. Returns true if accepted. */
 async function handleTrust(e, trust) {

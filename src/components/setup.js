@@ -5,11 +5,12 @@
 // Dashboard, Settings > System or the search bar.
 import { api, errorText } from "../lib/api.js";
 import { h, clear } from "../lib/dom.js";
-import { modal, alertBox } from "../lib/dialog.js";
-import { session, onSessionChange, isConnected } from "../lib/session.js";
+import { modal, alertBox, confirmBox } from "../lib/dialog.js";
+import { session, onSessionChange, isConnected, applyChanges } from "../lib/session.js";
 import { showView } from "../lib/views.js";
 import { isDesktop } from "../lib/platform.js";
-import { wanInfo, wanProblem } from "../lib/wan.js";
+import { wanInfo, wanProblem, mgmtAddress } from "../lib/wan.js";
+import { toArray, flattenInterfaces } from "../lib/vyos.js";
 import { readInternet, describeInternet } from "../lib/wanconf.js";
 import { readNetworks } from "../lib/netplan.js";
 import { loadFindings, changePassword } from "./security.js";
@@ -28,11 +29,15 @@ function seen(v) {
 
 /** The checklist: [{ title, ok: true|false|"warn", text, action?: [label, fn] }]. */
 async function checks() {
-  const [cfg, w, findings, watch] = await Promise.all([
+  const host = session.info?.profile?.host;
+  const user = session.info?.profile?.sshUser || "vyos";
+  const [cfg, w, findings, watch, mgmt, routes] = await Promise.all([
     api.getConfig([]).then((c) => c || {}),
     wanInfo(),
     loadFindings().catch(() => []),
     isDesktop ? Promise.resolve(null) : api.watchGet().catch(() => null),
+    mgmtAddress(host),
+    api.routes(4, "default").catch(() => []),
   ]);
   const close = () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   const go = (view, tab) => () => {
@@ -59,6 +64,25 @@ async function checks() {
       ok: nets.length > 0,
       text: nets.length ? `${nets.map((n) => `${n.name} (${n.network})`).join(", ")}.` : "No network for your devices yet: create one with DHCP so devices get addresses.",
       action: [nets.length ? "Networks" : "Create one", go("networks")],
+    },
+    addressCheck(cfg, host, mgmt, routes),
+    {
+      title: "VyGi's own login",
+      ok: user === "vygi" ? true : "warn",
+      text: user === "vygi"
+        ? "VyGi logs in as vygi, with a password only VyGi knows."
+        : `VyGi logs in as ${user}, the same login you use. With its own login, your password isn't stored in VyGi, the router's change history shows what VyGi changed, and you can shut VyGi out without touching your login. (Every VyOS login can change everything: this doesn't limit what VyGi can do.)`,
+      action: user === "vygi" ? null : ["Make one", async () => {
+        if (!(await confirmBox("VyGi's own login",
+          `VyGi creates the router login "vygi" with a long random password that only VyGi keeps, checks that it works, and uses it from then on.\n\nYour ${user} login doesn't change.`, "Make it"))) return;
+        try {
+          await api.useOwnLogin();
+          session.info.profile.sshUser = "vygi";
+        } catch (e) {
+          alertBox("VyGi's own login", errorText(e));
+        }
+        refresh();
+      }],
     },
     {
       title: "Router password",
@@ -103,6 +127,38 @@ async function checks() {
     },
   ];
   return list;
+}
+
+/** The address VyGi reaches the router on: fixed, or from DHCP (and then it can change). */
+function addressCheck(cfg, host, mgmt, routes) {
+  const title = "Router address";
+  if (!mgmt) return { title, ok: true, text: `VyGi reaches the router at ${host}.` };
+  const it = flattenInterfaces(cfg.interfaces).get(mgmt.iface);
+  const addrs = toArray(it?.cfg?.address).map(String);
+  if (!it || addrs.some((a) => a.split("/")[0] === host) || !addrs.includes("dhcp")) {
+    return { title, ok: true, text: `${host} on ${mgmt.iface}, set on the router.` };
+  }
+  const def = routes.find((r) => r.dst === "default" && r.dev === mgmt.iface);
+  const gw = def?.gateway || "";
+  return {
+    title, ok: "warn",
+    text: `${host} on ${mgmt.iface} comes from DHCP, so it can change, and then VyGi can't find the router. Make it fixed, and on the router that handed it out, reserve it (or use an address outside its DHCP range).`,
+    action: ["Make it fixed", async () => {
+      const commands = [
+        { op: "set", path: [...it.path, "address"], value: mgmt.cidr },
+        { op: "delete", path: [...it.path, "address", "dhcp"] },
+      ];
+      // DHCP also gave the router its way out and its DNS server: keep them
+      if (gw && !cfg.protocols?.static?.route?.["0.0.0.0/0"]) commands.push({ op: "set", path: ["protocols", "static", "route", "0.0.0.0/0", "next-hop", gw] });
+      if (gw && !cfg.system?.["name-server"]) commands.push({ op: "set", path: ["system", "name-server"], value: gw });
+      try {
+        await applyChanges(commands, `Fixed address ${mgmt.cidr} on ${mgmt.iface}`);
+      } catch (e) {
+        if (!/^Cancelled/.test(e?.message || "")) alertBox("Router address", errorText(e));
+      }
+      refresh();
+    }],
+  };
 }
 
 let body = null;

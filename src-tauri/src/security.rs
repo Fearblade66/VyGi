@@ -32,6 +32,10 @@ pub struct RouterProfile {
     pub tls_fingerprint: Option<String>,
     #[serde(default)]
     pub ssh_fingerprint: Option<String>,
+    /// The id when the login changed after it was first saved (VyGi's own
+    /// login): backups, history and saved secrets stay under the first one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
 }
 
 fn default_api_port() -> u16 {
@@ -47,7 +51,9 @@ fn default_user() -> String {
 impl RouterProfile {
     /// Stable identifier used as the keychain account name.
     pub fn id(&self) -> String {
-        format!("{}@{}", self.ssh_user, self.host)
+        self.key
+            .clone()
+            .unwrap_or_else(|| format!("{}@{}", self.ssh_user, self.host))
     }
 }
 

@@ -5,7 +5,7 @@ import { setStatus, toast, h } from "./dom.js";
 import { confirmBox, modal } from "./dialog.js";
 import { checkChange } from "./doctor.js";
 import { describeChange, wantsPreview, commandLine } from "./describe.js";
-import { wanInfo } from "./wan.js";
+import { wanInfo, mgmtAddress } from "./wan.js";
 import { addEntry, updateEntry, settlePending, parseRevisions } from "./history.js";
 
 const listeners = new Set();
@@ -99,8 +99,9 @@ let envCache = { at: 0, router: null, env: null };
 async function routerEnv() {
   const router = session.info?.profileId;
   if (envCache.router === router && Date.now() - envCache.at < 60_000) return envCache.env;
-  const w = await wanInfo();
-  const env = { wan: w.wan, wanCidr: w.wanCidr, mgmtHost: session.info?.profile?.host, defaultPassword: !!session.info?.defaultPassword, user: session.info?.profile?.sshUser };
+  const host = session.info?.profile?.host;
+  const [w, mgmt] = await Promise.all([wanInfo(), mgmtAddress(host)]);
+  const env = { wan: w.wan, wanCidr: w.wanCidr, mgmtHost: host, mgmtIface: mgmt?.iface, defaultPassword: !!session.info?.defaultPassword, user: session.info?.profile?.sshUser };
   envCache = { at: Date.now(), router, env };
   return env;
 }

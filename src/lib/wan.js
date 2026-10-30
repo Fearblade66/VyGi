@@ -40,3 +40,13 @@ export async function wanInfo() {
   const ddns = ddnsName(dynamic);
   return { wan, wanIp, wanCidr: addr ? `${addr.local}/${addr.prefixlen}` : "", ddns, endpoint: ddns || (wanIp && !wanProblem(wanIp) ? wanIp : "") };
 }
+
+/** The interface and prefix the router has `host` on (live addresses), or null: VyGi reaches it some other way (a name, port forward, VPN). */
+export async function mgmtAddress(host) {
+  const stats = await api.interfaceStats().catch(() => ({}));
+  for (const a of stats.addrs || []) {
+    const x = (a.addr_info || []).find((i) => i.local === host);
+    if (x) return { iface: a.ifname, cidr: `${x.local}/${x.prefixlen}` };
+  }
+  return null;
+}

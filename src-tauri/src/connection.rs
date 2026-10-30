@@ -79,6 +79,14 @@ pub async fn connect(state: St, win: Win, req: ConnectRequest) -> AppResult<Conn
     }
     profile.host = profile.host.trim().to_string();
 
+    // A saved router whose login changed later keeps its first id.
+    if profile.key.is_none() {
+        profile.key = state.profiles.load()?.into_iter().find_map(|p| {
+            (p.key.is_some() && p.host == profile.host && p.ssh_user == profile.ssh_user)
+                .then_some(p.key)
+                .flatten()
+        });
+    }
     // A profile edited in the dialog doesn't carry pins; take them from the saved copy.
     if let Ok(saved) = state.profiles.find(&profile.id()) {
         if saved.host == profile.host && saved.api_port == profile.api_port {
@@ -276,6 +284,73 @@ pub async fn change_login_password(state: St, win: Win, new_password: String) ->
         security::store_secrets(&dir, &profile, &secrets)?;
     }
     Ok(())
+}
+
+/// The login VyGi creates for itself.
+const OWN_LOGIN: &str = "vygi";
+
+/// Creates a router login just for VyGi (random password, saved by VyGi) and
+/// switches this router's saved profile to it. Backups, history and alerts
+/// stay with the router: the profile keeps its id.
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn use_own_login(state: St, win: Win) -> AppResult<String> {
+    let conn = win.conn().await?;
+    let mut profile = state.profiles.find(&conn.profile_id)?;
+    if profile.ssh_user == OWN_LOGIN {
+        return Err(AppError::Invalid("VyGi already uses its own login".into()));
+    }
+    if crate::transactions::confirm_pending(&conn).await {
+        return Err(AppError::Invalid(
+            "A Safe Mode change is waiting for Confirm. Confirm it (or let it revert) first."
+                .into(),
+        ));
+    }
+    let dir = state.profiles.dir();
+    let mut secrets = security::load_secrets(&dir, &profile)?.ok_or_else(|| {
+        AppError::Invalid(
+            "VyGi needs to remember this router's API key first: reconnect with \"Remember\" ticked"
+                .into(),
+        )
+    })?;
+    let mut b = [0u8; 18];
+    getrandom::fill(&mut b).map_err(|e| AppError::Invalid(e.to_string()))?;
+    let password = hex::encode(b);
+    let base = ["system", "login", "user", OWN_LOGIN];
+    let cmd = |leaf: &[&str], value: &str| crate::vyos_api::ConfigCommand {
+        op: "set".into(),
+        path: base.iter().chain(leaf).map(|s| s.to_string()).collect(),
+        value: Some(value.to_string()),
+    };
+    conn.api
+        .configure(
+            &[
+                cmd(&["authentication", "plaintext-password"], &password),
+                cmd(&["full-name"], "VyGi"),
+            ],
+            0,
+        )
+        .await?;
+    conn.api.save().await?;
+    // make sure it works before VyGi relies on it
+    SshClient::connect(
+        &profile.host,
+        profile.ssh_port,
+        OWN_LOGIN,
+        &password,
+        profile.ssh_fingerprint.clone(),
+    )
+    .await
+    .map_err(|e| {
+        AppError::Invalid(format!(
+            "the new login was made, but VyGi couldn't log in with it: {e}"
+        ))
+    })?;
+    profile.key = Some(profile.id());
+    profile.ssh_user = OWN_LOGIN.into();
+    secrets.ssh_password = password;
+    security::store_secrets(&dir, &profile, &secrets)?;
+    state.profiles.upsert(&profile)?;
+    Ok(OWN_LOGIN.into())
 }
 
 /// Turns on the HTTPS API with `key` (id "vygi") and makes Safe Mode revert by

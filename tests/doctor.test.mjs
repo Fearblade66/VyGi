@@ -104,3 +104,20 @@ test("checkChange: removing NAT is caught with an automatic fix; existing proble
   assert.deepEqual(forward.warnings.map((w) => w.id), ["dnat-dyn:10"]);
   assert.deepEqual(checkChange(c, [{ op: "set", path: ["system", "host-name"], value: "gw" }], env), { extras: [], warnings: [] });
 });
+
+test("lockout: warns when VyGi's own address goes away", async () => {
+  const { lockout, checkChange } = await import("../src/lib/doctor.js");
+  const env = { mgmtHost: "192.168.88.6", mgmtIface: "eth0" };
+  const fixed = { interfaces: { ethernet: { eth0: { address: ["192.168.88.6/24"] } } } };
+  const dhcp = { interfaces: { ethernet: { eth0: { address: "dhcp" } } } };
+  const del = [{ op: "delete", path: ["interfaces", "ethernet", "eth0", "address", "192.168.88.6/24"] }];
+  assert.ok(checkChange(fixed, del, env).warnings.some((w) => w.id === "lockout:eth0"));
+  assert.ok(lockout(fixed, { interfaces: { ethernet: { eth0: { address: "192.168.88.7/24" } } } }, env));
+  assert.ok(lockout(fixed, { interfaces: { ethernet: { eth0: { address: ["192.168.88.6/24"], disable: {} } } } }, env));
+  // DHCP -> the same address, fixed: fine; DHCP removed with nothing instead: not
+  assert.equal(lockout(dhcp, fixed, env), null);
+  assert.ok(lockout(dhcp, { interfaces: { ethernet: { eth0: {} } } }, env));
+  // unrelated change, or VyGi reaches the router some other way
+  assert.equal(lockout(fixed, fixed, env), null);
+  assert.equal(lockout(fixed, {}, { mgmtHost: "vyos.lan" }), null);
+});

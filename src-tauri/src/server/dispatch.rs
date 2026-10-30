@@ -72,6 +72,7 @@ pub async fn call(
         "forget_router" => json(connection::forget_router(st(), arg(&a, "id")?)),
         "connect" => json(connection::connect(st(), w(), arg(&a, "req")?).await),
         "disconnect" => json(connection::disconnect(w()).await),
+        "use_own_login" => json(connection::use_own_login(st(), w()).await),
         "change_login_password" => {
             json(connection::change_login_password(st(), w(), arg(&a, "newPassword")?).await)
         }
@@ -342,6 +343,7 @@ pub fn audit_entry(cmd: &str, a: &Value) -> Option<(String, String)> {
         "image_set_default" => entry("VyOS default image set", s("name")),
         "image_delete" => entry("VyOS image deleted", s("name")),
         "change_login_password" => entry("router password changed", String::new()),
+        "use_own_login" => entry("VyGi's own router login made", String::new()),
         "connect" => {
             let p = a.pointer("/req/profile").cloned().unwrap_or(Value::Null);
             let host = p.get("host").and_then(Value::as_str).unwrap_or("");

@@ -346,6 +346,33 @@ export function touchesManual(cfg, c) {
  * change would cause: extras are safe fixes to apply with it, warnings need
  * the user to decide.
  */
+/**
+ * Would this change take away the address VyGi reaches the router on?
+ * env.mgmtHost: that address; env.mgmtIface: the interface it's on (from the
+ * router's live addresses). A finding, or null.
+ */
+export function lockout(before, after, env = {}) {
+  const { mgmtHost: host, mgmtIface: iface } = env;
+  if (!host || !iface) return null;
+  const node = (cfg) => flattenInterfaces(cfg?.interfaces).get(iface)?.cfg;
+  const state = (cfg) => {
+    const n = node(cfg);
+    if (!n || "disable" in n) return { fixed: false, dhcp: false };
+    const a = toArray(n.address);
+    return { fixed: a.some((x) => String(x).split("/")[0] === host), dhcp: a.includes("dhcp") };
+  };
+  const b = state(before);
+  const a = state(after);
+  // fixed before: it must stay; from DHCP before: DHCP (or the same address, fixed) must stay
+  const ok = b.fixed ? a.fixed : !b.dhcp || a.fixed || a.dhcp;
+  if (ok) return null;
+  return {
+    id: `lockout:${iface}`, level: "bad", title: `VyGi would lose the router`,
+    text: `This takes ${host} off ${iface}, and that's the address VyGi (and anything else using it) reaches the router on. After applying, nothing can reach the router there: with Safe Mode on it comes back by itself when the timer runs out, with Safe Mode off only the router's console can fix it. To move the router to another address: add the new one first, reconnect VyGi to it, then remove the old one.`,
+    fix: null, manual: false,
+  };
+}
+
 export function checkChange(cfg, commands, env = {}) {
   const before = new Set(diagnose(cfg, env).map((f) => f.id));
   const after = simulate(cfg, commands);
@@ -356,5 +383,7 @@ export function checkChange(cfg, commands, env = {}) {
     if (f.fix && !f.manual) extras.push({ finding: f, commands: f.fix });
     else warnings.push(f);
   }
+  const lock = lockout(cfg, after, env);
+  if (lock) warnings.unshift(lock);
   return { extras, warnings };
 }
