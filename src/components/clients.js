@@ -1,6 +1,8 @@
 // Clients: a UniFi-style list of devices on the network, with a detail panel
 // and actions (rename, fixed IP, block, ping).
 import { openReach } from "./explain_view.js";
+import { isDesktop } from "../lib/platform.js";
+import { showUsageFor } from "./usage_view.js";
 import { api, errorText } from "../lib/api.js";
 import { h, clear, setStatus, formatBytes, formatAge, formatBits, every } from "../lib/dom.js";
 import { makeTable } from "../lib/table.js";
@@ -204,6 +206,7 @@ export function initClients() {
       lan && c.iface && !c.online ? { label: "Wake up", title: "Send a Wake-on-LAN packet (the device must have Wake-on-LAN turned on)", fn: () => wake(c) } : null,
       lan && c.ip && !c.fixedIp ? { label: "Fix IP", fn: () => fixIp(c) } : null,
       lan ? { label: "Groups…", fn: async () => (await editDeviceGroups(c.mac, c.label)) && load() } : null,
+      !isDesktop && (c.mac || c.ip) ? { label: "Data usage", title: "Data this device used per day (Insights)", fn: () => { showUsageFor(c.mac || c.ip, c.label); showView("insights"); } } : null,
       c.ip && !c.ip.includes(":") && c.kind !== "vpn" ? { label: "What can it reach?", title: "Which rules let this device reach the internet and other networks, or block it", fn: () => openReach(c) } : null,
       lan ? { label: c.blocked ? "Unblock" : "Block", color: c.blocked ? "var(--ok)" : "var(--bad)", danger: !c.blocked, fn: () => toggleBlock(c) } : null,
       c.ip && c.kind !== "vpn" && !c.ip.includes(":") ? { label: "Limit speed", title: "Limit this device's download/upload speed (Simple Queue)", fn: () => editQueue({ ip: c.ip, name: c.name }) } : null,

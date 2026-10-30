@@ -75,6 +75,7 @@ export const api = {
   watchAlerts: (since, limit) => invoke("watch_alerts", { since, limit }),
   watchTraffic: (hours) => invoke("watch_traffic", { hours }),
   watchDevices: (days) => invoke("watch_devices", { days }),
+  watchUsage: (days, key) => invoke("watch_usage", { days, key }),
   watchLogs: (query, days, maxPriority, limit) => invoke("watch_logs", { query, days, maxPriority, limit }),
   watchFlows: (hours, query, kind, limit) => invoke("watch_flows", { hours, query, kind, limit }),
   ddnsUpdateNow: () => invoke("ddns_update_now"),

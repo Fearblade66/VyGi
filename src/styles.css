@@ -890,3 +890,10 @@ table.grid th.sorted.desc::after { content: " ▼"; }
 .router-row .grow { flex: 1; min-width: 0; }
 .router-row .grow .hint:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .router-row .pill { flex: none; min-width: 110px; }
+
+/* Insights: data usage */
+.usage-card h3 .seg { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500; }
+.usage-chart rect.down { fill: #006fff; }
+.usage-chart rect.up { fill: #12a150; }
+.share { display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end; min-width: 90px; }
+.share span { display: inline-block; height: 6px; border-radius: 3px; background: var(--accent, #006fff); opacity: 0.6; max-width: 50px; }

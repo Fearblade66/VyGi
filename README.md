@@ -199,7 +199,7 @@ In the alerts bell, switch on **Watch this router 24/7 on the VyGi server**. Fro
 
 **Flows** (Insights, web version): every connection your devices made, recorded by the 24/7 server when it ends (who, to where, which port/service, data, identical ones merged; lookups to the router itself left out), and every attempt one of VyGi's blocking rules stopped, from the router's firewall log (with the rule that blocked it, e.g. "IoT: isolated" or "Traffic Rule: Kids bedtime"). Blocks are logged only by rules with logging on: the Flows card offers to turn it on for VyGi's blocking rules. Claude can read it with the `get_flows` tool. Kept as long as the rest of the history.
 
-**Insights** (sidebar) shows what was recorded: internet traffic for the last 24 hours, 7 or 30 days, data per device, and the system log with search and a level filter. History is kept for 30 days (`VYGI_KEEP_DAYS` to change), in the data volume under `history/`.
+**Insights** (sidebar) shows what was recorded: internet traffic for the last 24 hours, 7 or 30 days; **Data usage**: data used per day (download and upload) over 7 days, 30 days, 3 months or a year, for all devices or one (click a device, or Clients → a device → **Data usage**), with the devices that used the most; and the system log with search and a level filter. History is kept for 30 days (`VYGI_KEEP_DAYS` to change); the daily totals per device, a few KB a day, for a year. All of it is in the data volume under `history/`.
 
 Changing the web password logs out every other browser session.
 

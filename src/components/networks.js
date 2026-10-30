@@ -2,7 +2,7 @@
 // "New network" form that sets up the interface, DHCP, DNS, NAT, internet
 // access and isolation in one Safe Mode commit.
 import { api, errorText } from "../lib/api.js";
-import { h, clear, setStatus, every } from "../lib/dom.js";
+import { h, clear, every } from "../lib/dom.js";
 import { formDialog, confirmBox, alertBox } from "../lib/dialog.js";
 import { applyChanges, isConnected, session, onSessionChange } from "../lib/session.js";
 import { registerView, welcome, loadingPage, showView } from "../lib/views.js";

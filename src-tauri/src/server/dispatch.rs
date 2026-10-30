@@ -270,6 +270,19 @@ async fn watch_call(
             let list = w.store(&id).devices(now - (days - 1) * DAY, now, 100);
             json(Ok(list.into_iter().map(|(key, t)| serde_json::json!({ "key": key, "ip": t.ip, "name": t.name, "down": t.down, "up": t.up })).collect::<Vec<_>>()))
         }
+        // data used per day (all devices, or one), plus the devices over the period
+        "usage" => {
+            let days = arg::<Option<u64>>(a, "days")?.unwrap_or(30).clamp(1, 400);
+            let key = arg::<Option<String>>(a, "key")?;
+            let from = now - (days - 1) * DAY;
+            let store = w.store(&id);
+            let daily = store.usage_days(from, now, key.as_deref());
+            let devices = store.devices(from, now, 200);
+            json(Ok(serde_json::json!({
+                "days": daily.into_iter().map(|(d, down, up)| serde_json::json!({ "day": d, "down": down, "up": up })).collect::<Vec<_>>(),
+                "devices": devices.into_iter().map(|(key, t)| serde_json::json!({ "key": key, "ip": t.ip, "name": t.name, "down": t.down, "up": t.up })).collect::<Vec<_>>(),
+            })))
+        }
         "logs" => {
             let days = arg::<Option<u64>>(a, "days")?.unwrap_or(1).clamp(1, 400);
             let q: String = arg::<Option<String>>(a, "query")?.unwrap_or_default();

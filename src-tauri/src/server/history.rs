@@ -123,6 +123,9 @@ fn read_lines<T: for<'de> Deserialize<'de>>(path: &Path) -> Vec<T> {
 }
 
 /// Days (as "YYYY-MM-DD") from `from` to `to` (unix ms), oldest first.
+/// How long the daily data-per-device totals are kept (whatever VYGI_KEEP_DAYS says).
+const USAGE_KEEP_DAYS: u64 = 400;
+
 fn days(from: u64, to: u64) -> Vec<String> {
     let mut out = Vec::new();
     let mut t = from - from % DAY_MS;
@@ -276,6 +279,25 @@ impl Store {
         list
     }
 
+    /// Data used each day from `from` to `to`: `[(YYYY-MM-DD, down, up)]`, for
+    /// one device (`key`) or all of them, days without a file left out.
+    pub fn usage_days(&self, from: u64, to: u64, key: Option<&str>) -> Vec<(String, u64, u64)> {
+        let mut out = Vec::new();
+        for d in days(from, to) {
+            let Ok(text) = fs::read_to_string(self.dir.join(format!("devices-{d}.json"))) else {
+                continue;
+            };
+            let day_totals: HashMap<String, DeviceTotal> =
+                serde_json::from_str(&text).unwrap_or_default();
+            let (down, up) = day_totals
+                .iter()
+                .filter(|(k, _)| key.map_or(true, |want| k.as_str() == want))
+                .fold((0, 0), |(a, b), (_, v)| (a + v.down, b + v.up));
+            out.push((d, down, up));
+        }
+        out
+    }
+
     pub fn add_logs(&self, lines: &[LogLine]) {
         let mut by_day: HashMap<String, Vec<&LogLine>> = HashMap::new();
         for l in lines {
@@ -323,6 +345,8 @@ impl Store {
     /// Deletes day files older than `keep_days`.
     pub fn cleanup(&self, now: u64, keep_days: u64) {
         let oldest = day(now.saturating_sub(keep_days * DAY_MS));
+        // data used per device: a few KB a day, kept a year for the usage page
+        let oldest_usage = day(now.saturating_sub(USAGE_KEEP_DAYS.max(keep_days) * DAY_MS));
         let Ok(entries) = fs::read_dir(&self.dir) else {
             return;
         };
@@ -333,7 +357,12 @@ impl Store {
                 .split_once('-')
                 .map(|(_, rest)| rest.split('.').next().unwrap_or(""));
             if let Some(d) = date {
-                if d.len() == 10 && d < oldest.as_str() {
+                let limit = if name.starts_with("devices-") {
+                    oldest_usage.as_str()
+                } else {
+                    oldest.as_str()
+                };
+                if d.len() == 10 && d < limit {
                     let _ = fs::remove_file(e.path());
                 }
             }
@@ -522,6 +551,38 @@ mod tests {
             "accepts aren't blocks"
         );
         assert!(parse_fw_log(5, "sshd[123]: Accepted password").is_none());
+    }
+
+    #[test]
+    fn usage_per_day_kept_a_year() {
+        let mut b = [0u8; 8];
+        getrandom::fill(&mut b).unwrap();
+        let dir = std::env::temp_dir().join(format!("vygi-usage-{}", hex::encode(b)));
+        let st = Store::new(&dir, "r");
+        let now = 1_792_962_427_161;
+        let tot = |down, up| DeviceTotal {
+            ip: "10.0.0.2".into(),
+            name: String::new(),
+            down,
+            up,
+        };
+        for (age, a, bb) in [(0u64, 100u64, 10u64), (1, 200, 20), (60, 300, 30)] {
+            let mut m = HashMap::new();
+            m.insert("aa:aa".to_string(), tot(a, bb));
+            m.insert("bb:bb".to_string(), tot(1, 1));
+            st.add_devices(now - age * DAY_MS, &m);
+        }
+        let all = st.usage_days(now - 2 * DAY_MS, now, None);
+        assert_eq!(
+            all.iter().map(|d| (d.1, d.2)).collect::<Vec<_>>(),
+            [(201, 21), (101, 11)]
+        );
+        let one = st.usage_days(now - 70 * DAY_MS, now, Some("aa:aa"));
+        assert_eq!(one.iter().map(|d| d.1).collect::<Vec<_>>(), [300, 200, 100]);
+        // a 30-day history limit still keeps the 60-day-old usage
+        st.cleanup(now, 30);
+        assert_eq!(st.usage_days(now - 70 * DAY_MS, now, None).len(), 3);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

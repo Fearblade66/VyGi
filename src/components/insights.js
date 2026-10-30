@@ -12,6 +12,7 @@ import { makeTable, filterBox } from "../lib/table.js";
 import { applyChanges } from "../lib/session.js";
 import { alertBox } from "../lib/dialog.js";
 import { ruleLabel, portName, unloggedBlocks, logBlocksCommands } from "../lib/flows.js";
+import { usageCard, usagePending } from "./usage_view.js";
 
 const RANGES = [
   { label: "24 hours", hours: 24, days: 1 },
@@ -130,7 +131,7 @@ export function initInsights() {
       clear(root).append(welcome(() => document.getElementById("btn-connect").click()));
       return;
     }
-    if (!root.querySelector(".page")) clear(root).append(loadingPage(2));
+    if (!root.querySelector(".page") || usagePending()) clear(root).append(loadingPage(2));
     let w;
     try {
       w = await api.watchGet();
@@ -156,9 +157,8 @@ export function initInsights() {
         on)));
       return;
     }
-    const [traffic, devices, clients, conf] = await Promise.all([
+    const [traffic, clients, conf] = await Promise.all([
       api.watchTraffic(range.hours).catch(() => []),
-      api.watchDevices(range.days).catch(() => []),
       collectClients().then((r) => r.clients).catch(() => []),
       api.getConfig([]).catch(() => ({})),
     ]);
@@ -174,17 +174,9 @@ export function initInsights() {
       h("div.hint", st.error ? `Watching: ${st.error}` : `Watched 24/7 by the VyGi server${st.lastCheck ? `, last check ${new Date(st.lastCheck).toLocaleTimeString()}` : ""}.`),
       h("span.grow"),
       h("span.seg", RANGES.map((r) => h(`button${r === range ? ".on" : ""}`, { on: { click: () => { range = r; render(); } } }, r.label))));
-    const total = devices.reduce((s, d) => s + d.down + d.up, 0);
-    const devTable = devices.length
-      ? h("table.grid.insight-devices", h("thead", h("tr", h("th", "Device"), h("th.num", "Download"), h("th.num", "Upload"), h("th.num", "Share"))),
-          h("tbody", devices.slice(0, 25).map((d) => h("tr",
-            h("td", h("div", names.get(d.key) || d.name || d.ip || d.key), h("div.hint", [d.ip, d.key !== d.ip ? d.key : ""].filter(Boolean).join(" · "))),
-            h("td.num", formatBytes(d.down)), h("td.num", formatBytes(d.up)),
-            h("td.num", total ? `${Math.round(((d.down + d.up) / total) * 100)}%` : "")))))
-      : h("div.empty", "No data per device yet. This needs traffic counting on the router (Clients → Turn on traffic counting).");
     clear(root).append(h("div.page", head,
       h("div.card", h("h3", h("span", `Internet traffic, last ${range.label}`)), trafficChart(traffic)),
-      h("div.card", h("h3", h("span", `Data per device, last ${range.label}`)), devTable),
+      usageCard(names),
       h("div.card.flows-card", h("h3", h("span", `Flows, last ${range.label}`)),
         h("div.hint", "Connections your devices made (recorded when they end; lookups to the router itself are left out) and attempts a firewall rule blocked."),
         flowBanner,
