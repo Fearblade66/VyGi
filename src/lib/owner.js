@@ -5,21 +5,21 @@
 const OWNERS = [
   // [pattern, feature, view, tab?]  name = first capture group, if any
   [/^VyGi rule \d+: (.*)$/, "Traffic Rules", "rules"],
-  [/^VyGi policy \d+: (.*)$/, "Network access", "access"],
+  [/^VyGi policy \d+: (.*)$/, "Network Policies", "access"],
   [/^VyGi fwd \d+: (.*)$/, "Port Forwarding", "ports"],
   [/^VyGi net (\S+): mDNS$/, "Device discovery", "access"],
   [/^VyGi net (\S+):/, "Networks", "networks"],
   [/^VyGi: blocked clients/, "Blocked devices", "clients"],
   [/^VyGi group: ([^[]*?)(?: \[limit .*\])?$/, "Device groups", "clients"],
-  [/^VyGi(?::)? intrusion detection|^VyGi: addresses blocked after an attack/, "Intrusion detection", "ids"],
-  [/^VyGi region block/, "Region blocking", "settings", "security"],
+  [/^VyGi(?::)? intrusion detection|^VyGi: addresses blocked after an attack/, "Intrusion Prevention", "ids"],
+  [/^VyGi region block/, "Region Blocking", "filtering"],
   [/^VyGi VPN client(?: \S+)?(?::)? ?(.*)$/, "VPN client", "vpn"],
   [/^VyGi: (?:send chosen devices through a VPN client|private addresses \(stay off the VPN\))/, "VPN client", "vpn"],
   [/^VyGi(?: VPN|: WireGuard)/, "VPN", "vpn"],
   [/^VyGi: (?:backup internet|block new connections on the backup|DHCPv6 on the backup)/, "Backup internet", "settings", "internet"],
   [/^VyGi: DHCPv6 from the provider/, "Internet connection", "settings", "internet"],
   [/^VyGi: Smart Queues/, "Smart Queues", "settings", "internet"],
-  [/^VyGi: (?:block new connections from the internet|allow replies)/, "Router security", "settings", "security"],
+  [/^VyGi: (?:block new connections from the internet|allow replies)/, "Router Access", "settings", "management"],
   [/^VyGi[: ]/, "VyGi", null],
 ];
 

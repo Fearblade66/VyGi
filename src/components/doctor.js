@@ -9,13 +9,14 @@ import { applyChanges } from "../lib/session.js";
 import { diagnose } from "../lib/doctor.js";
 import { routerContext } from "../lib/routerctx.js";
 import { changePassword } from "./security.js";
+import { statusFindings } from "./checkup.js";
 
 const ORDER = { bad: 0, warn: 1, info: 2 };
 const line = (c) => `${c.op} ${c.path.join(" ")}${c.value !== undefined ? ` '${c.value}'` : ""}`;
 
 export async function loadDoctor() {
   const [cfg, ctx] = await Promise.all([api.getConfig([]), routerContext({ fresh: true })]);
-  return diagnose(cfg || {}, ctx).sort((a, b) => ORDER[a.level] - ORDER[b.level]);
+  return [...diagnose(cfg || {}, ctx), ...statusFindings()].sort((a, b) => ORDER[a.level] - ORDER[b.level]);
 }
 
 const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;

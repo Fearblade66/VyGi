@@ -48,7 +48,7 @@ export function initDashboard() {
     const top = card("span-6", "Most active clients", { label: "All clients", go: () => showView("clients") });
     const vpn = card("span-3", "VPN", { label: "Open", go: () => goWin(openVpn) });
     const alerts = card("span-3", "Alerts");
-    const security = card("span-12", "Health check");
+    const security = card("span-12", "Health Check");
     const routers = card("span-12", "Your routers");
     routers.el.hidden = true;
     if (!isDesktop) renderRouters(routers);

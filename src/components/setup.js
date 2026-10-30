@@ -94,7 +94,7 @@ async function checks() {
       title: "Security check",
       ok: risks.length ? false : findings.length ? "warn" : true,
       text: risks.length ? risks.map((f) => f.title).join(" · ") : findings.length ? `${findings.length} suggestion${findings.length === 1 ? "" : "s"}, nothing serious.` : "No common problems found.",
-      action: findings.length ? ["Review", go("settings", "security")] : null,
+      action: findings.length ? ["Review", go("settings", "management")] : null,
     },
     {
       title: "Save changes automatically",

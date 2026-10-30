@@ -1,4 +1,4 @@
-// Settings > Security, "Intrusion detection": Suricata on the router, its
+// Security > Intrusion Prevention: Suricata on the router, its
 // recent alerts, and blocking attackers (by hand, or automatically for 24 h
 // through the 24/7 server).
 import { api, errorText } from "../lib/api.js";
@@ -91,7 +91,7 @@ export function idsSection(st, reload) {
           await api.watchSet({ ...r, kinds: { ...(r.kinds || {}), "ids-block": sw.checked } });
         } catch (e) {
           sw.checked = !sw.checked;
-          if (!/^Cancelled/.test(e?.message || "")) alertBox("Intrusion detection", errorText(e));
+          if (!/^Cancelled/.test(e?.message || "")) alertBox("Intrusion Prevention", errorText(e));
         }
       });
     }).catch(() => el.remove());
@@ -146,23 +146,23 @@ export function idsSection(st, reload) {
       t?.remove();
       await applyChanges(idsCommands(st.cfg, ifaces), "intrusion detection on");
       toast("Downloading the rules (Emerging Threats Open)…", { timeout: 5 * 60_000 });
-      await api.idsUpdateRules().catch((e) => alertBox("Intrusion detection", `Suricata is running, but the rules couldn't be downloaded yet: ${errorText(e)}. Press Update rules later.`));
-      toast("Intrusion detection is on.");
+      await api.idsUpdateRules().catch((e) => alertBox("Intrusion Prevention", `Suricata is running, but the rules couldn't be downloaded yet: ${errorText(e)}. Press Update rules later.`));
+      toast("Intrusion prevention is on.");
     } catch (e) {
       t?.remove();
-      if (!/^Cancelled/.test(e?.message || "")) alertBox("Intrusion detection", errorText(e));
+      if (!/^Cancelled/.test(e?.message || "")) alertBox("Intrusion Prevention", errorText(e));
     }
     reload();
   }
 
   async function choosePorts() {
-    const ifaces = await pick("Intrusion detection: ports", ids.ifaces);
+    const ifaces = await pick("Intrusion Prevention: ports", ids.ifaces);
     if (!ifaces) return;
     try {
       const cmds = idsCommands(st.cfg, ifaces);
       if (cmds.length) await applyChanges(cmds, "intrusion detection ports");
     } catch (e) {
-      if (!/^Cancelled/.test(e?.message || "")) alertBox("Intrusion detection", errorText(e));
+      if (!/^Cancelled/.test(e?.message || "")) alertBox("Intrusion Prevention", errorText(e));
     }
     reload();
   }
@@ -173,7 +173,7 @@ export function idsSection(st, reload) {
       await api.idsUpdateRules();
       toast("Rules updated; Suricata restarted with them.");
     } catch (e) {
-      alertBox("Intrusion detection", errorText(e));
+      alertBox("Intrusion Prevention", errorText(e));
     }
     load();
   }
@@ -183,7 +183,7 @@ export function idsSection(st, reload) {
     try {
       await applyChanges(idsCommands(st.cfg, []), "intrusion detection off");
     } catch (e) {
-      if (!/^Cancelled/.test(e?.message || "")) alertBox("Intrusion detection", errorText(e));
+      if (!/^Cancelled/.test(e?.message || "")) alertBox("Intrusion Prevention", errorText(e));
     }
     reload();
   }

@@ -1,5 +1,5 @@
-// Security → Network access (who can reach whom, mDNS) and Security →
-// Intrusion detection: the sections that used to live on the Networks and
+// Security → Network Policies (who can reach whom, mDNS) and Security →
+// Intrusion Prevention: the sections that used to live on the Networks and
 // Settings pages, as pages of their own.
 import { api, errorText } from "../lib/api.js";
 import { h, clear } from "../lib/dom.js";

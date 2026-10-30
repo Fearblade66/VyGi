@@ -156,6 +156,7 @@ const RELATED = {
   rules: ["Filter Rules", "Address Lists", "Connections"],
   access: ["Filter Rules", "Address Lists", "Interfaces"],
   ids: ["Filter Rules", "Address Lists", "Log"],
+  filtering: ["Filter Rules", "Address Lists", "DNS Server (Technitium)"],
   ports: ["NAT", "Filter Rules"],
   vpn: ["VPN", "Interfaces", "Routes"],
   history: ["Revisions / Rollback", "Backup / Restore"],

@@ -1,4 +1,4 @@
-// Intrusion detection (Settings > Security): Suricata in a container on the
+// Intrusion prevention (Security > Intrusion Prevention): Suricata in a container on the
 // router, watching chosen ports, plus an address group for attackers that
 // are blocked (by hand from an alert, or automatically by the 24/7 server).
 // Pure: no API calls.

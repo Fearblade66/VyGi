@@ -30,7 +30,7 @@ import { openBackup } from "./backup.js";
 import { openSetup } from "./setup.js";
 import { rememberUpdate, goBack } from "../lib/updateguard.js";
 
-const TABS = { internet: "Internet", security: "Security", system: "System" };
+const TABS = { internet: "Internet", management: "Management", system: "System" };
 const speedKey = () => `vygi.speed.${session.info?.profileId}`;
 
 function store(key, value) {
@@ -128,10 +128,10 @@ export function initSettings() {
       return;
     }
     if (my !== seq) return;
-    // the tabs are under the top bar (views.js: Internet, Router security, System, Change history)
+    // the tabs are under the top bar (views.js: Internet, Management, System, Change History)
     const tab = TABS[viewTab("settings", "internet")] ? viewTab("settings", "internet") : "internet";
     shownTab = tab;
-    const body = { internet, security, system }[tab](st, my);
+    const body = { internet, management, system }[tab](st, my);
     clear(root).append(h("div.page.settings", ...body));
   }
 
@@ -332,7 +332,7 @@ export function initSettings() {
 
   // ================================================================ Security
 
-  function security(st, my) {
+  function management(st, my) {
     const { cfg, env } = st;
     const health = h("div", h("div.hint", "Checking…"));
     loadDoctor().then((f) => my === seq && renderDoctor(health, f, render)).catch((e) => clear(health).append(h("div.err-box", errorText(e))));
@@ -347,21 +347,29 @@ export function initSettings() {
           return applyChanges(protectOff(cfg), "allow the internet to reach the router");
         }, render);
 
-    const { countries } = parseRegions(cfg);
-    const adblock = h("div", h("div.hint", "Checking…"));
-    fillAdblock(adblock);
-
     return [
-      section("Health check", health),
-      section("Firewall",
-        row("Block the internet from reaching the router", "Stops new connections from the internet to the router itself (its settings, SSH, DNS). Replies to your own traffic, port forwards and VPN ports still work.", protectCtl),
-        row("Region blocking", countries.length
-          ? `No traffic to or from: ${countries.slice(0, 8).map((c) => `${flagEmoji(c)} ${countryName(c.toUpperCase())}`).join(", ")}${countries.length > 8 ? ", …" : ""}`
-          : "Block all traffic to and from chosen countries, for every device and the router.",
-        h("span.set-inline", value(countries.length ? `${countries.length} blocked` : "off"), button("Choose countries…", () => editRegions(cfg, render))))),
-      section("Ad and tracker blocking", adblock),
+      section("Health Check", health),
+      section("Router Access",
+        row("Block the internet from reaching the router", "Stops new connections from the internet to the router itself (its settings, SSH, DNS). Replies to your own traffic, port forwards and VPN ports still work.", protectCtl)),
       isDesktop ? null : accessSection(),
     ].filter(Boolean);
+  }
+
+  // ================================================================ Security > Content Filtering
+
+  function filtering(st, again) {
+    const { countries } = parseRegions(st.cfg);
+    const adblock = h("div", h("div.hint", "Checking…"));
+    fillAdblock(adblock);
+    return [
+      h("div.hint", "Block whole countries, and ads and trackers, for every device on your networks."),
+      section("Region Blocking",
+        row("Blocked countries", countries.length
+          ? `No traffic to or from: ${countries.slice(0, 8).map((c) => `${flagEmoji(c)} ${countryName(c.toUpperCase())}`).join(", ")}${countries.length > 8 ? ", …" : ""}`
+          : "Block all traffic to and from chosen countries, for every device and the router.",
+        h("span.set-inline", value(countries.length ? `${countries.length} blocked` : "off"), button("Choose countries…", () => editRegions(st.cfg, again))))),
+      section("Ad and Tracker Blocking", adblock),
+    ];
   }
 
   /** Web version: who can use this VyGi server, and what they did. */
@@ -398,7 +406,7 @@ export function initSettings() {
     };
     fill();
     const menu = (id) => () => document.getElementById(id).click();
-    return section("VyGi access",
+    return section("VyGi Access",
       row("Activity log", "Logins, API tokens (Claude), and every change made to a router, with who, when and from which address.", button("Open…", openActivityLog)),
       row("Claude", "Let Claude (Claude Code or Claude Desktop) check and change your routers for you. A guided setup: one file to run on your computer.", button("Connect Claude…", openClaudeSetup, true)),
       row("API tokens", "Keys that let Claude or scripts use VyGi. Each can expire and be revoked; you get an alert when one is created.", button("Manage…", menu("web-api"))),
@@ -544,5 +552,31 @@ export function initSettings() {
   onSessionChange(() => {
     seq++;
     if (!root.hidden) render();
+  });
+
+  // Security > Content Filtering: region and ad blocking (the same building blocks as Settings)
+  const froot = document.getElementById("filtering");
+  let fseq = 0;
+  async function renderFiltering() {
+    const my = ++fseq;
+    if (!isConnected()) {
+      clear(froot).append(welcome(() => document.getElementById("btn-connect").click()));
+      return;
+    }
+    if (!froot.querySelector(".page")) clear(froot).append(loadingPage(2));
+    let st;
+    try {
+      st = await loadState();
+    } catch (e) {
+      if (my === fseq) clear(froot).append(h("div.page", h("div.err-box", errorText(e)), h("p", button("Try again", renderFiltering))));
+      return;
+    }
+    if (my !== fseq) return;
+    clear(froot).append(h("div.page.settings", ...filtering(st, renderFiltering)));
+  }
+  registerView("filtering", { show: renderFiltering });
+  onSessionChange(() => {
+    fseq++;
+    if (!froot.hidden) renderFiltering();
   });
 }

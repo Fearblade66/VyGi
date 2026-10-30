@@ -10,7 +10,7 @@ export const KINDS = {
   vpn: "VPN device connected",
   watch: "Watched device or server down / back",
   update: "VyOS update available (24/7 watching only)",
-  ids: "Intrusion detection: serious attacks (24/7 watching only)",
+  ids: "Intrusion prevention: serious attacks (24/7 watching only)",
   config: "Settings changed outside VyGi, undone by Safe Mode, or different after a restart (24/7 watching only)",
   reach: "Router can't be reached for 5 minutes / back (24/7 watching only)",
 };

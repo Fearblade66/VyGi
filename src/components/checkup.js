@@ -8,6 +8,16 @@ import { flattenInterfaces, has } from "../lib/vyos.js";
 import { openBackup } from "./backup.js";
 import { showView } from "../lib/views.js";
 import { changesPre, fmtDate } from "../lib/changes.js";
+import { loadDoctor } from "./doctor.js";
+
+// The router's state from the last check-up (unsaved changes, ports down, disk,
+// memory…), shown in the Health Check next to the configuration findings.
+let lastStatus = { router: null, items: [] };
+
+/** Health Check entries from the last check-up of the connected router. */
+export function statusFindings() {
+  return lastStatus.router === session.info?.profileId ? lastStatus.items : [];
+}
 
 function fmtUptime(s) {
   if (s == null) return "?";
@@ -55,6 +65,15 @@ export async function runCheckup({ alwaysShow = false } = {}) {
 
   const hl = c.health;
   const warnings = [];
+  const items = [];
+  const item = (id, title, text) => items.push({ id: `status:${id}`, level: "warn", title, text, fix: null });
+  if (c.unsaved) item("unsaved", "Changes aren't saved to the boot configuration", "They're lost when the router restarts. Press Save, or turn on Save changes automatically.");
+  if (down.length) item("down", `No link on ${down.join(", ")}`, "These ports are set up but have no connection: an unplugged cable, or the device on the other side is off.");
+  for (const d of hl.disks || []) if (d.usedPercent >= 85) item(`disk:${d.mount}`, `Disk ${d.mount} is ${d.usedPercent}% full`, "Remove old VyOS images (Settings > System) or large logs before it fills up.");
+  if (hl.memTotalKb && hl.memAvailableKb != null && hl.memAvailableKb / hl.memTotalKb < 0.1) item("memory", `Low memory: ${Math.round((hl.memAvailableKb / hl.memTotalKb) * 100)}% available`, "The router may slow down or stop services.");
+  if (hl.load?.length && hl.cpus && hl.load[1] > hl.cpus * 1.5) item("load", `High load: ${hl.load.join(" / ")} on ${hl.cpus} CPUs`, "Something on the router is busy (intrusion detection, a big firewall, heavy traffic).");
+  if (hl.errors?.length) item("errors", `${hl.errors.length} error${hl.errors.length === 1 ? "" : "s"} logged in the last 24 hours`, "See Advanced > Log, or the check-up details.");
+  lastStatus = { router: session.info?.profileId, items };
   if (c.unsaved) warnings.push("The running config has changes that are NOT saved — they will be lost on reboot. Press Save if you want to keep them.");
   if (down.length) warnings.push(`Interfaces down: ${down.join(", ")}`);
   for (const d of hl.disks || []) if (d.usedPercent >= 85) warnings.push(`Disk ${d.mount} is ${d.usedPercent}% full`);
@@ -64,20 +83,26 @@ export async function runCheckup({ alwaysShow = false } = {}) {
   if (hl.errors?.length) warnings.push(`${hl.errors.length} error(s) logged in the last 24 hours`);
 
   const changed = c.changes && (c.changes.added.length || c.changes.removed.length);
+  // one count everywhere: the Health Check's (configuration and router state)
+  const health = await loadDoctor().catch(() => null);
+  const toLook = health ? health.filter((f) => f.level === "bad" || f.level === "warn").length : warnings.length;
   const summary = [
-    c.backupSaved ? (c.changes ? "Config changed: new backup saved" : "First visit: backup history started") : "Config unchanged since last visit",
-    `${c.snapshotCount} backup(s) on ${isDesktop ? "this computer" : "the VyGi server"}`,
-    warnings.length ? `${warnings.length} warning(s)` : "no warnings",
+    c.backupSaved ? (c.changes ? "Configuration changed: new backup saved" : "First visit: backup history started") : "Configuration unchanged since last visit",
+    `${c.snapshotCount} backup${c.snapshotCount === 1 ? "" : "s"} on ${isDesktop ? "this computer" : "the VyGi server"}`,
+    toLook ? `Health Check: ${toLook} to look at` : "Health Check: all good",
   ].join(" · ");
   const msg = `Check-up: ${summary}`;
   const modern = document.documentElement.dataset.ui === "modern";
-  const nothing = !warnings.length && !changed && !c.problems.length;
+  const nothing = !toLook && !changed && !c.problems.length;
   if (modern && !alwaysShow) {
     // Modern look: a pop-up with Details instead of a window over everything.
     setStatus(msg, false, { silent: true });
-    toast(nothing ? msg : `${msg}${changed ? " · config changed since last visit" : ""}`, {
-      warn: warnings.length > 0,
-      action: nothing ? null : { label: "Details", fn: () => { showView("windows"); showWindow(c, warnings, down); } },
+    toast(msg, {
+      warn: !!health?.some((f) => f.level === "bad"),
+      // what changed since last time is in the check-up window; anything else is the Health Check
+      action: nothing ? null : changed || c.problems.length
+        ? { label: "Details", fn: () => { showView("windows"); showWindow(c, warnings, down); } }
+        : { label: "Health Check", fn: () => showView("settings", { tab: "management" }) },
     });
     return false;
   }

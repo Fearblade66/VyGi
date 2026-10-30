@@ -9,11 +9,12 @@ const VIEWS = {
   clients: { title: "Clients", icon: "clients", el: "clients" },
   networks: { title: "Networks", icon: "networks", el: "networks" },
   rules: { title: "Traffic Rules", icon: "rules", el: "rules" },
-  access: { title: "Network access", icon: "networks", el: "access" },
+  access: { title: "Network Policies", icon: "networks", el: "access" },
   ports: { title: "Port Forwarding", icon: "forward", el: "ports" },
-  ids: { title: "Intrusion detection", icon: "shield", el: "idspage" },
+  filtering: { title: "Content Filtering", icon: "ban", el: "filtering" },
+  ids: { title: "Intrusion Prevention", icon: "shield", el: "idspage" },
   vpn: { title: "VPN", icon: "vpn", el: "vpnpage" },
-  history: { title: "History", icon: "clock", el: "history" },
+  history: { title: "Change History", icon: "clock", el: "history" },
   insights: { title: "Insights", icon: "dashboard", el: "insights" },
   settings: { title: "Settings", icon: "gear", el: "settings" },
   windows: { title: "Advanced", icon: "advanced", el: "workspace" },
@@ -21,12 +22,12 @@ const VIEWS = {
 // Sidebar entries that hold several pages, shown as tabs under the top bar.
 // An item is a view, or a view plus one of its own tabs (Settings).
 const GROUPS = {
-  security: { title: "Security", icon: "rules", items: [{ view: "rules" }, { view: "access" }, { view: "ports" }, { view: "ids" }] },
+  security: { title: "Security", icon: "rules", items: [{ view: "rules" }, { view: "access" }, { view: "ports" }, { view: "filtering" }, { view: "ids" }] },
   settings: { title: "Settings", icon: "gear", items: [
     { view: "settings", tab: "internet", label: "Internet" },
-    { view: "settings", tab: "security", label: "Router security" },
+    { view: "settings", tab: "management", label: "Management" },
     { view: "settings", tab: "system", label: "System" },
-    { view: "history", label: "Change history" },
+    { view: "history", label: "Change History" },
   ] },
 };
 const groupOf = (view) => Object.keys(GROUPS).find((g) => GROUPS[g].items.some((i) => i.view === view)) || null;
