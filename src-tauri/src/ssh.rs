@@ -76,6 +76,14 @@ pub fn is_private_key(secret: &str) -> bool {
         .starts_with("-----BEGIN OPENSSH PRIVATE KEY-----")
 }
 
+/// The public half of a saved private key: ("ssh-ed25519", base64 body).
+pub fn public_of(private: &str) -> Option<(String, String)> {
+    let key = russh::keys::PrivateKey::from_openssh(private).ok()?;
+    let line = key.public_key().to_openssh().ok()?;
+    let mut parts = line.split_whitespace();
+    Some((parts.next()?.to_string(), parts.next()?.to_string()))
+}
+
 /// A new Ed25519 key for VyGi's login: (private key in OpenSSH format, public key line).
 pub fn new_key(comment: &str) -> AppResult<(String, String)> {
     use russh::keys::ssh_key::private::Ed25519Keypair;

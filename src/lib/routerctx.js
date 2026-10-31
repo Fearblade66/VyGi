@@ -32,6 +32,7 @@ export async function routerContext({ fresh = false } = {}) {
     live: facts.live === true,
     defaultUsers: facts.defaultPasswordUsers || [],
     version: session.info?.version || "",
+    keyLogin: !!session.info?.keyLogin,
   };
   cache = { at: Date.now(), router, ctx };
   return ctx;

@@ -58,7 +58,7 @@ function check() {
     }, (res) => {
       res.resume();
       resolve(res.statusCode === 200 ? null
-        : res.statusCode === 401 || res.statusCode === 403 ? "VyGi refused the token (revoked or expired?). Make a new one in VyGi and download the setup file again."
+        : res.statusCode === 401 || res.statusCode === 403 ? "VyGi refused the token: its time ended or it was revoked. If it ended, press Allow for 4 hours under API tokens in VyGi and run this again; if it was revoked, make a new setup file."
         : "VyGi answered with HTTP " + res.statusCode + ".");
     });
     req.on("timeout", () => req.destroy(Object.assign(new Error("timeout"), { code: "ETIMEDOUT" })));

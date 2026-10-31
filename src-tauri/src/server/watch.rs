@@ -428,7 +428,7 @@ impl Watcher {
             let logins = Arc::new(StdMutex::new(Vec::new()));
             let mut fails = FailedLogins::default();
             // VyGi's own logins (its user, from its address) aren't news
-            let me = match ws.conn().await {
+            let mut me = match ws.conn().await {
                 Ok(conn) => (
                     self.app
                         .profiles
@@ -489,6 +489,10 @@ impl Watcher {
                     }
                 }
                 let events = std::mem::take(&mut *lock(&logins));
+                // VyGi's login can change while watching (its own login, Set up this router)
+                if let Ok(p) = self.app.profiles.find(&id) {
+                    me.0 = p.ssh_user;
+                }
                 let found: Vec<Alert> = login_alerts(events, &me, &mut fails, now_ms())
                     .into_iter()
                     .filter(|a| rw.on(&a.kind))

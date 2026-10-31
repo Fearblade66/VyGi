@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::error::{AppError, AppResult};
 use crate::security::{self, RouterProfile, Secrets};
@@ -375,6 +376,115 @@ pub async fn use_own_login(state: St, win: Win) -> AppResult<String> {
     Ok(OWN_LOGIN.into())
 }
 
+/// The commands that give VyGi's own login (vygi) its way in again: its key
+/// (or its password), and a random password nobody keeps when it's new.
+/// `current`: the router's `system login user vygi` now (Null: missing).
+/// None when nothing is missing, or VyGi doesn't use its own login.
+pub fn own_login_repair(
+    profile: &RouterProfile,
+    secret: &str,
+    current: &Value,
+) -> Option<Vec<crate::vyos_api::ConfigCommand>> {
+    if profile.ssh_user != OWN_LOGIN {
+        return None;
+    }
+    let base = ["system", "login", "user", OWN_LOGIN, "authentication"];
+    let set = |leaf: &[&str], value: &str| crate::vyos_api::ConfigCommand {
+        op: "set".into(),
+        path: base.iter().chain(leaf).map(|s| s.to_string()).collect(),
+        value: Some(value.to_string()),
+    };
+    let auth = &current["authentication"];
+    let mut cmds = Vec::new();
+    if crate::ssh::is_private_key(secret) {
+        let (kind, body) = crate::ssh::public_of(secret)?;
+        if auth["public-keys"]["vygi"]["key"].as_str() == Some(body.as_str()) {
+            return None;
+        }
+        cmds.push(set(&["public-keys", "vygi", "type"], &kind));
+        cmds.push(set(&["public-keys", "vygi", "key"], &body));
+        if current.is_null() || auth.get("encrypted-password").is_none() {
+            let mut pw = [0u8; 24];
+            getrandom::fill(&mut pw).ok()?;
+            cmds.push(set(&["plaintext-password"], &hex::encode(pw)));
+        }
+    } else if current.is_null() {
+        cmds.push(set(&["plaintext-password"], secret));
+    } else {
+        return None;
+    }
+    Some(cmds)
+}
+
+/// A config.boot (backup or old revision) about to be loaded: when it has no
+/// `vygi` login yet, adds one (VyGi's key, or its password) so the load itself
+/// keeps VyGi's way in. None when there's nothing to add.
+pub fn add_own_login(text: &str, profile: &RouterProfile, secret: &str) -> Option<String> {
+    if profile.ssh_user != OWN_LOGIN || text.contains("user vygi {") {
+        return None;
+    }
+    let quote = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
+    let mut pw = [0u8; 24];
+    getrandom::fill(&mut pw).ok()?;
+    let auth = if crate::ssh::is_private_key(secret) {
+        let (kind, body) = crate::ssh::public_of(secret)?;
+        format!(
+            "plaintext-password \"{}\"\npublic-keys vygi {{\nkey \"{body}\"\ntype \"{kind}\"\n}}\n",
+            hex::encode(pw)
+        )
+    } else {
+        format!("plaintext-password \"{}\"\n", quote(secret))
+    };
+    let block = format!("user vygi {{\nauthentication {{\n{auth}}}\nfull-name \"VyGi\"\n}}\n");
+    // the first `login {` is system login (the router always has its vyos login there)
+    let mut out = String::with_capacity(text.len() + block.len());
+    let mut done = false;
+    for line in text.split_inclusive('\n') {
+        out.push_str(line);
+        if !done && line.trim() == "login {" {
+            out.push_str(&block);
+            done = true;
+        }
+    }
+    done.then_some(out)
+}
+
+/// `text` with VyGi's own login added when it lacks it (see [`add_own_login`]).
+pub fn with_own_login(app: &crate::state::AppState, profile_id: &str, text: String) -> String {
+    let Ok(profile) = app.profiles.find(profile_id) else {
+        return text;
+    };
+    match security::load_secrets(&app.profiles.dir(), &profile) {
+        Ok(Some(s)) => add_own_login(&text, &profile, &s.ssh_password).unwrap_or(text),
+        _ => text,
+    }
+}
+
+/// After a restore or rollback: puts VyGi's own login back if the older
+/// settings didn't have it, so VyGi isn't locked out. Ok(true) when it did.
+pub async fn keep_own_login(
+    app: &crate::state::AppState,
+    conn: &crate::state::Connection,
+) -> AppResult<bool> {
+    let profile = app.profiles.find(&conn.profile_id)?;
+    if profile.ssh_user != OWN_LOGIN {
+        return Ok(false);
+    }
+    let Some(secrets) = security::load_secrets(&app.profiles.dir(), &profile)? else {
+        return Ok(false);
+    };
+    let current = conn
+        .api
+        .show_config(&path(&["system", "login", "user", OWN_LOGIN]))
+        .await
+        .unwrap_or(Value::Null);
+    let Some(cmds) = own_login_repair(&profile, &secrets.ssh_password, &current) else {
+        return Ok(false);
+    };
+    conn.api.configure(&cmds, 0).await?;
+    Ok(true)
+}
+
 /// VyGi's own login uses an SSH key instead of a password: a new Ed25519 key,
 /// its public half on the router, checked, then the login's password replaced
 /// by a random one nobody keeps (so it can only log in with the key).
@@ -511,4 +621,65 @@ pub async fn new_window(app: tauri::AppHandle) -> AppResult<()> {
 
 pub fn path(parts: &[&str]) -> Vec<String> {
     parts.iter().map(|s| s.to_string()).collect()
+}
+
+#[cfg(test)]
+mod own_login_tests {
+    use super::*;
+
+    fn profile(user: &str) -> RouterProfile {
+        serde_json::from_value(
+            serde_json::json!({ "name": "r", "host": "10.0.0.1", "sshUser": user }),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn repair_puts_vygis_login_back() {
+        let (private, _) = crate::ssh::new_key("vygi").unwrap();
+        let (_, body) = crate::ssh::public_of(&private).unwrap();
+        // an older backup without vygi: key, type and a password nobody keeps
+        let cmds = own_login_repair(&profile("vygi"), &private, &Value::Null).unwrap();
+        assert_eq!(cmds.len(), 3);
+        assert!(cmds
+            .iter()
+            .any(|c| c.value.as_deref() == Some(body.as_str())));
+        // already there: nothing to do
+        let have = serde_json::json!({ "authentication": { "encrypted-password": "x", "public-keys": { "vygi": { "key": body, "type": "ssh-ed25519" } } } });
+        assert!(own_login_repair(&profile("vygi"), &private, &have).is_none());
+        // a password login: only when the login is missing
+        assert_eq!(
+            own_login_repair(&profile("vygi"), "pw", &Value::Null)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(own_login_repair(
+            &profile("vygi"),
+            "pw",
+            &serde_json::json!({ "authentication": {} })
+        )
+        .is_none());
+        // not VyGi's own login: hands off
+        assert!(own_login_repair(&profile("vyos"), &private, &Value::Null).is_none());
+    }
+
+    #[test]
+    fn old_backups_keep_vygis_login() {
+        let (private, _) = crate::ssh::new_key("vygi").unwrap();
+        let (_, body) = crate::ssh::public_of(&private).unwrap();
+        let old = "interfaces {\n    ethernet eth0 {\n    }\n}\nsystem {\n    host-name \"r\"\n    login {\n        user vyos {\n            authentication {\n                encrypted-password \"$6$x\"\n            }\n        }\n    }\n}\n";
+        let new = add_own_login(old, &profile("vygi"), &private).unwrap();
+        assert!(new.contains("user vygi {") && new.contains(&body) && new.contains("user vyos {"));
+        // the vygi block sits inside login { }, before the vyos user
+        assert!(new.find("user vygi {").unwrap() > new.find("login {").unwrap());
+        assert!(new.find("user vygi {").unwrap() < new.find("user vyos {").unwrap());
+        // already there, or not VyGi's own login: untouched
+        assert!(add_own_login(&new, &profile("vygi"), &private).is_none());
+        assert!(add_own_login(old, &profile("vyos"), &private).is_none());
+        // a password with a quote stays one value
+        assert!(add_own_login(old, &profile("vygi"), "a\"b")
+            .unwrap()
+            .contains("plaintext-password \"a\\\"b\""));
+    }
 }

@@ -76,8 +76,11 @@ export function initSearch(tools) {
     for (const [target, sc] of synonymTargets(q)) {
       const [kind, name] = [target.slice(0, 1), target.slice(2)];
       if (kind === "p") {
-        const p = pages.find((x) => x.name === name);
-        if (p && !out.some((r) => r.label === p.title)) out.push({ group: "Pages", label: p.title, sub: "related", sc: sc - 5, go: page(name) });
+        // "settings/management": a page's own tab
+        const [base, tab] = name.split("/");
+        const p = pages.find((x) => x.name === base);
+        const label = p && tab ? `${p.title} → ${tab[0].toUpperCase()}${tab.slice(1)}` : p?.title;
+        if (p && !out.some((r) => r.label === label)) out.push({ group: "Pages", label, sub: "related", sc: sc - 5, go: tab ? () => showView(base, { tab }) : page(base) });
       } else if (kind === "t") {
         const t = tools.find((x) => x.label === name);
         if (t && !out.some((r) => r.label === t.label)) out.push({ group: "Tools", label: t.label, sub: t.parent ? `Advanced → ${t.parent} · related` : "Advanced · related", sc: sc - 5, go: tool(t) });

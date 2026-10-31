@@ -441,11 +441,15 @@ pub async fn history_restore(
     let text = std::fs::read_to_string(&file).map_err(|_| {
         AppError::Invalid("this snapshot has no config.boot copy to restore".into())
     })?;
+    // an older backup may not have VyGi's own login yet: keep it in the same load
+    let text = crate::connection::with_own_login(&app, &conn.profile_id, text);
     let minutes = confirm_minutes.min(60);
     let msg = commit(&state, &conn, || {
         Box::pin(conn.api.load_config_text(&text, minutes))
     })
     .await?;
+    // an older backup may not have VyGi's own login yet
+    let _ = crate::connection::keep_own_login(&app, &conn).await;
     record_commit(&state, minutes).await;
     Ok(status(&state, msg).await)
 }
@@ -512,6 +516,8 @@ pub async fn restore_over_ssh(
         router_dir(&app.dirs, &profile.id())?.join(format!("{snapshot}{BOOT_EXT}")),
     )
     .map_err(|_| AppError::Invalid("this backup has no config.boot copy to restore".into()))?;
+    let text =
+        crate::connection::add_own_login(&text, &profile, &secrets.ssh_password).unwrap_or(text);
     let ssh = crate::ssh::SshClient::connect(
         &profile.host,
         profile.ssh_port,
@@ -548,13 +554,32 @@ pub async fn restore_over_ssh(
         "base64 -d {file}.b64 > {file} && rm -f {file}.b64"
     ))
     .await?;
+    // an older backup may not have VyGi's own login (or its key) yet: keep it
+    let keep: String = crate::connection::own_login_repair(
+        &profile,
+        &secrets.ssh_password,
+        &if text.contains("user vygi {") {
+            serde_json::json!({ "authentication": { "encrypted-password": "" } })
+        } else {
+            serde_json::Value::Null
+        },
+    )
+    .unwrap_or_default()
+    .iter()
+    .filter_map(|c| {
+        let v = c.value.as_deref()?;
+        v.chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || "+/=-".contains(ch))
+            .then(|| format!("set {} {v}\n", c.path.join(" ")))
+    })
+    .collect();
     let out = ssh
         .exec(
             &format!(
                 "/bin/vbash -c 'source /opt/vyatta/etc/functions/script-template\n\
                  configure\n\
                  load {file}\n\
-                 commit\n\
+                 {keep}commit\n\
                  save\n\
                  exit'; rm -rf {dir}"
             ),

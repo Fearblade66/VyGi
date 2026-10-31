@@ -297,7 +297,12 @@ pub async fn revision_diff(state: Win, rev: u32, rev2: Option<u32>) -> AppResult
 
 /// Loads revision `rev` as the running config, without rebooting.
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub async fn rollback_to(state: Win, rev: u32, confirm_minutes: u32) -> AppResult<TxStatus> {
+pub async fn rollback_to(
+    app: crate::state::St,
+    state: Win,
+    rev: u32,
+    confirm_minutes: u32,
+) -> AppResult<TxStatus> {
     let minutes = check_minutes(confirm_minutes)?;
     let conn = state.conn().await?;
     let mut p = path(&["system", "commit", "file"]);
@@ -307,10 +312,14 @@ pub async fn rollback_to(state: Win, rev: u32, confirm_minutes: u32) -> AppResul
     if config_text.trim().is_empty() {
         return Err(AppError::Api(format!("revision {rev} is empty or missing")));
     }
+    // an older revision may not have VyGi's own login yet: keep it in the same load
+    let config_text = crate::connection::with_own_login(&app, &conn.profile_id, config_text);
     let msg = commit(&state, &conn, || {
         Box::pin(conn.api.load_config_text(&config_text, minutes))
     })
     .await?;
+    // an older revision may not have VyGi's own login yet
+    let _ = crate::connection::keep_own_login(&app, &conn).await;
     record_commit(&state, minutes).await;
     Ok(status(&state, msg).await)
 }

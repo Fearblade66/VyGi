@@ -352,6 +352,8 @@ export function touchesManual(cfg, c) {
  * router's live addresses). A finding, or null.
  */
 export function lockout(before, after, env = {}) {
+  const login = loginLockout(before, after, env);
+  if (login) return login;
   const { mgmtHost: host, mgmtIface: iface } = env;
   if (!host || !iface) return null;
   const node = (cfg) => flattenInterfaces(cfg?.interfaces).get(iface)?.cfg;
@@ -369,6 +371,22 @@ export function lockout(before, after, env = {}) {
   return {
     id: `lockout:${iface}`, level: "bad", title: `VyGi would lose the router`,
     text: `This takes ${host} off ${iface}, and that's the address VyGi (and anything else using it) reaches the router on. After applying, nothing can reach the router there: with Safe Mode on it comes back by itself when the timer runs out, with Safe Mode off only the router's console can fix it. To move the router to another address: add the new one first, reconnect VyGi to it, then remove the old one.`,
+    fix: null, manual: false,
+  };
+}
+
+/** The change removes the login VyGi uses (env.user), or its SSH key (env.keyLogin). */
+function loginLockout(before, after, env) {
+  const u = env.user;
+  if (!u) return null;
+  const was = before?.system?.login?.user?.[u];
+  const now = after?.system?.login?.user?.[u];
+  const key = (c) => c?.authentication?.["public-keys"]?.vygi;
+  const gone = was && !now ? `removes the ${u} login` : env.keyLogin && key(was) && !key(now) ? `removes the SSH key VyGi logs in with (${u})` : null;
+  if (!gone) return null;
+  return {
+    id: `lockout:login:${u}`, level: "bad", title: "VyGi would lose the router",
+    text: `This ${gone}, so VyGi can't log in to the router any more. Use Set up this router to change VyGi's login instead.`,
     fix: null, manual: false,
   };
 }

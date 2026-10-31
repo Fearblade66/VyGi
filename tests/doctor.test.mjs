@@ -121,3 +121,14 @@ test("lockout: warns when VyGi's own address goes away", async () => {
   assert.equal(lockout(fixed, fixed, env), null);
   assert.equal(lockout(fixed, {}, { mgmtHost: "vyos.lan" }), null);
 });
+
+test("lockout: removing VyGi's login or its key", async () => {
+  const { lockout } = await import("../src/lib/doctor.js");
+  const env = { user: "vygi", keyLogin: true };
+  const withKey = { system: { login: { user: { vygi: { authentication: { "public-keys": { vygi: { key: "AAAA", type: "ssh-ed25519" } } } }, vyos: {} } } } };
+  assert.match(lockout(withKey, { system: { login: { user: { vyos: {} } } } }, env).text, /removes the vygi login/);
+  assert.match(lockout(withKey, { system: { login: { user: { vygi: { authentication: {} }, vyos: {} } } } }, env).text, /SSH key/);
+  assert.equal(lockout(withKey, withKey, env), null);
+  // removing someone else's login is fine
+  assert.equal(lockout(withKey, { system: { login: { user: { vygi: withKey.system.login.user.vygi } } } }, env), null);
+});

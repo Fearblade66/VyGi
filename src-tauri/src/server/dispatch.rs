@@ -107,9 +107,9 @@ pub async fn call(
         "revision_diff" => {
             json(transactions::revision_diff(w(), arg(&a, "rev")?, arg(&a, "rev2")?).await)
         }
-        "rollback_to" => {
-            json(transactions::rollback_to(w(), arg(&a, "rev")?, arg(&a, "confirmMinutes")?).await)
-        }
+        "rollback_to" => json(
+            transactions::rollback_to(st(), w(), arg(&a, "rev")?, arg(&a, "confirmMinutes")?).await,
+        ),
         "set_revert_action" => json(transactions::set_revert_action(w(), arg(&a, "action")?).await),
 
         "interface_stats" => json(monitor::interface_stats(w()).await),
