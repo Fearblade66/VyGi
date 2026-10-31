@@ -38,7 +38,7 @@ On a phone the main pages are tabs at the bottom, and the rest is behind **More*
 
 ## Home
 
-Internet status and latency, live internet traffic, CPU and memory, devices online, your networks with how full their DHCP pools are, the busiest devices, top sites and countries, VPN devices and alerts. The Health Check card appears when something needs attention. **Run speed test** measures the router's own internet speed (uses a few GB on a fast line).
+Internet status and latency, live internet traffic, CPU and memory, devices online, your networks with how full their DHCP pools are, the busiest devices, top sites and countries, VPN devices and alerts. The Health Check card appears when something needs attention. **Run speed test** measures the router's own internet speed against Cloudflare: 8 parallel downloads for 8 seconds, then 8 uploads (uses a few GB on a fast line).
 
 With two or more routers on the web version, **Your routers** shows each one's 24/7 state and today's alerts.
 

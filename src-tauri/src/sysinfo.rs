@@ -912,6 +912,45 @@ const SPEED_STREAMS: u32 = 8;
 const SPEED_SECS: u32 = 8;
 
 /// Sums the bytes/second each parallel curl printed (one number per line).
+/// The download half: each of n streams downloads 100 MB pieces from
+/// Cloudflare back to back until t seconds are up (one huge request is
+/// refused by the server), dropping to 25 MB pieces if 100 MB is refused.
+/// Each stream prints "bytes <n>", and "refused <code>" when it was refused.
+fn download_script(n: u32, t: u32) -> String {
+    format!(
+        r#"dl() {{
+  end=$(($(date +%s) + {t})); size=100000000; got=0
+  while :; do
+    left=$((end - $(date +%s))); [ "$left" -ge 1 ] || break
+    r=$(curl -s -o /dev/null --max-time "$left" -w '%{{http_code}} %{{size_download}}' "https://speed.cloudflare.com/__down?bytes=$size")
+    code=${{r%% *}}; b=${{r##* }}; b=${{b%%.*}}
+    case "$code" in
+      200) got=$((got + b));;
+      4*) if [ "$size" -gt 25000000 ]; then size=25000000; else echo "refused $code"; break; fi;;
+      *) [ "$b" -gt 0 ] 2>/dev/null && got=$((got + b)); break;;
+    esac
+  done
+  echo "bytes $got"
+}}
+for i in $(seq {n}); do dl & done; wait"#
+    )
+}
+
+/// Total bytes from the download streams, and an HTTP code if the server refused.
+fn download_bytes(text: &str) -> (f64, Option<String>) {
+    let mut total = 0.0;
+    let mut refused = None;
+    for line in text.lines() {
+        let mut it = line.split_whitespace();
+        match (it.next(), it.next()) {
+            (Some("bytes"), Some(v)) => total += v.parse::<f64>().unwrap_or(0.0),
+            (Some("refused"), Some(code)) => refused = Some(code.to_string()),
+            _ => {}
+        }
+    }
+    (total, refused)
+}
+
 fn sum_rates(text: &str) -> f64 {
     text.lines()
         .filter_map(|l| l.trim().parse::<f64>().ok())
@@ -983,16 +1022,20 @@ pub async fn speed_test(state: Win) -> AppResult<SpeedResult> {
     let (n, t) = (SPEED_STREAMS, SPEED_SECS);
     // curl prints its average speed even when --max-time stops it (exit 28).
     // Uploads stream from stdin (-T -); --data-binary would read it all into memory first.
-    let down = format!(
-        "for i in $(seq {n}); do curl -s -o /dev/null --max-time {t} -w '%{{speed_download}}\\n' 'https://speed.cloudflare.com/__down?bytes=10000000000' & done; wait"
-    );
+    let down = download_script(n, t);
     let up = format!(
         "for i in $(seq {n}); do head -c 2000000000 /dev/zero | curl -s -o /dev/null --max-time {t} -X POST -T - -w '%{{speed_upload}}\\n' https://speed.cloudflare.com/__up & done; wait"
     );
     let limit = Duration::from_secs(u64::from(t) + 20);
     let d = conn.ssh.exec(&down, limit).await?;
-    let down_bps = sum_rates(&d.stdout) * 8.0;
+    let (bytes, refused) = download_bytes(&d.stdout);
+    let down_bps = bytes * 8.0 / f64::from(t);
     if down_bps <= 0.0 {
+        if let Some(code) = refused {
+            return Err(AppError::Api(format!(
+                "Cloudflare's speed test server refused the download test (HTTP {code}), so the speed couldn't be measured. Try again later."
+            )));
+        }
         let probe = conn
             .ssh
             .exec(SPEED_PROBE, Duration::from_secs(25))
@@ -1048,6 +1091,19 @@ mod speed_tests {
                 .contains("didn't answer")
         );
         assert!(speed_failure("").contains("couldn't check why"));
+    }
+
+    #[test]
+    fn counts_downloaded_bytes() {
+        use super::{download_bytes, download_script};
+        assert_eq!(
+            download_bytes("bytes 100000000\nbytes 250000000\nrefused 403\nbytes 0\n"),
+            (350000000.0, Some("403".to_string()))
+        );
+        assert_eq!(download_bytes(""), (0.0, None));
+        let s = download_script(8, 8);
+        assert!(s.contains("seq 8") && s.contains("+ 8)") && s.contains("bytes=$size"));
+        assert!(!s.contains("10000000000"));
     }
 
     #[test]
