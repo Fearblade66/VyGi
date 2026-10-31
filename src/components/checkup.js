@@ -69,7 +69,7 @@ export async function runCheckup({ alwaysShow = false } = {}) {
   const item = (id, title, text) => items.push({ id: `status:${id}`, level: "warn", title, text, fix: null });
   if (c.unsaved) item("unsaved", "Changes aren't saved to the boot configuration", "They're lost when the router restarts. Press Save, or turn on Save changes automatically.");
   if (down.length) item("down", `No link on ${down.join(", ")}`, "These ports are set up but have no connection: an unplugged cable, or the device on the other side is off.");
-  for (const d of hl.disks || []) if (d.usedPercent >= 85) item(`disk:${d.mount}`, `Disk ${d.mount} is ${d.usedPercent}% full`, "Remove old VyOS images (Settings > System) or large logs before it fills up.");
+  for (const d of hl.disks || []) if (d.usedPercent >= 85) item(`disk:${d.mount}`, `Disk ${d.mount} is ${d.usedPercent}% full`, "Remove old VyOS images (System > Router) or large logs before it fills up.");
   if (hl.memTotalKb && hl.memAvailableKb != null && hl.memAvailableKb / hl.memTotalKb < 0.1) item("memory", `Low memory: ${Math.round((hl.memAvailableKb / hl.memTotalKb) * 100)}% available`, "The router may slow down or stop services.");
   if (hl.load?.length && hl.cpus && hl.load[1] > hl.cpus * 1.5) item("load", `High load: ${hl.load.join(" / ")} on ${hl.cpus} CPUs`, "Something on the router is busy (intrusion detection, a big firewall, heavy traffic).");
   if (hl.errors?.length) item("errors", `${hl.errors.length} error${hl.errors.length === 1 ? "" : "s"} logged in the last 24 hours`, "See Advanced > Log, or the check-up details.");
@@ -102,7 +102,7 @@ export async function runCheckup({ alwaysShow = false } = {}) {
       // what changed since last time is in the check-up window; anything else is the Health Check
       action: nothing ? null : changed || c.problems.length
         ? { label: "Details", fn: () => { showView("windows"); showWindow(c, warnings, down); } }
-        : { label: "Health Check", fn: () => showView("settings", { tab: "management" }) },
+        : { label: "Health Check", fn: () => showView("settings", { tab: "router" }) },
     });
     return false;
   }

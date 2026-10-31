@@ -8,8 +8,8 @@ import { showView, onAnyView, navEntry } from "./views.js";
 export const PHONE = "(max-width: 760px)";
 const TABS = [
   ["dashboard", "dashboard", "Home"],
-  ["clients", "clients", "Clients"],
-  ["networks", "networks", "Networks"],
+  ["clients", "clients", "Devices"],
+  ["network", "networks", "Network"],
   ["security", "rules", "Security"],
 ];
 

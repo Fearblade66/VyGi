@@ -186,7 +186,7 @@ pub async fn ids_update_rules(state: Win) -> AppResult<String> {
 fn update_result(stdout: &str, stderr: &str) -> AppResult<String> {
     let err = |m: String| Err(crate::error::AppError::Api(m));
     if stdout.contains("VYGI_NO_DNS") {
-        return err("The router can't look up names on the internet, so it can't download the rules. Give it a DNS server (Settings > Internet > DNS servers, or on the router: set system name-server and your gateway's address) and check it has internet, then press Update rules again.".into());
+        return err("The router can't look up names on the internet, so it can't download the rules. Give it a DNS server (Network > Internet > DNS servers, or on the router: set system name-server and your gateway's address) and check it has internet, then press Update rules again.".into());
     }
     let lines: Vec<&str> = stdout.lines().filter(|l| !l.starts_with("VYGI_")).collect();
     let said = lines.join(" ").trim().to_string();

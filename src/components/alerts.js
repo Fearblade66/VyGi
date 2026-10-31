@@ -252,8 +252,8 @@ export function initAlerts() {
     const phone = n.ntfyUrl || n.webhookUrl ? "Phone notifications on" : "Phone notifications off";
     return h("div.server-box",
       h("label.switch", sw, " ", h("b", "Watch this router 24/7 on the VyGi server")),
-      h("div.hint", state, on ? " Traffic, data per device and the system log are recorded (see Insights)." : ""),
-      h("div", h("a", { href: "#", on: { click: (e) => { e.preventDefault(); notifySettings(); } } }, phone), " · ", h("a", { href: "#", on: { click: (e) => { e.preventDefault(); togglePanel(false); showView("insights"); } } }, "Insights")));
+      h("div.hint", state, on ? " Traffic, data per device and the system log are recorded (see Activity)." : ""),
+      h("div", h("a", { href: "#", on: { click: (e) => { e.preventDefault(); notifySettings(); } } }, phone), " · ", h("a", { href: "#", on: { click: (e) => { e.preventDefault(); togglePanel(false); showView("insights"); } } }, "Activity")));
   }
 
   async function notifySettings() {

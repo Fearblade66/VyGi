@@ -30,7 +30,8 @@ import { openBackup } from "./backup.js";
 import { openSetup } from "./setup.js";
 import { rememberUpdate, goBack } from "../lib/updateguard.js";
 
-const TABS = { internet: "Internet", management: "Management", system: "System" };
+// Internet shows under Network; Router and VyGi under System (views.js)
+const TABS = { internet: "Internet", router: "Router", vygi: "VyGi" };
 const speedKey = () => `vygi.speed.${session.info?.profileId}`;
 
 function store(key, value) {
@@ -131,7 +132,7 @@ export function initSettings() {
     // the tabs are under the top bar (views.js: Internet, Management, System, Change History)
     const tab = TABS[viewTab("settings", "internet")] ? viewTab("settings", "internet") : "internet";
     shownTab = tab;
-    const body = { internet, management, system }[tab](st, my);
+    const body = { internet, router: (s, m) => [...management(s, m), ...system(s)], vygi }[tab](st, my);
     clear(root).append(h("div.page.settings", ...body));
   }
 
@@ -351,7 +352,17 @@ export function initSettings() {
       section("Health Check", health),
       section("Router Access",
         row("Block the internet from reaching the router", "Stops new connections from the internet to the router itself (its settings, SSH, DNS). Replies to your own traffic, port forwards and VPN ports still work.", protectCtl)),
+    ];
+  }
+
+  // ================================================================ System > VyGi
+
+  function vygi() {
+    return [
       isDesktop ? null : accessSection(),
+      isDesktop ? null : watchSection(),
+      section("Changes",
+        row("Show changes before applying", "A short list of what will change (Add, Change, Remove), with the VyOS commands, before VyGi applies it. Conflict checks still show whenever they find something.", previewSelect())),
     ].filter(Boolean);
   }
 
@@ -455,8 +466,6 @@ export function initSettings() {
         row("Set up", "A checklist of the basics: internet, a home network, the router's password, security, saving, backups and alerts, the clock.", button("Open checklist…", () => openSetup().then(render))),
         row("Name", "", value(cfg?.system?.["host-name"] || "–")),
         row("Time zone", "Schedules (Traffic Rules) follow it.", h("span.set-inline", value(cfg?.system?.["time-zone"] || "UTC"), button("Change…", () => openIdentityClock().then(render))))),
-      section("Changes",
-        row("Show changes before applying", "A short list of what will change (Add, Change, Remove), with the VyOS commands, before VyGi applies it. Conflict checks still show whenever they find something.", previewSelect())),
       section("Updates", update),
       section("Backups",
         row("Backups", isDesktop
@@ -464,7 +473,6 @@ export function initSettings() {
           : "Saved on the VyGi server each time you connect, and every 6 hours while 24/7 watching is on, when the settings changed.",
         h("span.set-inline", backups, button("History…", () => openBackup("History")), button("Download / restore…", () => openBackup("Backup"))))),
     ];
-    if (!isDesktop) out.push(watchSection());
     return out;
   }
 
@@ -539,7 +547,7 @@ export function initSettings() {
       const state = !r.enabled ? "" : s.error ? `Problem: ${s.error}` : s.connected ? `Watching. Last check ${s.lastCheck ? new Date(s.lastCheck).toLocaleTimeString() : "soon"}.` : "Starting…";
       el.querySelector(".hint")?.remove();
       el.append(
-        row("24/7 watching", "The VyGi server keeps checking this router while no tab is open: alerts, traffic and log history (Insights), backups and update checks." + (state ? ` ${state}` : ""),
+        row("24/7 watching", "The VyGi server keeps checking this router while no tab is open: alerts, traffic and log history (Activity), backups and update checks." + (state ? ` ${state}` : ""),
           toggle(!!r.enabled, (on) => api.watchSet({ ...r, enabled: on, name: r.name || session.info?.hostname || "" }), render)),
         row("Alerts and phone notifications", "What to be alerted about, and where to send it (ntfy, Discord, a webhook).", button("Open…", () => document.getElementById("btn-alerts")?.click())));
     }).catch((e) => {

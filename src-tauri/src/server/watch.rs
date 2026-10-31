@@ -1145,7 +1145,7 @@ async fn watch_config(ws: &WindowState, saved: &mut Saved) -> Vec<Alert> {
         alerts.push(Alert {
             kind: "config".into(),
             text: format!(
-                "{} more changes made outside VyGi: see Settings > Change history.",
+                "{} more changes made outside VyGi: see Activity > Changes & Backups.",
                 new.len() - 3
             ),
             level: "warn".into(),
@@ -1197,7 +1197,7 @@ fn boot_text(since: u64, added: &[String], removed: &[String]) -> String {
         .take(5)
         .collect();
     format!(
-        "The router restarted and its settings don't match the last backup (taken {when} ago): {} missing, {} new. {}. If you didn't expect this, restore the backup in Settings > Change history.",
+        "The router restarted and its settings don't match the last backup (taken {when} ago): {} missing, {} new. {}. If you didn't expect this, restore the backup in Activity > Changes & Backups.",
         removed.len(),
         added.len(),
         sample.join(" · ")

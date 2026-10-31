@@ -977,7 +977,7 @@ async fn mcp_post(
             false,
         );
         tokio::time::sleep(std::time::Duration::from_millis(500)).await; // slows down guessing
-        return (StatusCode::UNAUTHORIZED, [(header::WWW_AUTHENTICATE, "Bearer")], Json(json!({ "error": "VyGi didn't accept this API token: its time ended, it was revoked, or it's wrong. If its time ended: in VyGi, Settings > Management > API tokens, press Allow for 4 hours (nothing changes on this computer)." }))).into_response();
+        return (StatusCode::UNAUTHORIZED, [(header::WWW_AUTHENTICATE, "Bearer")], Json(json!({ "error": "VyGi didn't accept this API token: its time ended, it was revoked, or it's wrong. If its time ended: in VyGi, System > VyGi > API tokens, press Allow for 4 hours (nothing changes on this computer)." }))).into_response();
     };
     let msg: Value = match serde_json::from_slice(&body) {
         Ok(v) => v,

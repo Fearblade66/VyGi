@@ -4,7 +4,7 @@
 /** Everyday words -> page (p:) or Advanced tool (t:) names. */
 export const SYNONYMS = [
   [["password", "login", "account", "admin"], ["t:Users", "p:dashboard"]],
-  [["security", "hacked", "safe", "exposed", "health", "problem", "conflict", "doctor", "fix"], ["p:settings/management", "p:dashboard"]],
+  [["security", "hacked", "safe", "exposed", "health", "problem", "conflict", "doctor", "fix"], ["p:settings/router", "p:dashboard"]],
   [["settings", "internet", "wan", "isp", "smart queues", "lag", "gaming", "bufferbloat", "failover", "wan2", "backup line", "upstream dns", "ad block", "adblock", "ads", "update", "region", "country"], ["p:settings"]],
   [["time", "timezone", "time zone", "clock", "ntp", "date"], ["t:Identity & Clock"]],
   [["hostname", "router name", "rename router"], ["t:Identity & Clock"]],

@@ -20,7 +20,7 @@ test("ownerOf knows each page's descriptions", () => {
   assert.deepEqual(o("VyGi: private addresses (stay off the VPN)").slice(0, 3), ["VPN client", "", "vpn"]);
   assert.equal(o("VyGi: send chosen devices through a VPN client")[0], "VPN client");
   assert.deepEqual(o("VyGi: backup internet").slice(2), ["settings", "internet"]);
-  assert.deepEqual(o("VyGi: allow replies").slice(2), ["settings", "management"]);
+  assert.deepEqual(o("VyGi: allow replies").slice(2), ["settings", "router"]);
   assert.deepEqual(o("VyGi: something new"), ["VyGi", "", null, null]);
   assert.equal(ownerOf("my own rule"), null);
   assert.equal(ownerOf(""), null);

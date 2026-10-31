@@ -1,36 +1,45 @@
-// Top-level views: Dashboard, Clients, Networks, Traffic Rules, Port Forwarding,
-// VPN (UniFi-style pages)
-// and Advanced (the Winbox-style window workspace), plus the Classic / Modern look.
+// The pages and the sidebar: Home, Devices, Network, Security, Activity,
+// System (groups of pages shown as tabs) and Advanced (the Winbox-style
+// window workspace), plus the Classic / Modern look.
 import { h } from "./dom.js";
 import { icon, logo } from "./icons.js";
 
 const VIEWS = {
-  dashboard: { title: "Dashboard", icon: "dashboard", el: "dashboard" },
-  clients: { title: "Clients", icon: "clients", el: "clients" },
-  networks: { title: "Networks", icon: "networks", el: "networks" },
+  dashboard: { title: "Home", icon: "dashboard", el: "dashboard" },
+  clients: { title: "Devices", icon: "clients", el: "clients" },
+  networks: { title: "Local Networks", icon: "networks", el: "networks" },
   rules: { title: "Traffic Rules", icon: "rules", el: "rules" },
   access: { title: "Network Policies", icon: "networks", el: "access" },
   ports: { title: "Port Forwarding", icon: "forward", el: "ports" },
   filtering: { title: "Content Filtering", icon: "ban", el: "filtering" },
   ids: { title: "Intrusion Prevention", icon: "shield", el: "idspage" },
   vpn: { title: "VPN", icon: "vpn", el: "vpnpage" },
-  history: { title: "Change History", icon: "clock", el: "history" },
-  insights: { title: "Insights", icon: "dashboard", el: "insights" },
+  history: { title: "Changes & Backups", icon: "clock", el: "history" },
+  insights: { title: "Traffic & Logs", icon: "dashboard", el: "insights" },
   settings: { title: "Settings", icon: "gear", el: "settings" },
   windows: { title: "Advanced", icon: "advanced", el: "workspace" },
 };
 // Sidebar entries that hold several pages, shown as tabs under the top bar.
-// An item is a view, or a view plus one of its own tabs (Settings).
+// An item is a view, or a view plus one of its own tabs (the Settings page
+// has Internet, under Network, and Router and VyGi, under System).
 const GROUPS = {
-  security: { title: "Security", icon: "rules", items: [{ view: "rules" }, { view: "access" }, { view: "ports" }, { view: "filtering" }, { view: "ids" }] },
-  settings: { title: "Settings", icon: "gear", items: [
+  network: { title: "Network", icon: "globe", items: [
     { view: "settings", tab: "internet", label: "Internet" },
-    { view: "settings", tab: "management", label: "Management" },
-    { view: "settings", tab: "system", label: "System" },
-    { view: "history", label: "Change History" },
+    { view: "networks" },
+    { view: "vpn" },
+  ] },
+  security: { title: "Security", icon: "shield", items: [{ view: "rules" }, { view: "access" }, { view: "ports" }, { view: "filtering" }, { view: "ids" }] },
+  activity: { title: "Activity", icon: "activity", items: [{ view: "insights", webOnly: true }, { view: "history" }] },
+  system: { title: "System", icon: "gear", items: [
+    { view: "settings", tab: "router", label: "Router" },
+    { view: "settings", tab: "vygi", label: "VyGi" },
   ] },
 };
-const groupOf = (view) => Object.keys(GROUPS).find((g) => GROUPS[g].items.some((i) => i.view === view)) || null;
+// the desktop app has no 24/7 server, so no Traffic & Logs page
+const shown = (it) => !(it.webOnly && typeof window !== "undefined" && window.__TAURI_INTERNALS__);
+/** The group a view (with its tab, for Settings) belongs to, or null. */
+const groupOf = (view, tab = null) => Object.keys(GROUPS).find((g) =>
+  GROUPS[g].items.some((i) => i.view === view && (!i.tab || !tab || i.tab === tab))) || null;
 const listeners = new Map(); // view -> { show(), hide() }
 let current = null;
 
@@ -68,16 +77,23 @@ export function viewTab(view, fallback) {
  * tab picks one of a page's own tabs.
  */
 export function showView(name, { remember = true, tab = null } = {}) {
-  // "settings" is a group and a page: with a tab it means the page
-  if (GROUPS[name] && !(tab && VIEWS[name])) name = store(`vygi.group.${name}`) || GROUPS[name].items[0].view;
+  // a group opens the page (and tab) used last in it
+  if (GROUPS[name]) {
+    const items = GROUPS[name].items.filter(shown);
+    const [v, t] = String(store(`vygi.group.${name}`) || "").split(":");
+    const last = items.find((i) => i.view === v && (i.tab || "") === (t || "")) || items[0];
+    name = last.view;
+    tab = last.tab || null;
+  }
   if (!VIEWS[name]) name = "dashboard";
   if (tab) store(`vygi.${name}.tab`, tab);
-  const group = groupOf(name);
-  if (group) store(`vygi.group.${group}`, name);
+  const group = groupOf(name, tab || viewTab(name, null));
+  if (group) store(`vygi.group.${group}`, `${name}:${tab || ""}`);
   if (current) listeners.get(current)?.hide?.();
   current = name;
+  currentGroup = group;
   for (const [v, def] of Object.entries(VIEWS)) document.getElementById(def.el).hidden = v !== name;
-  for (const b of document.querySelectorAll("#view-switch button")) b.classList.toggle("on", b.dataset.view === name || b.dataset.view === group);
+  for (const b of document.querySelectorAll("#view-switch button")) b.classList.toggle("on", b.dataset.view === (group || name));
   document.getElementById("app").dataset.view = name;
   document.getElementById("page-title").textContent = group ? GROUPS[group].title : VIEWS[name].title;
   renderSubnav(group, name);
@@ -85,16 +101,17 @@ export function showView(name, { remember = true, tab = null } = {}) {
   listeners.get(name)?.show?.();
   anyView.forEach((fn) => fn(name));
 }
+let currentGroup = null;
 
 /** The group's pages as tabs under the top bar. */
 function renderSubnav(group, name) {
   const nav = document.getElementById("subnav");
   if (!nav) return;
-  nav.hidden = !group;
+  const items = group ? GROUPS[group].items.filter(shown) : [];
+  nav.hidden = items.length < 2;
   nav.replaceChildren();
   if (!group) return;
-  const items = GROUPS[group].items;
-  const tab = viewTab(name, items.find((x) => x.view === name).tab);
+  const tab = viewTab(name, items.find((x) => x.view === name)?.tab);
   for (const it of items) {
     const on = it.view === name && (!it.tab || it.tab === tab);
     nav.append(h(`button${on ? ".on" : ""}`, { on: { click: () => showView(it.view, { tab: it.tab }) } }, it.label || VIEWS[it.view].title));
@@ -114,6 +131,7 @@ export function savedView() {
 
 /** The sidebar entry a view belongs to (its group, or itself). */
 export function navEntry(view) {
+  if (view === current) return currentGroup || view;
   return groupOf(view) || view;
 }
 

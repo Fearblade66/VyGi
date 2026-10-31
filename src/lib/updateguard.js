@@ -54,7 +54,7 @@ async function check() {
   }
   if (st.pending && st.running === st.new) {
     const kept = await api.updateGuardConfirm().catch(() => null);
-    if (kept) toast(`VyOS ${kept} is running and VyGi reaches the router: the update is kept. (Settings > System > Go back undoes it.)`, { timeout: 15000 });
+    if (kept) toast(`VyOS ${kept} is running and VyGi reaches the router: the update is kept. (System > Router > Go back undoes it.)`, { timeout: 15000 });
     remembered(null);
   } else if (want && !st.pending && st.running === want.old) {
     toast(`The update to VyOS ${want.new} wasn't confirmed in time, so the router went back to ${want.old}.`, { error: true, timeout: 30000 });

@@ -86,7 +86,7 @@ async function checks() {
       title: "Security check",
       ok: risks.length ? false : findings.length ? "warn" : true,
       text: risks.length ? risks.map((f) => f.title).join(" · ") : findings.length ? `${findings.length} suggestion${findings.length === 1 ? "" : "s"}, nothing serious.` : "No common problems found.",
-      action: findings.length ? ["Review", go("settings", "management")] : null,
+      action: findings.length ? ["Review", go("settings", "router")] : null,
     },
     {
       title: "Save changes automatically",
@@ -99,7 +99,7 @@ async function checks() {
       }] : null,
     },
     isDesktop
-      ? { title: "Backups", ok: true, text: "The settings are saved on this computer each time VyGi connects and they changed.", action: ["Backups", go("settings", "system")] }
+      ? { title: "Backups", ok: true, text: "The settings are saved on this computer each time VyGi connects and they changed.", action: ["Backups", go("settings", "router")] }
       : {
           title: "24/7 watching, backups and alerts",
           ok: !!watch?.router?.enabled,

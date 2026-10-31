@@ -19,7 +19,7 @@ const OWNERS = [
   [/^VyGi: (?:backup internet|block new connections on the backup|DHCPv6 on the backup)/, "Backup internet", "settings", "internet"],
   [/^VyGi: DHCPv6 from the provider/, "Internet connection", "settings", "internet"],
   [/^VyGi: Smart Queues/, "Smart Queues", "settings", "internet"],
-  [/^VyGi: (?:block new connections from the internet|allow replies)/, "Router Access", "settings", "management"],
+  [/^VyGi: (?:block new connections from the internet|allow replies)/, "Router Access", "settings", "router"],
   [/^VyGi[: ]/, "VyGi", null],
 ];
 

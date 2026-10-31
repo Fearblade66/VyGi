@@ -946,7 +946,7 @@ fn speed_failure(probe: &str) -> String {
         return format!("{base}, and VyGi couldn't check why.");
     }
     if route.is_empty() {
-        return format!("{base}: the router has no internet connection (no default route / gateway). Connect its internet (WAN) port to your modem and check it gets an address (Settings > Internet), or set a gateway.");
+        return format!("{base}: the router has no internet connection (no default route / gateway). Connect its internet (WAN) port to your modem and check it gets an address (Network > Internet), or set a gateway.");
     }
     if get("ping") == "fail" && get("dns") == "fail" {
         let via = if gw.is_empty() {
