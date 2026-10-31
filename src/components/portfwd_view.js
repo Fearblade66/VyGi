@@ -1,5 +1,6 @@
 // Port Forwarding page: send a port from the internet to one device (game
 // server, NAS, cameras), with an on/off switch per forward.
+import { itemMenu, itemCommands } from "./itemref.js";
 import { api, errorText } from "../lib/api.js";
 import { h, clear, every } from "../lib/dom.js";
 import { formDialog, confirmBox, alertBox } from "../lib/dialog.js";
@@ -78,14 +79,17 @@ export function initPortForwards() {
       render();
     });
     const ports = f.inside !== f.outside ? `${f.outside} → ${f.inside}` : f.outside || "all ports";
+    const refs = [{ label: `NAT → destination rule ${f.n}`, path: ["nat", "destination", "rule", f.n] }, f.fw && { label: `Firewall → forward rule ${f.fw}`, path: ["firewall", "ipv4", "forward", "filter", "rule", f.fw] }];
     const el = h(`div.rule-card${f.enabled ? "" : ".off"}`, { on: { click: () => (f.ours ? edit(f) : alertBox(f.name, "This forward was made outside VyGi. Change it in Advanced → Firewall → NAT.")) }, title: f.ours ? "Click to edit" : "Made outside VyGi" },
       h("div.rule-top",
         h("span.rule-icon", icon("forward", 18)),
         h("div.grow", h("div.rule-name", f.name), h("div.hint", `${PROTO[f.protocol] || f.protocol} ${ports}`)),
-        f.ours ? h("label.switch", { on: { click: (e) => e.stopPropagation() } }, sw) : h("span.badge", "Advanced")),
+        f.ours ? h("label.switch", { on: { click: (e) => e.stopPropagation() } }, sw) : h("span.badge", "Advanced"),
+        itemMenu(refs)),
       h("dl.kv-list",
         h("dt", "Device"), h("dd", f.ip ? `${deviceLabel(f.ip)}${deviceLabel(f.ip) !== f.ip ? ` (${f.ip})` : ""}` : "–"),
-        h("dt", "Allowed from"), h("dd", f.from || "anyone")));
+        h("dt", "Allowed from"), h("dd", f.from || "anyone")),
+      itemCommands(st.cfg, refs.filter(Boolean).map((r) => r.path)));
     return el;
   }
 

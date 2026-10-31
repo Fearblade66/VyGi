@@ -1,5 +1,6 @@
 // Traffic Rules page: block the internet or sites for devices/networks, always
 // or on a schedule (e.g. kids' bedtime), with an on/off switch per rule.
+import { itemMenu, itemCommands } from "./itemref.js";
 import { api, errorText } from "../lib/api.js";
 import { h, clear, every } from "../lib/dom.js";
 import { formDialog, confirmBox, alertBox } from "../lib/dialog.js";
@@ -88,13 +89,22 @@ export function initRules() {
       render();
     });
     let status = statusBadge(r);
+    const groups = st.cfg?.firewall?.group || {};
+    const g = `VYGI-R${r.id}`;
+    const refs = [
+      { label: `Firewall → forward rule ${r.n}`, path: ["firewall", "ipv4", "forward", "filter", "rule", r.n] },
+      r.n6 && { label: `Firewall → IPv6 forward rule ${r.n6}`, path: ["firewall", "ipv6", "forward", "filter", "rule", r.n6] },
+      ...["mac-group", "network-group", "domain-group"].filter((k) => groups[k]?.[g]).map((k) => ({ label: `Firewall → ${k} ${g}`, path: ["firewall", "group", k, g] })),
+    ];
     const el = h(`div.rule-card${r.enabled ? "" : ".off"}`, { on: { click: () => edit(r) }, title: "Click to edit" },
       h("div.rule-top",
         h("span.rule-icon", icon(r.schedule.kind === "times" ? "clock" : "ban", 18)),
         h("div.grow", h("div.rule-name", r.name), h("div.hint", what)),
-        h("label.switch", { on: { click: (e) => e.stopPropagation() } }, sw)),
+        h("label.switch", { on: { click: (e) => e.stopPropagation() } }, sw),
+        itemMenu(refs)),
       h("div.badges", status, h("span.badge.info", icon("clock", 12), describeSchedule(r.schedule))),
-      h("dl.kv-list", h("dt", "Applies to"), h("dd", { title: who }, who)));
+      h("dl.kv-list", h("dt", "Applies to"), h("dd", { title: who }, who)),
+      itemCommands(st.cfg, refs.filter(Boolean).map((x) => x.path)));
     return el;
   }
 

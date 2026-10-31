@@ -1,6 +1,7 @@
 // Networks page (UniFi-style): every LAN/VLAN as a card, plus a guided
 // "New network" form that sets up the interface, DHCP, DNS, NAT, internet
 // access and isolation in one Safe Mode commit.
+import { itemMenu, itemCommands } from "./itemref.js";
 import { api, errorText } from "../lib/api.js";
 import { h, clear, every } from "../lib/dom.js";
 import { formDialog, confirmBox, alertBox } from "../lib/dialog.js";
@@ -119,14 +120,18 @@ export function initNetworks() {
       !n.internet ? h("span.badge.bad", icon("ban", 12), "No internet") : null,
       mgmt ? h("span.badge.info", "VyGi connects here") : null,
     ];
+    const dhcpPath = n.dhcp ? ["service", "dhcp-server", "shared-network-name", n.dhcp.name, "subnet", n.network] : null;
+    const refs = [{ label: `Interfaces → ${n.iface}`, path: n.path }, dhcpPath && { label: "DHCP Server", path: dhcpPath }];
     return h("div.net-card", { on: { click: () => edit(n) }, title: "Click to edit" },
-      h("div.net-top", h("span.net-icon", icon(n.isolated ? "lock" : "networks", 18)), h("div.grow", h("div.net-name", n.name), h("div.hint", `${n.network} · gateway ${n.routerIp}`)), h("div.net-online", h("b", String(online)), h("span.hint", " online"))),
+      h("div.net-top", h("span.net-icon", icon(n.isolated ? "lock" : "networks", 18)), h("div.grow", h("div.net-name", n.name), h("div.hint", `${n.network} · gateway ${n.routerIp}`)), h("div.net-online", h("b", String(online)), h("span.hint", " online")),
+        itemMenu(refs, [["Edit network…", () => edit(n)]])),
       h("div.badges", badges),
       h("dl.kv-list",
         h("dt", "DHCP"), h("dd", n.dhcp ? `${n.dhcp.start} – ${n.dhcp.stop}` : "off (static addresses only)"),
         h("dt", "DNS for devices"), h("dd", n.dhcp ? (n.dnsMode === "router" ? `the router (${n.routerIp})` : n.dnsServers.join(", ")) : "–"),
         h("dt", "Internet"), h("dd", n.internet ? "allowed" : "blocked")),
-      pool ? h("div", { title: `${pool.used} of ${pool.size} addresses leased` }, h("div.bar", h("span", { style: { width: `${Math.min(100, (pool.used / pool.size) * 100)}%` } })), h("div.hint", { style: { marginTop: "4px" } }, `${pool.used} / ${pool.size} DHCP addresses in use`)) : null);
+      pool ? h("div", { title: `${pool.used} of ${pool.size} addresses leased` }, h("div.bar", h("span", { style: { width: `${Math.min(100, (pool.used / pool.size) * 100)}%` } })), h("div.hint", { style: { marginTop: "4px" } }, `${pool.used} / ${pool.size} DHCP addresses in use`)) : null,
+      itemCommands(st.cfg, [n.path, dhcpPath]));
   }
 
   async function edit(n) {

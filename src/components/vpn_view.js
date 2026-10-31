@@ -1,6 +1,7 @@
 // VPN page (UniFi Teleport-style): a WireGuard server per card, its devices
 // with online status, data used and where they connect from; add a device
 // (QR code), pause or remove it.
+import { itemMenu, itemCommands } from "./itemref.js";
 import { api, errorText } from "../lib/api.js";
 import { h, clear, every, formatBytes, formatAge } from "../lib/dom.js";
 import { alertBox } from "../lib/dialog.js";
@@ -39,7 +40,7 @@ async function loadState() {
       ...(live.get(p?.["public-key"]) || {}),
     })).sort((a, b) => a.name.localeCompare(b.name)),
   }));
-  return { servers, ...w };
+  return { servers, cfg: { interfaces: { wireguard: wg } }, ...w };
 }
 
 export function initVpnPage() {
@@ -48,6 +49,7 @@ export function initVpnPage() {
   let geo = new Map(); // endpoint ip -> "Country"
 
   let renderSeq = 0;
+  let vpnCfg = {}; // the WireGuard config last loaded (for Show commands)
   async function render() {
     const seq = ++renderSeq;
     if (!isConnected()) {
@@ -63,6 +65,7 @@ export function initVpnPage() {
       return;
     }
     if (seq !== renderSeq) return;
+    vpnCfg = st.cfg;
     await lookupCountries(st);
     if (seq !== renderSeq) return;
     const problem = wanProblem(st.wanIp);
@@ -139,11 +142,13 @@ export function initVpnPage() {
       }
       render();
     });
+    const peerPath = ["interfaces", "wireguard", p.iface, "peer", p.name];
     const el = h(`div.rule-card${p.paused ? ".off" : ""}`, { style: { cursor: "default" } },
       h("div.rule-top",
         h("span.rule-icon", icon("clients", 18)),
         h("div.grow", h("div.rule-name", p.name), h("div.hint", p.ip)),
-        h("label.switch", sw)),
+        h("label.switch", sw),
+        itemMenu([{ label: `WireGuard → ${p.iface} peer ${p.name}`, path: peerPath }])),
       h("div.badges",
         p.paused ? h("span.badge", "Paused") : on ? h("span.badge.ok", "Connected") : h("span.badge", p.handshake ? `Last seen ${formatAge(p.handshake)}` : "Never connected")),
       h("dl.kv-list",
@@ -152,7 +157,8 @@ export function initVpnPage() {
       h("div.card-actions",
         h("button", { title: "The config file and QR code for the WireGuard app", on: { click: () => showPeerConfig({ iface: p.iface, name: p.name }, render) } }, "Show config"),
         h("span.grow"),
-        h("button.danger", { on: { click: () => removePeer({ iface: p.iface, name: p.name }, render) } }, icon("trash", 14), "Remove")));
+        h("button.danger", { on: { click: () => removePeer({ iface: p.iface, name: p.name }, render) } }, icon("trash", 14), "Remove")),
+      itemCommands(vpnCfg, [peerPath]));
     return el;
   }
 

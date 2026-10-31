@@ -30,6 +30,7 @@ export function initAccountMenu() {
         theme.dispatchEvent(new Event("change"));
       } } }, [...theme.options].map((o) => h("option", { value: o.value, selected: o.value === theme.value }, o.textContent)));
       return [
+        h("div.pop-label", isDesktop ? "VyGi settings" : "Your VyGi account and settings"),
         isDesktop ? null : [
           item("API tokens and Claude", click("web-api")),
           item("Phone app", click("web-phone")),

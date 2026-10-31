@@ -112,7 +112,7 @@ button.primary { font-weight: bold; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---------- MDI workspace ---------- */
-#workspace { flex: 1; position: relative; overflow: hidden; background: var(--bg); display: flex; flex-direction: column; }
+#workspace { flex: 1; position: relative; isolation: isolate; overflow: hidden; background: var(--bg); display: flex; flex-direction: column; }
 #workspace[hidden] { display: none; }
 #ws-area { flex: 1; position: relative; overflow: hidden; min-height: 0; }
 .mdi-win {
@@ -957,3 +957,10 @@ body.logged-out #app { visibility: hidden; }
   [data-ui="modern"] #app:not([data-view="windows"]) #sidebar-foot { padding: 8px 0; display: flex; justify-content: center; }
   [data-ui="modern"] #app:not([data-view="windows"]) #account-btn { width: auto; padding: 6px; }
 }
+
+/* Show commands (Network and Security pages) and the ⋯ menu on items */
+.item-cmds { display: none; margin: 10px 0 0; padding: 8px 10px; border-radius: 8px; background: var(--select); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-all; user-select: text; cursor: text; }
+#app.show-cmds .item-cmds { display: block; }
+.item-more { flex: none; width: 28px; height: 28px; font-size: 16px; line-height: 1; letter-spacing: 1px; }
+#show-cmds { white-space: nowrap; }
+@media (max-width: 760px) { #show-cmds { display: none !important; } }

@@ -39,6 +39,7 @@ import { initVpnPage } from "./components/vpn_view.js";
 import { initAlerts } from "./components/alerts.js";
 import { initHistory } from "./components/history_view.js";
 import { initSearch } from "./components/search.js";
+import { initShowCommands } from "./components/itemref.js";
 import { initInsights } from "./components/insights.js";
 import { initSecurityPages } from "./components/security_pages.js";
 import { initSetup } from "./components/setup.js";
@@ -381,6 +382,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   renderMenu();
   document.getElementById("btn-connect").addEventListener("click", toggleConnect);
   initRouterSwitcher(() => (isConnected() ? toggleConnect() : Promise.resolve()));
+  initShowCommands();
   initAccountMenu();
   document.getElementById("btn-new-window").addEventListener("click", () => api.newWindow().catch((e) => setStatus(errorText(e), true)));
   document.getElementById("btn-terminal").addEventListener("click", () => openTerminal());

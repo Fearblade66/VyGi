@@ -15,7 +15,8 @@ import { openActivityLog } from "./activity.js";
 import { openClaudeSetup } from "./claude_setup.js";
 import { wanInfo, wanProblem } from "../lib/wan.js";
 import { routerContext } from "../lib/routerctx.js";
-import { readInternet, internetCommands, describeInternet, PD_LENGTHS } from "../lib/wanconf.js";
+import { readInternet, internetCommands, describeInternet, PD_LENGTHS, ifacePath } from "../lib/wanconf.js";
+import { itemMenu, itemCommands } from "./itemref.js";
 import { readNetworks } from "../lib/netplan.js";
 import { protectStatus, protectOn, protectOff, smoothStatus, smoothOn, smoothOff, smoothBandwidth, adblockStatus, BLOCKLISTS } from "../lib/switches.js";
 import { failoverStatus, failoverLines, failoverOn, failoverOff, backupCandidates, parseLbStatus } from "../lib/failover.js";
@@ -162,6 +163,8 @@ export function initSettings() {
     });
 
     const conn = readInternet(cfg, wan);
+    const carrier = [conn.port, conn.vlan].filter(Boolean).join(".");
+    const wanPaths = [...new Set([wan, carrier].filter(Boolean))].map(ifacePath).concat([["system", "name-server"], ["protocols", "static", "route", "0.0.0.0/0"]]);
     return [
       section("Internet (WAN)",
         row("Connection", "How the router gets online: automatically from the modem (DHCP), with a username and password (PPPoE), or a fixed address. Some providers also need a VLAN tag.",
@@ -173,7 +176,8 @@ export function initSettings() {
         row("Gateway", "Your provider's router that all internet traffic goes through.", value(st.wanGateway || "–")),
         row("Dynamic DNS", "A name that follows your internet address when it changes (for the VPN and port forwards).",
           h("span.set-inline", value(w.ddns || "off"), button(w.ddns ? "Change…" : "Set up…", openDdns))),
-        row("Speed", "Measured from the router itself (Cloudflare). Uses a few GB of data on a fast line.", h("span.set-inline", speedVal, speedBtn))),
+        row("Speed", "Measured from the router itself (Cloudflare). Uses a few GB of data on a fast line.", h("span.set-inline", speedVal, speedBtn)),
+        itemCommands(cfg, wanPaths)),
       smartQueues(st),
       dnsSection(st),
       backupLine(st),
