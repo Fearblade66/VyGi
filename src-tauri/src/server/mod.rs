@@ -74,7 +74,7 @@ pub struct Config {
 }
 
 impl Config {
-    /// From environment variables (see the README's Docker section).
+    /// From environment variables (see docs/web-server.md).
     pub fn from_env() -> Result<Self, String> {
         let var = |k: &str| std::env::var(k).ok().filter(|v| !v.trim().is_empty());
         let tls = !matches!(
