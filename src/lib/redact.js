@@ -1,5 +1,5 @@
 // Removes passwords, keys and other secrets from a VyOS config tree before
-// it leaves VyGi (Report for Claude). Same rule as the server's MCP redaction.
+// it leaves VyGi (Diagnostics Report). Same rule as the server's MCP redaction.
 
 const SECRET = /password|private-key|preshared|secret|token/;
 

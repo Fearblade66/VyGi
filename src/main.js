@@ -41,7 +41,7 @@ import { initSetup } from "./components/setup.js";
 import { initUpdateGuard } from "./lib/updateguard.js";
 import { openApiAccess } from "./components/apiaccess.js";
 import { openPhoneApp } from "./components/phoneapp.js";
-import { openClaudeReport } from "./components/report.js";
+import { openDiagnosticsReport } from "./components/report.js";
 import { initDashboard } from "./components/dashboard.js";
 import { initSettings } from "./components/settings_view.js";
 import { initClients } from "./components/clients.js";
@@ -102,7 +102,7 @@ const MENU = [
       { label: "Revisions / Rollback", open: openRevisions },
       { label: "Backup / Restore", open: () => openBackup() },
       { label: "Check-up", open: () => runCheckup({ alwaysShow: true }) },
-      { label: "Report for Claude", open: () => openClaudeReport() },
+      { label: "Diagnostics Report", open: () => openDiagnosticsReport() },
       { label: "System Settings", open: () => openConfigTree(["system"], "System") },
       { label: "Services (config)", open: () => openConfigTree(["service"], "Services") },
       { label: "Full Configuration", open: () => openConfigTree([], "Configuration") },

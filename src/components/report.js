@@ -1,4 +1,4 @@
-// "Report for Claude": one Markdown file describing the router (health,
+// Diagnostics Report: one Markdown file describing the router (health,
 // networks, rules, security findings, recent alerts and the configuration
 // with secrets removed) to attach to a chat with Claude for a review.
 import { api, errorText } from "../lib/api.js";
@@ -16,10 +16,10 @@ import { formatBytes } from "../lib/dom.js";
 
 const safe = (p) => p.catch(() => null);
 
-export async function openClaudeReport() {
-  if (!session.info) return alertBox("Report for Claude", "Connect to a router first.");
-  const ok = await confirmBox("Report for Claude",
-    "Makes a file describing this router for Claude to review: health, networks, rules, security findings, recent alerts and the full configuration.\n\nPasswords, keys and secrets are removed. It still contains your network layout, addresses and device names, so only share it where you're comfortable.",
+export async function openDiagnosticsReport() {
+  if (!session.info) return alertBox("Diagnostics Report", "Connect to a router first.");
+  const ok = await confirmBox("Diagnostics Report",
+    "Makes a file describing this router to review, or to attach to a chat with Claude or a support request: health, networks, rules, security findings, recent alerts and the full configuration.\n\nPasswords, keys and secrets are removed. It still contains your network layout, addresses and device names, so only share it where you're comfortable.",
     "Make the report");
   if (!ok) return;
   setStatus("Building the report…");
@@ -93,6 +93,6 @@ export async function openClaudeReport() {
     if (where) setStatus(`Report saved: ${where}. Attach it in a chat with Claude.`);
     else setStatus("");
   } catch (e) {
-    alertBox("Report for Claude", errorText(e));
+    alertBox("Diagnostics Report", errorText(e));
   }
 }

@@ -234,7 +234,7 @@ VyGi can be used by Claude, so it can check your setup, explain problems ("why w
   - Claude gets tools to list routers, read status, devices, the configuration (passwords, keys and secrets redacted), run `show` commands (except ones that print secrets), ping, and read the 24/7 history (alerts, traffic, data per device, logs).
   - Changes always go through **Safe Mode**: they undo themselves after a few minutes unless Claude calls `confirm_changes` after checking the router still works (it then also saves them). The routers' logins, the HTTPS API, the Safe Mode settings, and settings that run commands as root or copy the config elsewhere (task scheduler, event handler, config sync, containers) can't be changed through the API, and whole sections can't be deleted. `get_config` hides passwords, keys (except public keys) and SNMP community names; `show` commands that print secrets (configuration, PKI, tech-support) are refused.
   - Tokens are stored only as fingerprints, can be revoked at any time (which also closes their router connections), and work only from programs, not browsers on other sites. Keep VyGi inside your home network.
-- **Any version:** Advanced → System → **Report for Claude** makes a Markdown file describing the router (health, interfaces, networks, rules, port forwards, security findings, recent alerts and the configuration with secrets removed) to attach in a chat with Claude.
+- **Any version:** Advanced → System → **Diagnostics Report** makes a Markdown file describing the router (health, interfaces, networks, rules, port forwards, security findings, recent alerts and the configuration with secrets removed) to attach in a chat with Claude.
 
 ## 3. Use it
 
