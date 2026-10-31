@@ -171,15 +171,94 @@ pub async fn ids_status(state: Win) -> AppResult<Value> {
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn ids_update_rules(state: Win) -> AppResult<String> {
     let conn = state.conn().await?;
-    let cmd = format!("sudo podman exec {NAME} suricata-update --no-test -q 2>&1 | tail -3; sudo podman restart {NAME} >/dev/null 2>&1 && echo restarted");
+    // first: can the router look names up at all? (Suricata uses the router's network and DNS)
+    let cmd = format!(
+        "getent hosts rules.emergingthreats.net >/dev/null 2>&1 || {{ echo VYGI_NO_DNS; exit 0; }}; \
+         out=$(sudo -n podman exec {NAME} suricata-update --no-test 2>&1); rc=$?; \
+         printf '%s\\n' \"$out\" | grep -v '^ *$' | tail -4; echo \"VYGI_EXIT:$rc\"; \
+         [ $rc -eq 0 ] && sudo -n podman restart {NAME} >/dev/null 2>&1 && echo VYGI_RESTARTED"
+    );
     let out = conn.ssh.exec(&cmd, Duration::from_secs(600)).await?;
-    if out.stdout.contains("restarted") {
-        Ok(out.stdout.replace("restarted", "").trim().to_string())
-    } else {
-        Err(crate::error::AppError::Api(format!(
-            "Couldn't update the rules: {}",
-            [out.stdout.trim(), out.stderr.trim()].join(" ").trim()
-        )))
+    update_result(&out.stdout, &out.stderr)
+}
+
+/// What a rules update printed, as the result or a plain error. Pure.
+fn update_result(stdout: &str, stderr: &str) -> AppResult<String> {
+    let err = |m: String| Err(crate::error::AppError::Api(m));
+    if stdout.contains("VYGI_NO_DNS") {
+        return err("The router can't look up names on the internet, so it can't download the rules. Give it a DNS server (Settings > Internet > DNS servers, or on the router: set system name-server and your gateway's address) and check it has internet, then press Update rules again.".into());
+    }
+    let lines: Vec<&str> = stdout.lines().filter(|l| !l.starts_with("VYGI_")).collect();
+    let said = lines.join(" ").trim().to_string();
+    if stdout.contains("VYGI_RESTARTED") {
+        return Ok(said);
+    }
+    let code = stdout
+        .lines()
+        .find_map(|l| l.strip_prefix("VYGI_EXIT:"))
+        .unwrap_or("?")
+        .trim();
+    if code == "0" {
+        return err("The rules were downloaded, but Suricata didn't restart. Check Security > Intrusion Prevention, or restart it from there.".into());
+    }
+    let low = said.to_lowercase();
+    if low.contains("no such container") || low.contains("no container with") {
+        return err("Suricata isn't running on the router, so there's nothing to update. Turn intrusion prevention on first.".into());
+    }
+    if low.contains("password is required") || stderr.contains("password is required") {
+        return err("VyGi's login on the router may not use sudo, which the update needs.".into());
+    }
+    if low.contains("failed to fetch")
+        || low.contains("name resolution")
+        || low.contains("timed out")
+        || low.contains("connection")
+    {
+        return err(format!(
+            "The router couldn't download the rules (no internet, or something blocks it): {said}"
+        ));
+    }
+    err(format!(
+        "Couldn't update the rules (suricata-update exit {code}): {}",
+        if said.is_empty() {
+            stderr.trim()
+        } else {
+            said.as_str()
+        }
+    ))
+}
+
+#[cfg(test)]
+mod update_tests {
+    use super::update_result;
+
+    #[test]
+    fn rules_update_explains_itself() {
+        assert!(update_result("VYGI_NO_DNS\n", "")
+            .unwrap_err()
+            .to_string()
+            .contains("DNS server"));
+        assert_eq!(
+            update_result("Done.\nVYGI_EXIT:0\nVYGI_RESTARTED\n", "").unwrap(),
+            "Done."
+        );
+        let e = update_result(
+            "Error: no container with name or ID \"vygi-ids\" found\nVYGI_EXIT:125\n",
+            "",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("isn't running"), "{e}");
+        let e = update_result(
+            "Failed to fetch https://rules...: timed out\nVYGI_EXIT:1\n",
+            "",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("couldn't download"), "{e}");
+        let e = update_result("something odd\nVYGI_EXIT:2\n", "")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("exit 2") && e.contains("something odd"), "{e}");
     }
 }
 

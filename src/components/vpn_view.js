@@ -13,7 +13,7 @@ import { wanNotice } from "./wan_notice.js";
 import { parseWgDump } from "./vpn.js";
 import { countryName } from "../lib/sites.js";
 import { flag } from "../lib/activity.js";
-import { quickSetup, addPeer, removePeer } from "./wireguard.js";
+import { quickSetup, addPeer, removePeer, showPeerConfig } from "./wireguard.js";
 import { vpnServers } from "../lib/vpnclient.js";
 import { vpnClientSection } from "./vpnclient_view.js";
 
@@ -150,7 +150,7 @@ export function initVpnPage() {
         h("dt", "From"), h("dd", ip ? `${ip}${country ? ` (${country})` : ""}` : "–"),
         h("dt", "Data"), h("dd", p.rx || p.tx ? `↓ ${formatBytes(p.tx || 0)} · ↑ ${formatBytes(p.rx || 0)}` : "–")),
       h("div.card-actions",
-        h("button", { title: "The private key isn't stored anywhere, so a lost config can't be shown again: remove the device and add it again.", on: { click: () => alertBox("Show config", `VyGi never keeps a device's private key, so ${p.name}'s config can't be shown again.\n\nIf you lost it, remove ${p.name} and add the device again: you'll get a new QR code.`) } }, "Lost the config?"),
+        h("button", { title: "The config file and QR code for the WireGuard app", on: { click: () => showPeerConfig({ iface: p.iface, name: p.name }, render) } }, "Show config"),
         h("span.grow"),
         h("button.danger", { on: { click: () => removePeer({ iface: p.iface, name: p.name }, render) } }, icon("trash", 14), "Remove")));
     return el;

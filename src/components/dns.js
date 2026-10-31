@@ -33,7 +33,7 @@ export function openDns() {
     cache: h("input", { type: "text" }),
     dnssec: h("select", ["", "off", "process-no-validate", "process", "log-fail", "validate"].map((o) => h("option", { value: o }, o || "(default)"))),
   };
-  const row = (label, el, hint) => [h("label", label), el, hint ? h("span") : null, hint ? h("span.hint", hint) : null];
+  const row = (label, el, hint) => (hint ? [h("label", label), el, h("span"), h("span.hint", hint)] : [h("label", label), el]);
   form.append(
     ...row("Router's DNS servers", inputs.system, "What the router itself uses (system name-server). Space-separated."),
     h("div.full", { style: { borderTop: "1px solid var(--border)", margin: "6px 0" } }),

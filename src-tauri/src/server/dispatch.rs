@@ -145,6 +145,22 @@ pub async fn call(
         }
         "speed_test" => json(sysinfo::speed_test(w()).await),
 
+        "vpn_config_save" => json(
+            wireguard::vpn_config_save(
+                st(),
+                w(),
+                arg(&a, "iface")?,
+                arg(&a, "name")?,
+                arg(&a, "text")?,
+            )
+            .await,
+        ),
+        "vpn_config_get" => {
+            json(wireguard::vpn_config_get(st(), w(), arg(&a, "iface")?, arg(&a, "name")?).await)
+        }
+        "vpn_config_delete" => {
+            json(wireguard::vpn_config_delete(st(), w(), arg(&a, "iface")?, arg(&a, "name")?).await)
+        }
         "wireguard_keypair" => json(wireguard::wireguard_keypair()),
         "wireguard_psk" => json(wireguard::wireguard_psk()),
         "site_icons" => json(siteicons::site_icons(st(), arg(&a, "domains")?).await),

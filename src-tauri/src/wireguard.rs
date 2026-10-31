@@ -78,3 +78,93 @@ mod tests {
         );
     }
 }
+
+// ---- the devices' configs, so they can be shown again
+// Kept in VyGi's own data folder (only VyGi's user can read it), per router:
+// they hold the device's private key, and VyGi already holds the router's keys.
+
+fn config_path(
+    app: &crate::state::AppState,
+    profile_id: &str,
+    iface: &str,
+    name: &str,
+) -> AppResult<std::path::PathBuf> {
+    let ok_iface = iface.len() <= 12
+        && iface.starts_with("wg")
+        && iface[2..].chars().all(|c| c.is_ascii_digit());
+    let ok_name = !name.is_empty()
+        && name.len() <= 40
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "_.-".contains(c))
+        && !name.starts_with('.');
+    if !ok_iface || !ok_name {
+        return Err(AppError::Invalid("bad interface or device name".into()));
+    }
+    let router: String = profile_id
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || ".-_@".contains(c) {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let dir = app.dirs.data.join("vpn-configs").join(router);
+    std::fs::create_dir_all(&dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+    }
+    Ok(dir.join(format!("{iface}-{name}.conf")))
+}
+
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn vpn_config_save(
+    app: crate::state::St,
+    state: crate::state::Win,
+    iface: String,
+    name: String,
+    text: String,
+) -> AppResult<()> {
+    if text.len() > 8192 || !text.contains("[Interface]") {
+        return Err(AppError::Invalid("that isn't a WireGuard config".into()));
+    }
+    let file = config_path(&app, &state.conn().await?.profile_id, &iface, &name)?;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    use std::io::Write;
+    opts.open(&file)?.write_all(text.as_bytes())?;
+    Ok(())
+}
+
+/// The saved config, or None (a device added before VyGi kept them).
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn vpn_config_get(
+    app: crate::state::St,
+    state: crate::state::Win,
+    iface: String,
+    name: String,
+) -> AppResult<Option<String>> {
+    let file = config_path(&app, &state.conn().await?.profile_id, &iface, &name)?;
+    Ok(std::fs::read_to_string(file).ok())
+}
+
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn vpn_config_delete(
+    app: crate::state::St,
+    state: crate::state::Win,
+    iface: String,
+    name: String,
+) -> AppResult<()> {
+    let file = config_path(&app, &state.conn().await?.profile_id, &iface, &name)?;
+    let _ = std::fs::remove_file(file);
+    Ok(())
+}

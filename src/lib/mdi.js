@@ -84,7 +84,7 @@ function renderStrip() {
     w.close();
   } } }, "✕")));
   const lay = layout();
-  strip.replaceChildren(
+  strip.replaceChildren(...[
     ...tabs,
     h(`button.ws-tab-new${ws.classList.contains("launcher-open") ? ".on" : ""}`, { title: "Open another tool", on: { click: () => {
       ws.classList.add("launcher-open");
@@ -95,7 +95,7 @@ function renderStrip() {
     h("span.seg.ws-layout",
       h(`button${lay === "tabs" ? ".on" : ""}`, { title: "One tool at a time, full size", on: { click: () => setLayout("tabs") } }, "Tabs"),
       h(`button${lay === "float" ? ".on" : ""}`, { title: "Floating windows you can arrange side by side (Winbox style)", on: { click: () => setLayout("float") } }, "Windows")),
-  );
+  ].filter(Boolean));
 }
 
 /** Keeps windows reachable when the app window gets smaller. */

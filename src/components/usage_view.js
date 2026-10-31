@@ -3,7 +3,7 @@
 // the most in that period. Click a device to see only its days.
 import { api, errorText } from "../lib/api.js";
 import { h, clear, formatBytes } from "../lib/dom.js";
-import { niceMax } from "../lib/chart.js";
+import { niceMax, fitWidth } from "../lib/chart.js";
 
 const PERIODS = [
   { label: "7 days", days: 7 },
@@ -31,8 +31,7 @@ function el(tag, attrs, text) {
 }
 
 /** Bars per day: [{ day: "YYYY-MM-DD", down, up }] over `days` days ending today. */
-export function usageChart(list, days) {
-  const W = 900;
+export function usageChart(list, days, W = 900) {
   const H = 200;
   const PAD = { l: 64, r: 8, t: 8, b: 24 };
   const byDay = new Map(list.map((d) => [d.day, d]));
@@ -46,7 +45,7 @@ export function usageChart(list, days) {
   const max = niceMax(Math.max(1e6, ...all.map((d) => d.down + d.up)));
   const bw = (W - PAD.l - PAD.r) / all.length;
   const y = (v) => PAD.t + (1 - v / max) * (H - PAD.t - PAD.b);
-  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, class: "insight-chart usage-chart", preserveAspectRatio: "none" });
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, class: "insight-chart usage-chart", width: W, height: H });
   for (let i = 0; i <= 4; i++) {
     const v = (max * i) / 4;
     svg.append(el("line", { x1: PAD.l, x2: W - PAD.r, y1: y(v), y2: y(v), class: "grid" }));
@@ -111,7 +110,7 @@ export function usageCard(names) {
     h("td.num", h("div.share", h("span", { style: { width: `${total ? Math.round(((d.down + d.up) / total) * 100) : 0}%` } }), total ? `${Math.round(((d.down + d.up) / total) * 100)}%` : ""))));
     clear(body).append(
       selected ? h("div.hint", { style: { marginBottom: "6px" } }, `Only ${selected.label}. `, h("button.link", { on: { click: () => { selected = null; load(); } } }, "All devices")) : "",
-      r.days.length ? usageChart(r.days, period.days) : h("div.empty", "Nothing recorded in this period yet."),
+      r.days.length ? fitWidth((w) => usageChart(r.days, period.days, w)) : h("div.empty", "Nothing recorded in this period yet."),
       r.devices.length
         ? h("table.grid.insight-devices", { style: { marginTop: "12px" } },
           h("thead", h("tr", h("th", `Devices, last ${period.label}`), h("th.num", "Download"), h("th.num", "Upload"), h("th.num", "Share"))),

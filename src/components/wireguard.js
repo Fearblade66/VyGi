@@ -140,7 +140,7 @@ export async function showClientConfig(peerName, text) {
   const body = h(
     "div",
     { style: { width: "600px" } },
-    h("div.warn-box", "This config contains the device's private key. It is NOT stored anywhere — save it or scan the QR code now."),
+    h("div.warn-box", "This config holds the device's private key: anyone with it can join your VPN as this device. VyGi keeps a copy in its private data folder (Show config on the VPN page); remove the device to make it stop working."),
     h("div", { style: { display: "flex", gap: "10px", alignItems: "flex-start" } },
       h("div", { style: { textAlign: "center" } }, canvas, h("div.hint", "Scan with the WireGuard app")),
       h("div", { style: { flex: 1 } }, area)),
@@ -259,6 +259,7 @@ export async function quickSetup(onDone) {
     await applyChanges(cmds, `WireGuard ${iface}`);
     const allowed = v.mode === "full" ? FULL_TUNNEL : [sc.network, ...v.lans.split(/[\s,]+/).filter(Boolean)].join(", ");
     result = {
+      iface,
       client,
       text: buildClientConfig({ privateKey: cli.privateKey, address: `${cc.ip}/32`, dns: v.dns.trim(), serverPublicKey: srv.publicKey, psk, endpoint: `${ep.includes(":") && !ep.startsWith("[") ? `[${ep}]` : ep}:${port}`, allowedIps: allowed }),
     };
@@ -269,6 +270,7 @@ export async function quickSetup(onDone) {
   });
 
   if (result) {
+    await api.vpnConfigSave(result.iface, result.client, result.text).catch(() => {});
     if (onDone) onDone();
     await showClientConfig(result.client, result.text);
   }
@@ -343,6 +345,7 @@ export async function addPeer(onDone, iface0 = null) {
 
     const allowed = v.mode === "full" ? FULL_TUNNEL : [addr?.network, ...v.lans.split(/[\s,]+/)].filter(Boolean).join(", ");
     result = {
+      iface,
       name,
       text: buildClientConfig({ privateKey: cli.privateKey, address: `${cc.ip}/32`, dns: v.dns.trim(), serverPublicKey: pub, psk, endpoint: `${ep.includes(":") && !ep.startsWith("[") ? `[${ep}]` : ep}:${cfg.port || 51820}`, allowedIps: allowed }),
     };
@@ -358,6 +361,7 @@ export async function addPeer(onDone, iface0 = null) {
   });
 
   if (result) {
+    await api.vpnConfigSave(result.iface, result.name, result.text).catch(() => {});
     if (onDone) onDone();
     await showClientConfig(result.name, result.text);
   }
@@ -369,8 +373,61 @@ export async function removePeer(row, onDone) {
   if (!(await confirmBox("Remove peer", `Remove ${row.name} from ${row.iface}? That device will no longer be able to connect.`, "Remove"))) return;
   try {
     await applyChanges([{ op: "delete", path: ["interfaces", "wireguard", row.iface, "peer", row.name] }], `remove peer ${row.name}`);
+    await api.vpnConfigDelete(row.iface, row.name).catch(() => {});
     if (onDone) onDone();
   } catch (e) {
     alertBox("Apply failed", errorText(e));
   }
+}
+
+/**
+ * A device's config again: the copy VyGi kept, or (a device added before VyGi
+ * kept them) a new one with a new key; the old config then stops working.
+ */
+export async function showPeerConfig({ iface, name }, onDone) {
+  const saved = await api.vpnConfigGet(iface, name).catch(() => null);
+  if (saved) return showClientConfig(name, saved);
+  let s;
+  let dump = [];
+  try {
+    s = await snapshot();
+    dump = (await api.wireguardDump()).split("\n").map((l) => l.split("\t")).filter((f) => f.length === 5);
+  } catch (e) {
+    return alertBox("Show config", errorText(e));
+  }
+  const cfg = s.wg[iface] || {};
+  const peerCfg = cfg.peer?.[name];
+  const pub = Object.fromEntries(dump.map((f) => [f[0], f[2]]))[iface];
+  const addr = toArray(cfg.address).map(parseIpv4Cidr).find(Boolean);
+  const ip = toArray(peerCfg?.["allowed-ips"]).map((a) => a.split("/")[0])[0];
+  if (!peerCfg || !pub || !ip) return alertBox("Show config", `Couldn't read ${name} on ${iface}.`);
+  let result = null;
+  await formDialog(`New config for ${name}`, [
+    { name: "endpoint", label: "Public address", value: s.endpoint || session.info?.profile.host || "", hint: endpointHint(s) },
+    { name: "mode", label: "Route through VPN", type: "select", value: "full", options: [
+      { value: "full", label: "All traffic (full tunnel)" },
+      { value: "split", label: "Only VPN + home LAN (split tunnel)" },
+    ] },
+    { name: "lans", label: "LAN subnets", value: s.lans.join(", ") },
+    { name: "dns", label: "Client DNS", value: addr?.ip || "", hint: "Usually the router's VPN address. Empty = device keeps its own DNS." },
+  ], async (v) => {
+    const ep = v.endpoint.trim();
+    if (!(await checkEndpoint(ep))) return false;
+    const cli = await api.wireguardKeypair();
+    const peer = ["interfaces", "wireguard", iface, "peer", name];
+    const cmds = [{ op: "set", path: [...peer, "public-key"], value: cli.publicKey }];
+    const psk = peerCfg["preshared-key"] ? await api.wireguardPsk() : null;
+    if (psk) cmds.push({ op: "set", path: [...peer, "preshared-key"], value: psk });
+    await applyChanges(cmds, `new WireGuard key for ${name}`);
+    const allowed = v.mode === "full" ? FULL_TUNNEL : [addr?.network, ...v.lans.split(/[\s,]+/)].filter(Boolean).join(", ");
+    result = buildClientConfig({ privateKey: cli.privateKey, address: `${ip}/32`, dns: v.dns.trim(), serverPublicKey: pub, psk, endpoint: `${ep.includes(":") && !ep.startsWith("[") ? `[${ep}]` : ep}:${cfg.port || 51820}`, allowedIps: allowed });
+    return true;
+  }, {
+    okLabel: "Make a new config",
+    intro: `VyGi didn't keep ${name}'s config (it was added before VyGi did). This gives ${name} a new key and shows its new config; the old one stops working, so set the device up again with the new one.`,
+  });
+  if (!result) return;
+  await api.vpnConfigSave(iface, name, result).catch(() => {});
+  if (onDone) onDone();
+  await showClientConfig(name, result);
 }

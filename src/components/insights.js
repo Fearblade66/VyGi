@@ -6,7 +6,7 @@ import { h, clear, formatBits, formatBytes } from "../lib/dom.js";
 import { isConnected, onSessionChange } from "../lib/session.js";
 import { registerView, welcome, loadingPage } from "../lib/views.js";
 import { icon } from "../lib/icons.js";
-import { niceMax, splitAtGaps } from "../lib/chart.js";
+import { niceMax, splitAtGaps, fitWidth } from "../lib/chart.js";
 import { collectClients } from "../lib/netdata.js";
 import { makeTable, filterBox } from "../lib/table.js";
 import { applyChanges } from "../lib/session.js";
@@ -25,9 +25,8 @@ const LEVELS = [
   { label: "errors only", p: 3 },
 ];
 
-/** Static line chart of [[t, down, up], ...] as SVG. */
-function trafficChart(points) {
-  const W = 900;
+/** Static line chart of [[t, down, up], ...] as SVG, W pixels wide. */
+function trafficChart(points, W = 900) {
   const H = 220;
   const PAD = { l: 64, r: 10, t: 10, b: 26 };
   if (points.length < 2) return h("div.empty", "Not enough data yet. The server records a point every minute.");
@@ -49,7 +48,7 @@ function trafficChart(points) {
     if (text != null) n.textContent = text;
     return n;
   };
-  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, class: "insight-chart", preserveAspectRatio: "none" });
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, class: "insight-chart", width: W, height: H });
   for (let i = 0; i <= 4; i++) {
     const v = (max * i) / 4;
     svg.append(el("line", { x1: PAD.l, x2: W - PAD.r, y1: y(v), y2: y(v), class: "grid" }));
@@ -175,7 +174,7 @@ export function initInsights() {
       h("span.grow"),
       h("span.seg", RANGES.map((r) => h(`button${r === range ? ".on" : ""}`, { on: { click: () => { range = r; render(); } } }, r.label))));
     clear(root).append(h("div.page", head,
-      h("div.card", h("h3", h("span", `Internet traffic, last ${range.label}`)), trafficChart(traffic)),
+      h("div.card", h("h3", h("span", `Internet traffic, last ${range.label}`)), fitWidth((w) => trafficChart(traffic, w))),
       usageCard(names),
       h("div.card.flows-card", h("h3", h("span", `Flows, last ${range.label}`)),
         h("div.hint", "Connections your devices made (recorded when they end; lookups to the router itself are left out) and attempts a firewall rule blocked."),

@@ -150,3 +150,21 @@ export function splitAtGaps(points) {
   if (run.length) runs.push(run);
   return runs;
 }
+
+/**
+ * A chart drawn at the width it's shown at (redrawn when that changes), so
+ * its text keeps its shape instead of being stretched with the drawing.
+ * render(width) returns the chart's element.
+ */
+export function fitWidth(render) {
+  const box = document.createElement("div");
+  let drawn = 0;
+  const draw = () => {
+    const w = Math.round(box.clientWidth);
+    if (!w || Math.abs(w - drawn) < 4) return;
+    drawn = w;
+    box.replaceChildren(render(w));
+  };
+  new ResizeObserver(draw).observe(box);
+  return box;
+}
