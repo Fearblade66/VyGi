@@ -113,9 +113,10 @@ pub enum StreamKind {
 
 fn stream_command(kind: &StreamKind) -> AppResult<String> {
     Ok(match kind {
+        // exit code 77: the login may not use sudo (the UI says so; any other end is a dropped connection)
         StreamKind::Syslog { lines } => {
             format!(
-                "sudo -n journalctl -f -o json --no-pager -n {}",
+                "sudo -n true 2>/dev/null || exit 77; sudo -n journalctl -f -o json --no-pager -n {}",
                 lines.min(&5000)
             )
         }

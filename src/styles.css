@@ -925,3 +925,6 @@ body.logged-out #app { visibility: hidden; }
 .firstrun-step ul { margin: 4px 0 0; padding-left: 18px; line-height: 1.5; }
 .firstrun-step p.hint { margin: 4px 0 6px; }
 .firstrun-form { max-width: 360px; margin-bottom: 6px; }
+
+/* Advanced windows: where a dragged window will snap (half or whole area) */
+#mdi-snap { position: absolute; z-index: 99990; pointer-events: none; border: 2px solid var(--accent, #2b6cb0); border-radius: 10px; background: color-mix(in srgb, var(--accent, #2b6cb0) 12%, transparent); box-sizing: border-box; transition: left 0.08s, width 0.08s; }

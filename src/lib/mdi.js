@@ -103,8 +103,8 @@ function keepInside() {
   const ws = workspace();
   if (!ws || !ws.clientWidth || outer().hidden || outer().classList.contains("tabbed")) return;
   for (const el of ws.querySelectorAll(".mdi-win:not(.maximized)")) {
-    const w = Math.min(el.offsetWidth, ws.clientWidth - 10);
-    const hgt = Math.min(el.offsetHeight, ws.clientHeight - 10);
+    const w = Math.min(el.offsetWidth, ws.clientWidth);
+    const hgt = Math.min(el.offsetHeight, ws.clientHeight);
     if (w !== el.offsetWidth) el.style.width = `${w}px`;
     if (hgt !== el.offsetHeight) el.style.height = `${hgt}px`;
     el.style.left = `${Math.max(0, Math.min(el.offsetLeft, ws.clientWidth - w))}px`;
@@ -204,16 +204,53 @@ export function openWindow({ key, title, width = 640, height = 380 }) {
   btnMax.addEventListener("click", toggleMax);
   bar.addEventListener("dblclick", toggleMax);
 
-  drag(bar, (dx, dy, start) => {
+  // moving: stays inside the area, clings to its edges and to other windows,
+  // and snaps to a half (left/right edge) or the whole area (top edge)
+  let zone = null;
+  drag(bar, (dx, dy, start, ev) => {
     if (el.classList.contains("maximized")) return;
-    const maxX = ws.clientWidth - 40;
-    const maxY = ws.clientHeight - 22;
-    el.style.left = `${Math.max(-el.offsetWidth + 60, Math.min(maxX, start.left + dx))}px`;
-    el.style.top = `${Math.max(0, Math.min(maxY, start.top + dy))}px`;
+    const W = ws.clientWidth;
+    const H = ws.clientHeight;
+    // a snapped window gets its own size back as soon as it's moved
+    if (el.dataset.snapped && !start.unsnapped) {
+      start.unsnapped = true;
+      const [w0, h0] = el.dataset.snapped.split("x").map(Number);
+      delete el.dataset.snapped;
+      start.left += (start.width - w0) * ((start.x - ws.getBoundingClientRect().left - start.left) / start.width);
+      start.width = w0;
+      start.height = h0;
+      el.style.width = `${w0}px`;
+      el.style.height = `${h0}px`;
+      fireResize();
+    }
+    const w = Math.min(el.offsetWidth, W);
+    const hgt = Math.min(el.offsetHeight, H);
+    const [left, top] = magnet(start.left + dx, start.top + dy, w, hgt, W, H, el);
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+    const r = ws.getBoundingClientRect();
+    const px = ev.clientX - r.left;
+    const py = ev.clientY - r.top;
+    zone = py <= EDGE ? "max" : px <= EDGE ? "left" : px >= W - EDGE ? "right" : null;
+    snapPreview(zone, W, H);
+  }, () => {
+    snapPreview(null);
+    if (!zone) return;
+    if (!el.dataset.snapped) el.dataset.snapped = `${el.offsetWidth}x${el.offsetHeight}`;
+    const W = ws.clientWidth;
+    const H = ws.clientHeight;
+    const half = Math.round(W / 2);
+    Object.assign(el.style, zone === "max"
+      ? { left: "0px", top: "0px", width: `${W}px`, height: `${H}px` }
+      : { left: zone === "left" ? "0px" : `${W - half}px`, top: "0px", width: `${half}px`, height: `${H}px` });
+    zone = null;
+    fireResize();
   });
+  // resizing: not past the area's right and bottom edges
   drag(grip, (dx, dy, start) => {
-    el.style.width = `${Math.max(260, start.width + dx)}px`;
-    el.style.height = `${Math.max(140, start.height + dy)}px`;
+    delete el.dataset.snapped;
+    el.style.width = `${Math.max(260, Math.min(ws.clientWidth - el.offsetLeft, start.width + dx))}px`;
+    el.style.height = `${Math.max(140, Math.min(ws.clientHeight - el.offsetTop, start.height + dy))}px`;
     fireResize();
   });
 
@@ -223,20 +260,66 @@ export function openWindow({ key, title, width = 640, height = 380 }) {
   return { ...win, isNew: true };
 }
 
-function drag(handle, move) {
+/** Pointer drag on `handle`: move(dx, dy, start, event) while moving, end() when let go. */
+function drag(handle, move, end = () => {}) {
   handle.addEventListener("mousedown", (e) => {
     if (e.button !== 0 || e.target.tagName === "BUTTON") return;
     e.preventDefault();
     const el = handle.parentElement;
     const start = { x: e.clientX, y: e.clientY, left: el.offsetLeft, top: el.offsetTop, width: el.offsetWidth, height: el.offsetHeight };
-    const onMove = (ev) => move(ev.clientX - start.x, ev.clientY - start.y, start);
+    const onMove = (ev) => move(ev.clientX - start.x, ev.clientY - start.y, start, ev);
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      end();
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   });
+}
+
+/** How close (px) a window edge must come to cling to an edge. */
+const SNAP = 14;
+/** How close (px) the pointer must come to an edge to snap to a half or the whole area. */
+const EDGE = 6;
+
+/**
+ * Where a window of w×h dragged to (left, top) ends up in a W×H area: always
+ * fully inside, clinging to the area's edges and to other windows' edges. Pure
+ * apart from reading the other windows' positions.
+ */
+function magnet(left, top, w, h, W, H, self) {
+  const others = [...workspace().querySelectorAll(".mdi-win")].filter((o) => o !== self && o.offsetParent)
+    .map((o) => ({ l: o.offsetLeft, t: o.offsetTop, r: o.offsetLeft + o.offsetWidth, b: o.offsetTop + o.offsetHeight }));
+  const xs = [0, W, ...others.flatMap((o) => [o.l, o.r])];
+  const ys = [0, H, ...others.flatMap((o) => [o.t, o.b])];
+  const cling = (pos, size, lines) => {
+    for (const x of lines) {
+      if (Math.abs(pos - x) < SNAP) return x; // near edge to a line
+      if (Math.abs(pos + size - x) < SNAP) return x - size; // far edge to a line
+    }
+    return pos;
+  };
+  left = cling(left, w, xs);
+  top = cling(top, h, ys);
+  return [Math.max(0, Math.min(W - w, left)), Math.max(0, Math.min(H - h, top))];
+}
+
+/** The outline where a window will snap (null: none). */
+function snapPreview(zone, W, H) {
+  let p = document.getElementById("mdi-snap");
+  if (!zone) {
+    p?.remove();
+    return;
+  }
+  if (!p) {
+    p = h("div#mdi-snap");
+    workspace().appendChild(p);
+  }
+  const half = Math.round(W / 2);
+  Object.assign(p.style, zone === "max"
+    ? { left: "0px", top: "0px", width: `${W}px`, height: `${H}px` }
+    : { left: zone === "left" ? "0px" : `${W - half}px`, top: "0px", width: `${half}px`, height: `${H}px` });
 }
 
 export function closeAllWindows() {

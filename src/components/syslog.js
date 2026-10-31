@@ -80,7 +80,9 @@ export function openSyslog() {
         lines.forEach(addLine);
         queueRender();
       } else if (msg.event === "closed") {
-        setStatus("Log stream ended (needs sudo rights for journalctl on the router).", msg.data !== 0);
+        setStatus(msg.data === 77
+          ? "The log can't be read: VyGi's login on the router may not use sudo."
+          : "The log stopped (the connection dropped, or the router or its SSH restarted). Close and reopen Log to continue.", true);
       }
     })
     .then((sid) => (id = sid))
