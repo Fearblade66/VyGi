@@ -19,6 +19,7 @@ import { openClient } from "./clients.js";
 import { openConfigTree } from "./config_tree.js";
 import { saveNow } from "../lib/session.js";
 import { runCheckup } from "./checkup.js";
+import { openMakeRouter } from "./makerouter.js";
 import { openDiagnosticsReport } from "./report.js";
 import { showConnectDialog } from "./connect.js";
 import { switchToRouter, disconnectRouter, profileId } from "./switcher.js";
@@ -95,6 +96,7 @@ export function initSearch(tools) {
       { label: "Add a VPN device", sub: "Network → VPN", words: "add new vpn device phone wireguard peer", when: on, go: pageThen("vpn", "Add device", "Set up VPN") },
       { label: "Add a network", sub: "Network → Local Networks", words: "add new network vlan guest iot", when: on, go: pageThen("networks", "New network") },
       { label: "Add a traffic rule", sub: "Security → Traffic Rules", words: "add new traffic rule block schedule", when: on, go: pageThen("rules", "New rule") },
+      { label: "Make it a router", sub: "internet, home network, DHCP, NAT and firewall in one go", words: "make router setup internet home network nat dhcp firewall basics wan lan", when: on, go: () => openMakeRouter() },
       { label: "Set up this router", sub: "checklist of the basics", words: "setup set up wizard checklist basics getting started first new router", when: on, go: () => openSetup() },
       { label: "Diagnostics Report", sub: "everything about the router, for Claude or support", words: "diagnostics report claude support help", when: on, go: () => openDiagnosticsReport() },
       { label: "Add router", sub: "connect to another VyOS router", words: "add new router connect", go: () => showConnectDialog({ blank: true }) },

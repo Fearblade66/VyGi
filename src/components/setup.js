@@ -15,6 +15,7 @@ import { readInternet, describeInternet } from "../lib/wanconf.js";
 import { readNetworks } from "../lib/netplan.js";
 import { loadFindings, changePassword } from "./security.js";
 import { openIdentityClock } from "./resources.js";
+import { openMakeRouter } from "./makerouter.js";
 
 const seenKey = () => `vygi.setup.${session.info?.profileId || "?"}`;
 // Raised when the checklist gains items, so it opens once more on routers
@@ -206,7 +207,11 @@ async function refresh() {
   }
   if (!el.isConnected) return;
   const todo = list.filter((c) => c.ok !== true).length;
+  const basics = list.slice(0, 2).some((c) => c.ok === false); // no internet or no home network
   clear(el).append(
+    basics ? h("div.setup-make",
+      h("div.grow", h("b", "Make it a router"), h("div.hint", "Set up the internet, a home network, DHCP, NAT and a basic firewall together, in one change.")),
+      h("button.primary", { on: { click: () => openMakeRouter().then(refresh) } }, "Make it a router…")) : "",
     h("p.hint", { style: { marginTop: 0 } }, todo ? `${todo} thing${todo === 1 ? "" : "s"} to look at. Every change goes through Safe Mode.` : "All set."),
     h("div.setup-list", list.map((c) => h("div.setup-item",
       h(`span.setup-mark.${c.ok === true ? "ok" : c.ok === "warn" ? "warn" : "bad"}`, c.ok === true ? "✓" : "!"),

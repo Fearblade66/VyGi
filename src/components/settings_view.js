@@ -3,6 +3,7 @@
 // traffic rules, clients) stays there. Settings VyGi didn't make (set up by
 // hand in Advanced or the CLI) are shown but left alone; every change goes
 // through applyChanges, so conflicts are checked first.
+import { openMakeRouter } from "./makerouter.js";
 import { api, errorText } from "../lib/api.js";
 import { h, clear, toast, formatBits } from "../lib/dom.js";
 import { formDialog, confirmBox, alertBox } from "../lib/dialog.js";
@@ -165,6 +166,8 @@ export function initSettings() {
       section("Internet (WAN)",
         row("Connection", "How the router gets online: automatically from the modem (DHCP), with a username and password (PPPoE), or a fixed address. Some providers also need a VLAN tag.",
           conn.manual ? handMade("Connection") : h("span.set-inline", value(describeInternet(conn)), button("Change…", () => changeConnection(st, conn)))),
+        row("Make it a router", "Internet, a home network that hands out addresses, the router as DNS server, NAT and a basic firewall, set up together in one change.",
+          button("Make it a router…", () => openMakeRouter().then((ok) => ok && render()))),
         row("Internet address", dhcp ? "Given by your provider (DHCP)." : "Set by hand.", value(w.wanIp || "none"),
           problem ? h("div.warn-box", { style: { marginTop: "6px" } }, problem.text) : null),
         row("Gateway", "Your provider's router that all internet traffic goes through.", value(st.wanGateway || "–")),

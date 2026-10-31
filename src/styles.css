@@ -882,6 +882,7 @@ table.grid th.sorted.desc::after { content: " ▼"; }
 /* Set up this router */
 .setup-list { display: flex; flex-direction: column; gap: 8px; }
 .setup-item { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }
+.setup-make { display: flex; gap: 12px; align-items: center; padding: 12px 14px; margin-bottom: 12px; border: 1px solid var(--accent, #2b6cb0); border-radius: 10px; background: var(--select); }
 .setup-item .grow { flex: 1; min-width: 0; }
 .setup-item button { flex: none; }
 .setup-mark { flex: none; width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; }

@@ -54,8 +54,9 @@ function applyTx(tx) {
  * commands: [{op: "set"|"delete", path: [...], value?}]
  * Throws on failure (the caller shows the error).
  */
-export async function applyChanges(commands, what = "Changes", { check = true } = {}) {
-  if (check) commands = await reviewChange(commands, what);
+/** preview: always show what changes first (else only for big changes, per the setting). */
+export async function applyChanges(commands, what = "Changes", { check = true, preview = false } = {}) {
+  if (check) commands = await reviewChange(commands, what, preview);
   let minutes = safeMinutes();
   // VyOS commits changes to its own HTTPS API in the background and its
   // commit-confirm then undoes them, so Safe Mode can't be used for these.
@@ -116,7 +117,7 @@ export function setPreviewMode(v) {
   }
 }
 
-async function reviewChange(commands, what) {
+async function reviewChange(commands, what, force = false) {
   let cfg;
   let env;
   try {
@@ -125,7 +126,7 @@ async function reviewChange(commands, what) {
     return commands; // can't check (e.g. not connected): VyOS still validates the change
   }
   const { extras, warnings } = checkChange(cfg || {}, commands, env);
-  const preview = wantsPreview(previewMode(), commands);
+  const preview = force || wantsPreview(previewMode(), commands);
   if (!extras.length && !warnings.length && !preview) return commands;
   const boxes = extras.map((x) => h("input", { type: "checkbox", checked: true }));
   const VERB = { add: ["ok", "Add"], change: ["info", "Change"], remove: ["bad", "Remove"], on: ["ok", "Turn on"], off: ["warn", "Turn off"] };
