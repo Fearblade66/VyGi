@@ -233,7 +233,7 @@ pre.out {
 .form input[type="text"], .form input[type="password"], .form input[type="number"], .form select, .form textarea { width: 100%; }
 .hint { color: var(--muted); font-size: 11px; }
 .warn-box { border: 1px solid #e0b050; background: #fff6dd; padding: 6px 8px; margin-bottom: 8px; }
-.err-box { border: 1px solid #e0a0a0; background: #fdeaea; padding: 6px 8px; margin-bottom: 8px; user-select: text; }
+.err-box { border: 1px solid #e0a0a0; background: #fdeaea; padding: 6px 8px; margin-bottom: 8px; user-select: text; white-space: pre-wrap; }
 .fp { font-family: var(--mono); word-break: break-all; user-select: text; }
 .saved-list { border: 1px solid var(--border); background: var(--white); max-height: 120px; overflow: auto; margin-bottom: 8px; }
 
@@ -964,3 +964,6 @@ body.logged-out #app { visibility: hidden; }
 .item-more { flex: none; width: 28px; height: 28px; font-size: 16px; line-height: 1; letter-spacing: 1px; }
 #show-cmds { white-space: nowrap; }
 @media (max-width: 760px) { #show-cmds { display: none !important; } }
+.item-issues { margin: 8px 0 2px; cursor: default; }
+.item-issues .sec-list { gap: 6px; }
+.set-section > .item-issues { margin: 10px 0 0; }

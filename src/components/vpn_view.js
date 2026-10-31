@@ -1,6 +1,7 @@
 // VPN page (UniFi Teleport-style): a WireGuard server per card, its devices
 // with online status, data used and where they connect from; add a device
 // (QR code), pause or remove it.
+import { itemIssues } from "./doctor.js";
 import { itemMenu, itemCommands } from "./itemref.js";
 import { api, errorText } from "../lib/api.js";
 import { h, clear, every, formatBytes, formatAge } from "../lib/dom.js";
@@ -21,11 +22,12 @@ import { vpnClientSection } from "./vpnclient_view.js";
 const ONLINE_SECS = 180; // a WireGuard handshake happens at least every 2 minutes while in use
 
 async function loadState() {
-  const [wg, dump, w] = await Promise.all([
-    api.getConfig(["interfaces", "wireguard"]).then((x) => vpnServers(x)).catch(() => ({})),
+  const [full, dump, w] = await Promise.all([
+    api.getConfig([]).catch(() => ({})),
     api.wireguardDump().catch(() => ""),
     wanInfo(),
   ]);
+  const wg = vpnServers(full?.interfaces?.wireguard);
   const live = new Map(parseWgDump(dump).map((p) => [p.publicKey, p]));
   const servers = Object.entries(wg).map(([iface, c]) => ({
     iface,
@@ -40,7 +42,7 @@ async function loadState() {
       ...(live.get(p?.["public-key"]) || {}),
     })).sort((a, b) => a.name.localeCompare(b.name)),
   }));
-  return { servers, cfg: { interfaces: { wireguard: wg } }, ...w };
+  return { servers, cfg: full || {}, ...w };
 }
 
 export function initVpnPage() {
@@ -120,6 +122,7 @@ export function initVpnPage() {
           h("div.hint", `${s.address || "no address"} · UDP port ${s.port || "?"} · ${online} of ${s.peers.length} device${s.peers.length === 1 ? "" : "s"} connected`)),
         s.disabled ? h("span.badge.bad", "Interface disabled") : null,
         h("button", { on: { click: () => addPeer(render, s.iface) } }, icon("plus", 14), "Add device")),
+      itemIssues(vpnCfg, "vpn", { iface: s.iface }, render),
       s.peers.length
         ? h("div.rule-grid", s.peers.map(peerCard))
         : h("div.hint", "No devices yet."));

@@ -1,4 +1,5 @@
 // Thin wrappers around the Rust commands (src-tauri/src/*.rs).
+import { withExplanation } from "./vyoserrors.js";
 import { call, stream, newWindow } from "./platform.js";
 
 // Pages often ask for the same thing at once (the whole config was read 35
@@ -45,9 +46,9 @@ function invoke(cmd, args) {
   return hit.promise.then((v) => (v && typeof v === "object" ? structuredClone(v) : v));
 }
 
+/** An error as text for the user: VyOS's own messages get a plain explanation first. */
 export function errorText(e) {
-  if (e && typeof e === "object" && e.message) return e.message;
-  return String(e);
+  return withExplanation(e && typeof e === "object" && e.message ? e.message : String(e));
 }
 
 export const api = {

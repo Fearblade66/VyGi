@@ -25,7 +25,7 @@ import { parseRegions } from "../lib/regions.js";
 import { countryName, flagEmoji } from "../lib/sites.js";
 import { editRegions } from "./regions_ui.js";
 import { dnsServerUrl, dnsCall, setupDnsServer, openDnsServer } from "./technitium.js";
-import { loadDoctor, renderDoctor } from "./doctor.js";
+import { loadDoctor, renderDoctor, itemIssues } from "./doctor.js";
 import { openDdns } from "./ddns.js";
 import { openIdentityClock } from "./resources.js";
 import { openBackup } from "./backup.js";
@@ -177,6 +177,7 @@ export function initSettings() {
         row("Dynamic DNS", "A name that follows your internet address when it changes (for the VPN and port forwards).",
           h("span.set-inline", value(w.ddns || "off"), button(w.ddns ? "Change…" : "Set up…", openDdns))),
         row("Speed", "Measured from the router itself (Cloudflare). Uses a few GB of data on a fast line.", h("span.set-inline", speedVal, speedBtn)),
+        itemIssues(cfg, "internet", {}, render),
         itemCommands(cfg, wanPaths)),
       smartQueues(st),
       dnsSection(st),

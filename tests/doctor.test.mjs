@@ -132,3 +132,16 @@ test("lockout: removing VyGi's login or its key", async () => {
   // removing someone else's login is fine
   assert.equal(lockout(withKey, { system: { login: { user: { vygi: withKey.system.login.user.vygi } } } }, env), null);
 });
+
+test("a port forward that takes every connection: Health Check and lockout", async () => {
+  const { diagnose, lockout } = await import("../src/lib/doctor.js");
+  const before = { interfaces: { ethernet: { eth0: { address: "172.17.0.2/16" } } } };
+  const after = structuredClone(before);
+  after.nat = { destination: { rule: { 999: { translation: { address: "10.20.1.50" } } } } };
+  assert.ok(diagnose(after, {}).some((f) => f.id === "dnat-all:999"));
+  assert.match(lockout(before, after, { mgmtHost: "172.17.0.2", mgmtIface: "eth0" })?.text || "", /every connection/);
+  // a normal forward (port 25565 on the internet port) is fine
+  after.nat.destination.rule[999] = { destination: { port: "25565" }, "inbound-interface": { name: "eth1" }, protocol: "tcp", translation: { address: "10.20.1.50" } };
+  assert.equal(lockout(before, after, { mgmtHost: "172.17.0.2", mgmtIface: "eth0" }), null);
+  assert.ok(!diagnose(after, {}).some((f) => f.id.startsWith("dnat-all")));
+});

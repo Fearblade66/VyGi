@@ -10,6 +10,7 @@ import { diagnose } from "../lib/doctor.js";
 import { routerContext } from "../lib/routerctx.js";
 import { changePassword } from "./security.js";
 import { statusFindings } from "./checkup.js";
+import { findingsFor } from "../lib/placefindings.js";
 
 const ORDER = { bad: 0, warn: 1, info: 2 };
 const line = (c) => `${c.op} ${c.path.join(" ")}${c.value !== undefined ? ` '${c.value}'` : ""}`;
@@ -80,4 +81,29 @@ async function fixAll(list, reload) {
     alertBox("Clean-up failed", errorText(e));
   }
   reload();
+}
+
+// One Health Check per config a page loaded, shared by all its cards.
+const perConfig = new WeakMap();
+function findingsOf(cfg) {
+  if (!perConfig.has(cfg)) perConfig.set(cfg, routerContext().then((ctx) => diagnose(cfg || {}, ctx)).catch(() => []));
+  return perConfig.get(cfg);
+}
+
+/**
+ * The problems the Health Check finds with one item (kind/item: see
+ * findingsFor), shown on its card with their fixes; empty when there are none.
+ * cfg: the full config the page loaded. reload: redraws the page after a fix.
+ */
+export function itemIssues(cfg, kind, item, reload) {
+  const el = h("div.item-issues", { hidden: true, on: { click: (e) => e.stopPropagation() } });
+  if (cfg && typeof cfg === "object") {
+    findingsOf(cfg).then((all) => {
+      const list = findingsFor(all, kind, item);
+      if (!list.length) return;
+      renderDoctor(el, list, reload, { compact: true });
+      el.hidden = false;
+    });
+  }
+  return el;
 }

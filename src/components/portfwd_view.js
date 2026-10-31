@@ -1,5 +1,6 @@
 // Port Forwarding page: send a port from the internet to one device (game
 // server, NAS, cameras), with an on/off switch per forward.
+import { itemIssues } from "./doctor.js";
 import { itemMenu, itemCommands } from "./itemref.js";
 import { api, errorText } from "../lib/api.js";
 import { h, clear, every } from "../lib/dom.js";
@@ -86,6 +87,7 @@ export function initPortForwards() {
         h("div.grow", h("div.rule-name", f.name), h("div.hint", `${PROTO[f.protocol] || f.protocol} ${ports}`)),
         f.ours ? h("label.switch", { on: { click: (e) => e.stopPropagation() } }, sw) : h("span.badge", "Advanced"),
         itemMenu(refs)),
+      itemIssues(st.cfg, "forward", f, render),
       h("dl.kv-list",
         h("dt", "Device"), h("dd", f.ip ? `${deviceLabel(f.ip)}${deviceLabel(f.ip) !== f.ip ? ` (${f.ip})` : ""}` : "–"),
         h("dt", "Allowed from"), h("dd", f.from || "anyone")),

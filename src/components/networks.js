@@ -1,6 +1,7 @@
 // Networks page (UniFi-style): every LAN/VLAN as a card, plus a guided
 // "New network" form that sets up the interface, DHCP, DNS, NAT, internet
 // access and isolation in one Safe Mode commit.
+import { itemIssues } from "./doctor.js";
 import { itemMenu, itemCommands } from "./itemref.js";
 import { api, errorText } from "../lib/api.js";
 import { h, clear, every } from "../lib/dom.js";
@@ -126,6 +127,7 @@ export function initNetworks() {
       h("div.net-top", h("span.net-icon", icon(n.isolated ? "lock" : "networks", 18)), h("div.grow", h("div.net-name", n.name), h("div.hint", `${n.network} · gateway ${n.routerIp}`)), h("div.net-online", h("b", String(online)), h("span.hint", " online")),
         itemMenu(refs, [["Edit network…", () => edit(n)]])),
       h("div.badges", badges),
+      itemIssues(st.cfg, "network", n, render),
       h("dl.kv-list",
         h("dt", "DHCP"), h("dd", n.dhcp ? `${n.dhcp.start} – ${n.dhcp.stop}` : "off (static addresses only)"),
         h("dt", "DNS for devices"), h("dd", n.dhcp ? (n.dnsMode === "router" ? `the router (${n.routerIp})` : n.dnsServers.join(", ")) : "–"),

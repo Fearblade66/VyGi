@@ -226,6 +226,9 @@ export function diagnose(cfg, env = {}) {
       add({ id: `dnat-dup:${key}`, level: "bad", title: "The same port is forwarded twice", text: `"${seen.get(key)}" and "${name}" both forward ${r?.protocol || ""} port ${port}; only the first one works.` });
     }
     seen.set(key, name);
+    if (catchAll(r)) {
+      add({ id: `dnat-all:${n}`, level: "bad", title: "A port forward takes every connection", text: `"${name}" has no port, interface or address, so every connection to the router, from any network, goes to ${ip || "its target"} instead: the router's own web API, SSH and DNS stop answering. Give it a port and the internet interface (Port Forwarding), or remove it.` });
+    }
     if (!ip || !/^\d/.test(ip)) continue;
     const net = lans.find((x) => ipv4InCidr(ip, x.network));
     if (net && Object.values(fwd4?.rule || {}).some((x) => String(x?.description || "") === `VyGi net ${net.iface}: no internet`)) {
@@ -354,6 +357,8 @@ export function touchesManual(cfg, c) {
 export function lockout(before, after, env = {}) {
   const login = loginLockout(before, after, env);
   if (login) return login;
+  const fwd = forwardLockout(before, after, env);
+  if (fwd) return fwd;
   const { mgmtHost: host, mgmtIface: iface } = env;
   if (!host || !iface) return null;
   const node = (cfg) => flattenInterfaces(cfg?.interfaces).get(iface)?.cfg;
@@ -373,6 +378,34 @@ export function lockout(before, after, env = {}) {
     text: `This takes ${host} off ${iface}, and that's the address VyGi (and anything else using it) reaches the router on. After applying, nothing can reach the router there: with Safe Mode on it comes back by itself when the timer runs out, with Safe Mode off only the router's console can fix it. To move the router to another address: add the new one first, reconnect VyGi to it, then remove the old one.`,
     fix: null, manual: false,
   };
+}
+
+/** True if a port forward with no port, interface and address limits takes every incoming connection. */
+const catchAll = (r) => r && !("disable" in r) && !r?.destination?.port && !r?.destination?.address && !r?.["inbound-interface"]?.name && !r?.["inbound-interface"]?.group;
+
+/** A new port forward that would send VyGi's own connection (to the API, on 443) somewhere else. */
+function forwardLockout(before, after, env) {
+  const host = env.mgmtHost;
+  if (!host) return null;
+  const was = before?.nat?.destination?.rule || {};
+  for (const [n, r] of Object.entries(after?.nat?.destination?.rule || {})) {
+    if (JSON.stringify(was[n]) === JSON.stringify(r) || !r || "disable" in r) continue;
+    const inIf = r?.["inbound-interface"]?.name;
+    const ports = String(r?.destination?.port || "");
+    const proto = r?.protocol || "all";
+    const dst = r?.destination?.address;
+    const hitsPort = !ports || ports.split(",").some((p) => p === "443" || (p.includes("-") && +p.split("-")[0] <= 443 && 443 <= +p.split("-")[1]));
+    const hitsIf = !inIf || inIf === env.mgmtIface;
+    const hitsAddr = !dst || dst === host || (dst.includes("/") && ipv4InCidr(host, dst));
+    if (hitsPort && hitsIf && hitsAddr && /^(all|tcp|tcp_udp)$/.test(proto)) {
+      return {
+        id: `lockout:dnat:${n}`, level: "bad", title: "VyGi would lose the router",
+        text: `Port forward rule ${n} ${catchAll(r) ? "has no port, interface or address, so it sends every connection to the router" : "takes port 443"}${inIf ? ` on ${inIf}` : ""} to ${r?.translation?.address || "another address"}, including VyGi's own connection to ${host}. Give it a port${inIf ? "" : " and the internet interface"}.`,
+        fix: null, manual: false,
+      };
+    }
+  }
+  return null;
 }
 
 /** The change removes the login VyGi uses (env.user), or its SSH key (env.keyLogin). */
