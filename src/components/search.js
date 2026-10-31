@@ -1,6 +1,8 @@
-// Search bar (top bar, Ctrl+K): pages, Advanced tools, everyday words
-// ("password", "open port"), devices, networks, rules, forwards, VPN devices
-// and any setting in the router's configuration.
+// Search bar and command palette (top bar, Ctrl+K): actions (save, Safe
+// Mode, switch router, add a forward...), pages, Advanced tools, everyday
+// words ("password", "open port"), devices, networks, rules, forwards, VPN
+// devices and any setting in the router's configuration. Opened empty, it
+// suggests common actions.
 import { openSetup } from "./setup.js";
 import { api } from "../lib/api.js";
 import { vpnServers } from "../lib/vpnclient.js";
@@ -15,8 +17,14 @@ import { parseForwards } from "../lib/portfwd.js";
 import { score, synonymTargets, flattenConfig } from "../lib/searchindex.js";
 import { openClient } from "./clients.js";
 import { openConfigTree } from "./config_tree.js";
+import { saveNow } from "../lib/session.js";
+import { runCheckup } from "./checkup.js";
+import { openDiagnosticsReport } from "./report.js";
+import { showConnectDialog } from "./connect.js";
+import { switchToRouter, disconnectRouter, profileId } from "./switcher.js";
 
 const PER_GROUP = 6;
+const VIEW_EL = { ports: "ports", vpn: "vpnpage", networks: "networks", rules: "rules" };
 const CACHE_MS = 30_000;
 
 /** tools: [{ label, parent, open }] from the Advanced menu. */
@@ -57,6 +65,50 @@ export function initSearch(tools) {
   }
 
   const page = (name) => () => showView(name);
+  const el = (id) => document.getElementById(id);
+  // opens a page, then clicks its button (New forward, Add device...) once drawn
+  // labels: the button to click, in order of preference (Add device, else Set up VPN)
+  const pageThen = (view, ...labels) => () => {
+    showView(view);
+    const t0 = Date.now();
+    const tick = () => {
+      const btns = [...(el(VIEW_EL[view])?.querySelectorAll("button") || [])];
+      const b = labels.map((l) => btns.find((x) => x.textContent.trim() === l)).find(Boolean);
+      if (b) b.click();
+      else if (Date.now() - t0 < 5000) setTimeout(tick, 150);
+    };
+    setTimeout(tick, 50);
+  };
+  let routers = [];
+
+  /** What you can do from here: [{ label, words, when?, go }]. */
+  function actions() {
+    const on = isConnected();
+    const safe = el("safe-mode");
+    const dark = document.documentElement.dataset.mode === "dark";
+    const list = [
+      { label: "Save configuration", sub: "keep changes after a restart", words: "save write boot config", when: on && !el("btn-save").disabled, go: () => saveNow() },
+      { label: safe.checked ? "Turn Safe Mode off" : "Turn Safe Mode on", sub: "undo changes that cut you off", words: "safe mode rollback", when: on && !safe.disabled, go: () => safe.click() },
+      { label: "Open terminal", sub: "SSH to the router", words: "terminal ssh cli shell command", when: on, go: () => el("btn-terminal").click() },
+      { label: "Run Health Check", sub: "problems and how to fix them", words: "health check security problems doctor fix", when: on, go: () => runCheckup({ alwaysShow: true }) },
+      { label: "Add a port forward", sub: "Security → Port Forwarding", words: "add new port forward open port game server", when: on, go: pageThen("ports", "New forward") },
+      { label: "Add a VPN device", sub: "Network → VPN", words: "add new vpn device phone wireguard peer", when: on, go: pageThen("vpn", "Add device", "Set up VPN") },
+      { label: "Add a network", sub: "Network → Local Networks", words: "add new network vlan guest iot", when: on, go: pageThen("networks", "New network") },
+      { label: "Add a traffic rule", sub: "Security → Traffic Rules", words: "add new traffic rule block schedule", when: on, go: pageThen("rules", "New rule") },
+      { label: "Set up this router", sub: "checklist of the basics", words: "setup set up wizard checklist basics getting started first new router", when: on, go: () => openSetup() },
+      { label: "Diagnostics Report", sub: "everything about the router, for Claude or support", words: "diagnostics report claude support help", when: on, go: () => openDiagnosticsReport() },
+      { label: "Add router", sub: "connect to another VyOS router", words: "add new router connect", go: () => showConnectDialog({ blank: true }) },
+      ...routers.filter((p) => profileId(p) !== session.info?.profileId).map((p) => (
+        { label: `Switch to ${p.name || p.host}`, sub: p.host, words: `switch router ${p.name || ""} ${p.host}`, go: () => switchToRouter(p) })),
+      { label: "Disconnect", sub: `from ${session.info?.profile?.name || session.info?.hostname || "this router"}`, words: "disconnect log off", when: on, go: () => disconnectRouter() },
+      { label: dark ? "Use light look" : "Use dark look", sub: "Account and settings → Look", words: "dark light theme look mode", go: () => {
+        el("theme").value = dark ? "modern-light" : "modern-dark";
+        el("theme").dispatchEvent(new Event("change"));
+      } },
+    ];
+    return list.filter((a) => a.when !== false);
+  }
+  const loadRouters = () => api.listRouters().then((r) => (routers = r || [])).catch(() => {});
   const tool = (t) => () => {
     showView("windows");
     t.open();
@@ -64,30 +116,32 @@ export function initSearch(tools) {
 
   function staticResults(q) {
     const out = [];
+    for (const a of actions()) {
+      const sc = Math.max(score(a.label, q), score(a.words, q) - 5);
+      if (sc) out.push({ group: "Actions", label: a.label, sub: a.sub, sc: sc + 5, go: a.go });
+    }
     const pages = pageList();
+    const pageGo = (p) => () => showView(p.name, { tab: p.tab });
     for (const p of pages) {
-      const sc = score(p.title, q);
-      if (sc) out.push({ group: "Pages", label: p.title, sc, go: page(p.name) });
+      const sc = Math.max(score(p.title, q), p.group ? score(`${p.group} ${p.title}`, q) - 10 : 0);
+      if (sc) out.push({ group: "Pages", label: p.title, sub: p.group || "", sc, go: pageGo(p) });
     }
     for (const t of tools) {
       const sc = Math.max(score(t.label, q), t.parent ? score(`${t.parent} ${t.label}`, q) - 10 : 0);
-      if (sc) out.push({ group: "Tools", label: t.label, sub: t.parent ? `Advanced → ${t.parent}` : "Advanced", sc, go: tool(t) });
+      if (sc) out.push({ group: "Advanced", label: t.label, sub: t.parent ? `Advanced → ${t.parent}` : "Advanced", sc, go: tool(t) });
     }
     for (const [target, sc] of synonymTargets(q)) {
       const [kind, name] = [target.slice(0, 1), target.slice(2)];
       if (kind === "p") {
-        // "settings/management": a page's own tab
+        // "settings/router": a page's own tab
         const [base, tab] = name.split("/");
-        const p = pages.find((x) => x.name === base);
-        const label = p && tab ? `${p.title} → ${tab[0].toUpperCase()}${tab.slice(1)}` : p?.title;
-        if (p && !out.some((r) => r.label === label)) out.push({ group: "Pages", label, sub: "related", sc: sc - 5, go: tab ? () => showView(base, { tab }) : page(base) });
+        const p = pages.find((x) => x.name === base && (!tab || x.tab === tab));
+        if (p && !out.some((r) => r.group === "Pages" && r.label === p.title)) out.push({ group: "Pages", label: p.title, sub: p.group ? `${p.group} · related` : "related", sc: sc - 5, go: pageGo(p) });
       } else if (kind === "t") {
         const t = tools.find((x) => x.label === name);
-        if (t && !out.some((r) => r.label === t.label)) out.push({ group: "Tools", label: t.label, sub: t.parent ? `Advanced → ${t.parent} · related` : "Advanced · related", sc: sc - 5, go: tool(t) });
+        if (t && !out.some((r) => r.label === t.label)) out.push({ group: "Advanced", label: t.label, sub: t.parent ? `Advanced → ${t.parent} · related` : "Advanced · related", sc: sc - 5, go: tool(t) });
       } else if (name === "alerts") {
         out.push({ group: "Pages", label: "Alerts", sub: "bell in the top bar", sc: sc - 5, go: () => document.getElementById("btn-alerts").click() });
-      } else if (name === "setup") {
-        out.push({ group: "Pages", label: "Set up this router", sub: "checklist of the basics", sc: sc - 5, go: () => openSetup() });
       }
     }
     return out;
@@ -144,7 +198,7 @@ export function initSearch(tools) {
     results = [...groups.values()].flat();
     active = 0;
     clear(box);
-    if (!input.value.trim()) {
+    if (!input.value.trim() && !suggesting) {
       box.hidden = true;
       return;
     }
@@ -181,10 +235,20 @@ export function initSearch(tools) {
     r.go();
   }
 
+  // opened empty: the common actions, then the pages
+  let suggesting = false;
+  function suggest() {
+    suggesting = true;
+    const acts = actions().slice(0, PER_GROUP).map((a, i) => ({ group: "Actions", label: a.label, sub: a.sub, sc: 100 - i, go: a.go }));
+    const pages = pageList().map((p, i) => ({ group: "Pages", label: p.title, sub: p.group || "", sc: 50 - i, go: () => showView(p.name, { tab: p.tab }) }));
+    show([...acts, ...pages]);
+    suggesting = false;
+  }
+
   async function run() {
     const mine = ++seq;
     const q = input.value.trim().toLowerCase();
-    if (!q) return show([]);
+    if (!q) return document.activeElement === input ? suggest() : show([]);
     const quick = staticResults(q);
     show(quick, isConnected() && !fresh()); // pages and tools right away; devices and settings when loaded
     const d = await data().catch(() => null);
@@ -193,7 +257,11 @@ export function initSearch(tools) {
   }
 
   input.addEventListener("input", run);
-  input.addEventListener("focus", () => input.value.trim() && run());
+  input.addEventListener("focus", () => {
+    run();
+    loadRouters().then(() => document.activeElement === input && !input.value.trim() && suggest());
+  });
+  input.placeholder = "Search or do something (Ctrl+K)";
   input.addEventListener("blur", () => setTimeout(() => (box.hidden = true), 150));
   input.addEventListener("keydown", (e) => {
     if (e.key === "ArrowDown") { e.preventDefault(); highlight(Math.min(active + 1, results.length - 1)); }

@@ -5,7 +5,9 @@
 export const SYNONYMS = [
   [["password", "login", "account", "admin"], ["t:Users", "p:dashboard"]],
   [["security", "hacked", "safe", "exposed", "health", "problem", "conflict", "doctor", "fix"], ["p:settings/router", "p:dashboard"]],
-  [["settings", "internet", "wan", "isp", "smart queues", "lag", "gaming", "bufferbloat", "failover", "wan2", "backup line", "upstream dns", "ad block", "adblock", "ads", "update", "region", "country"], ["p:settings"]],
+  [["settings", "internet", "wan", "isp", "pppoe", "smart queues", "lag", "gaming", "bufferbloat", "failover", "wan2", "backup line", "upstream dns", "ad block", "adblock", "ads", "region", "country"], ["p:settings/internet"]],
+  [["settings", "update", "router access", "backups", "health check"], ["p:settings/router"]],
+  [["settings", "token", "api", "web password", "watch", "vygi"], ["p:settings/vygi"]],
   [["time", "timezone", "time zone", "clock", "ntp", "date"], ["t:Identity & Clock"]],
   [["hostname", "router name", "rename router"], ["t:Identity & Clock"]],
   [["upgrade", "update", "firmware", "version", "image"], ["t:Images (Upgrade)"]],
@@ -28,7 +30,6 @@ export const SYNONYMS = [
   [["terminal", "cli", "ssh", "command"], ["t:New Terminal"]],
   [["undo", "history", "changes", "revert", "rollback"], ["p:history", "t:Revisions / Rollback"]],
   [["alert", "notify", "notification", "watch", "netwatch", "monitor"], ["a:alerts"]],
-  [["setup", "set up", "wizard", "checklist", "getting started", "first", "basics", "new router"], ["a:setup"]],
   [["isolate", "isolation", "who can reach", "access", "between networks", "mdns", "casting", "airplay", "chromecast"], ["p:access"]],
   [["intrusion", "ids", "ips", "suricata", "attack", "hacker", "scan"], ["p:ids"]],
   [["device", "devices", "client", "phone", "laptop", "wake", "wol"], ["p:clients"]],

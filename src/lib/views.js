@@ -53,9 +53,18 @@ function store(key, value) {
   return value;
 }
 
-/** [{ name, title }] of the sidebar pages (for the search bar). */
+/**
+ * [{ name, tab, title, group }] of every page as the menu names it (for the
+ * search bar): Home, Devices, Advanced, and each group's tabs.
+ */
 export function pageList() {
-  return Object.entries(VIEWS).map(([name, v]) => ({ name, title: v.title }));
+  const out = [];
+  for (const name of ["dashboard", "clients"]) out.push({ name, tab: null, title: VIEWS[name].title, group: null });
+  for (const g of Object.values(GROUPS)) {
+    for (const it of g.items.filter(shown)) out.push({ name: it.view, tab: it.tab || null, title: it.label || VIEWS[it.view].title, group: g.title });
+  }
+  out.push({ name: "windows", tab: null, title: VIEWS.windows.title, group: null });
+  return out;
 }
 
 export function registerView(name, handlers) {

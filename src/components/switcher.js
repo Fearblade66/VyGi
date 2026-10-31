@@ -9,7 +9,7 @@ import { session, isConnected } from "../lib/session.js";
 import { isDesktop } from "../lib/platform.js";
 import { showConnectDialog } from "./connect.js";
 
-const profileId = (p) => p.key || `${p.sshUser}@${p.host}`;
+export const profileId = (p) => p.key || `${p.sshUser}@${p.host}`;
 
 /**
  * A small menu next to `anchor` (closes on a click outside or Escape).
@@ -38,8 +38,17 @@ export function popMenu(anchor, build, { above = false } = {}) {
   return close;
 }
 
+let disconnectFn = () => Promise.resolve();
+let switchFn = () => {};
+/** Disconnects this window (asks about unsaved changes first). */
+export const disconnectRouter = () => disconnectFn();
+/** Switches this window to saved router p. */
+export const switchToRouter = (p) => switchFn(p);
+
 /** disconnect(): the toolbar's disconnect (asks about unsaved changes); resolves when done or cancelled. */
 export function initRouterSwitcher(disconnect) {
+  disconnectFn = disconnect;
+  switchFn = (p) => switchTo(p);
   const card = document.getElementById("router-card");
   card.setAttribute("role", "button");
   card.setAttribute("tabindex", "0");
