@@ -17,14 +17,23 @@ import { loadFindings, changePassword } from "./security.js";
 import { openIdentityClock } from "./resources.js";
 
 const seenKey = () => `vygi.setup.${session.info?.profileId || "?"}`;
-function seen(v) {
+// Raised when the checklist gains items, so it opens once more on routers
+// that were set up before (2: router address, VyGi's own login with a key).
+const VERSION = 2;
+/** The checklist version last shown for this router (0: never). */
+function seenVersion() {
   try {
-    if (v === undefined) return localStorage.getItem(seenKey()) === "1";
-    localStorage.setItem(seenKey(), "1");
+    return Number(localStorage.getItem(seenKey())) || 0;
+  } catch {
+    return VERSION; // can't remember: don't keep opening it
+  }
+}
+function markSeen() {
+  try {
+    localStorage.setItem(seenKey(), String(VERSION));
   } catch {
     /* not remembered */
   }
-  return true;
 }
 
 /** The checklist: [{ title, ok: true|false|"warn", text, action?: [label, fn] }]. */
@@ -121,10 +130,12 @@ function ownLogin(user) {
       text: `VyGi logs in as ${user}, the same login you use. With its own login, your password isn't stored in VyGi, the router's change history shows what VyGi changed, and you can shut VyGi out without touching your login. (Every VyOS login can change everything: this doesn't limit what VyGi can do.)`,
       action: ["Make one", async () => {
         if (!(await confirmBox(title,
-          `VyGi creates the router login "vygi" with a long random password that only VyGi keeps, checks that it works, and uses it from then on.\n\nYour ${user} login doesn't change.`, "Make it"))) return;
+          `VyGi creates the router login "vygi" with an SSH key that only VyGi keeps, checks that it works, and uses it from then on. The vygi login gets no password anyone knows, so it can only log in with that key.\n\nYour ${user} login doesn't change.`, "Make it"))) return;
         try {
           await api.useOwnLogin();
           session.info.profile.sshUser = "vygi";
+          await api.useSshKey();
+          session.info.keyLogin = true;
         } catch (e) {
           alertBox(title, errorText(e));
         }
@@ -211,10 +222,14 @@ export async function openSetup() {
   refresh();
   await shown;
   body = null;
-  seen(true);
+  markSeen();
 }
 
-/** First connection to a router that misses one of the basics: open the checklist once. */
+/**
+ * First connection to a router that misses one of the basics: open the
+ * checklist once. After the checklist gained items, it opens once more if
+ * anything on it isn't done.
+ */
 export function initSetup() {
   let last = null;
   onSessionChange(async (s) => {
@@ -224,15 +239,16 @@ export function initSetup() {
       return;
     }
     last = id;
-    if (seen()) return;
+    const shown = seenVersion();
+    if (shown >= VERSION) return;
     // let the connect check-up and its dialogs finish first
     for (let i = 0; i < 30 && document.querySelector(".modal-back"); i++) await new Promise((r) => setTimeout(r, 1000));
     await new Promise((r) => setTimeout(r, 1500));
     if (session.info?.profileId !== id || document.querySelector(".modal-back")) return;
     try {
       const list = await checks();
-      if (list.some((c) => c.ok === false)) openSetup();
-      else seen(true);
+      if (list.some((c) => c.ok === false || (shown > 0 && c.ok !== true))) openSetup();
+      else markSeen();
     } catch {
       /* try again next time */
     }
