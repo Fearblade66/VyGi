@@ -175,7 +175,7 @@ impl VyosApi {
             .await
             .map_err(|e| AppError::Http(e.to_string()))?;
         if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-            return Err(AppError::AuthFailed("API key rejected".into()));
+            return Err(AppError::AuthFailed(refusal(status, &text)));
         }
         if status == reqwest::StatusCode::NOT_FOUND {
             return Err(AppError::Api(format!(
@@ -312,6 +312,16 @@ impl VyosApi {
     }
 }
 
+/// Why the router's API refused: a wrong key (the API's own answer), or the
+/// web server refusing VyGi's address before the API sees it (its plain
+/// "403 Forbidden" page: `service https allow-client` doesn't list it).
+fn refusal(status: reqwest::StatusCode, body: &str) -> String {
+    if status == reqwest::StatusCode::FORBIDDEN && body.contains("<html") {
+        return "the router only lets certain addresses use its API (service https allow-client), and the address VyGi connects from isn't one of them. Add it on the router: set service https allow-client address <VyGi's address>, commit, save".into();
+    }
+    "API key rejected".into()
+}
+
 /// Drops environment noise (locale warnings, hostname lookups) from VyOS
 /// error text and un-escapes the HTML entities the API adds.
 fn clean_error(msg: &str) -> String {
@@ -378,6 +388,23 @@ fn truncate(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn refusals_say_why() {
+        let page = "<html>\n<head><title>403 Forbidden</title></head>\n<body>nginx</body></html>";
+        assert!(refusal(reqwest::StatusCode::FORBIDDEN, page).contains("allow-client"));
+        assert_eq!(
+            refusal(
+                reqwest::StatusCode::UNAUTHORIZED,
+                "{\"error\": \"Valid API key is required\"}"
+            ),
+            "API key rejected"
+        );
+        assert_eq!(
+            refusal(reqwest::StatusCode::FORBIDDEN, "{\"success\": false}"),
+            "API key rejected"
+        );
+    }
 
     fn p(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()

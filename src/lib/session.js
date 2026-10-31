@@ -228,13 +228,13 @@ export function renderToolbar() {
   const sub = document.getElementById("conn-sub");
   if (connected) {
     const i = session.info;
-    label.textContent = i.hostname;
+    label.textContent = i.profile.name || i.hostname; // the name it's saved under, as in the router switcher
     label.title = `${i.profile.sshUser}@${i.hostname} (${i.profile.host}) — VyOS ${i.version}`;
     sub.textContent = `${i.profile.host} · VyOS ${i.version}`;
   } else {
     label.textContent = "Not connected";
     label.title = "";
-    sub.textContent = "Connect to manage a router";
+    sub.textContent = "Click to pick or add a router";
   }
   label.classList.toggle("on", connected);
   document.getElementById("conn-dot").classList.toggle("on", connected);

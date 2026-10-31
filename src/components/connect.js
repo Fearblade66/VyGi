@@ -1,7 +1,7 @@
 // Login window: saved routers, credentials, and "trust this router?" prompts.
 import { api, errorText } from "../lib/api.js";
 import { isDesktop } from "../lib/platform.js";
-import { h, clear, setStatus } from "../lib/dom.js";
+import { h, setStatus } from "../lib/dom.js";
 import { modal, confirmBox, alertBox } from "../lib/dialog.js";
 import { setConnected, refreshTx } from "../lib/session.js";
 import { runCheckup } from "./checkup.js";
@@ -26,8 +26,7 @@ export async function showConnectDialog(prefill = null) {
   let preparedKey = null; // key VyGi generated to set up the API over SSH
   const errBox = h("div.err-box", { hidden: true });
 
-  const list = h("div.saved-list");
-  let selected = null; // the saved router picked in the list
+  let selected = null; // the saved router being connected to (picked in the router switcher)
   const fill = async (p) => {
     selected = p;
     f.host.value = p.host;
@@ -42,70 +41,45 @@ export async function showConnectDialog(prefill = null) {
     f.sshPassword.placeholder = f.apiKey.placeholder = has ? "•••••••• (saved)" : "";
     savedHint.textContent = has ? `Password and API key are saved on ${isDesktop ? "this computer" : "the VyGi server"}. Just press Connect, or type new ones to replace them.` : "";
   };
-  const renderList = () => {
-    clear(list);
-    if (!routers.length) list.append(h("div.hint", { style: { padding: "4px" } }, "No saved routers yet."));
-    for (const p of routers) {
-      const row = h(
-        "div.tree-node",
-        { on: { click: () => { list.querySelectorAll(".sel").forEach((x) => x.classList.remove("sel")); row.classList.add("sel"); fill(p); } } },
-        h("span", { style: { display: "inline-block", width: "45%" } }, p.name || p.host),
-        h("span.hint", `${p.sshUser}@${p.host}`),
-        h("button", {
-          style: { float: "right", padding: "0 5px" },
-          title: "Forget this router and delete its saved secrets",
-          on: {
-            click: async (e) => {
-              e.stopPropagation();
-              if (!(await confirmBox("Forget router", `Remove ${p.host} and its saved password/API key?`, "Remove"))) return;
-              await api.forgetRouter(profileId(p)).catch((err) => alertBox("Error", errorText(err)));
-              routers.splice(routers.indexOf(p), 1);
-              renderList();
-            },
-          },
-        }, "✕"),
-      );
-      list.append(row);
-    }
-  };
-  renderList();
   // "#router=user@host" (the Dashboard's router overview opens a tab like that): connect to it right away
   const wanted = new URLSearchParams(location.hash.slice(1)).get("router");
   const pick = routers.find((p) => profileId(p) === wanted);
   if (wanted) history.replaceState(null, "", location.pathname + location.search);
   if (pick) {
     fill(pick).then(() => savedFor && setTimeout(() => [...document.querySelectorAll(".dialog-buttons button.primary")].find((b) => b.textContent === "Connect")?.click(), 50));
-    list.children[routers.indexOf(pick)]?.classList.add("sel");
   } else if (prefill?.host) {
     f.host.value = prefill.host;
     f.sshUser.value = prefill.user || "vyos";
-  } else if (routers.length) fill(routers[0]);
+  } else if (routers.length && !prefill?.blank) fill(routers[0]);
 
+  // the basics; the rest (name, API key, ports) under More options
+  const more = h("details.connect-more",
+    h("summary", "More options (name, API key, ports)"),
+    h("div.form",
+      h("label", "Name"), f.name,
+      h("label", "API Key"), f.apiKey,
+      h("label", "HTTPS Port"), f.apiPort,
+      h("label", "SSH Port"), f.sshPort),
+    h("div.hint", "Leave the API key empty and VyGi turns on the router's API for you, over SSH."));
   const content = h(
     "div",
-    { style: { width: "460px" } },
-    h("div.hint", "Saved routers"),
-    list,
+    { style: { width: "440px", maxWidth: "100%" } },
     errBox,
     h(
       "div.form",
-      h("label", "Connect To"), f.host,
-      h("label", "Name"), f.name,
+      h("label", "Address"), f.host,
       h("label", "Login"), f.sshUser,
       h("label", "Password"), f.sshPassword,
-      h("label", "API Key"), f.apiKey,
       h("span"), savedHint,
-      h("label", "HTTPS Port"), f.apiPort,
-      h("label", "SSH Port"), f.sshPort,
-      h("span"), h("label", { style: { textAlign: "left" } }, f.remember, isDesktop ? " Remember password and API key on this computer" : " Remember password and API key on the VyGi server"),
+      h("span"), h("label", { style: { textAlign: "left" } }, f.remember, isDesktop ? " Remember on this computer" : " Remember on the VyGi server"),
     ),
-    h("div.hint", { style: { marginTop: "8px" } },
-      "The router needs SSH turned on (`set service ssh`). Leave the API key empty and VyGi turns on the API for you."),
+    more,
+    h("div.hint", { style: { marginTop: "8px" } }, "The router needs SSH turned on (`set service ssh`)."),
   );
 
   const trust = { tls: null, ssh: null };
   let connected = null;
-  await modal("Connect to VyOS", content, [
+  await modal(prefill?.blank ? "Add router" : selected ? `Connect to ${selected.name || selected.host}` : "Connect to a router", content, [
     { label: "Cancel", value: "cancel" },
     { label: "Connect", value: "connect", primary: true },
   ], async () => {

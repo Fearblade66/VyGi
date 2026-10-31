@@ -928,3 +928,19 @@ body.logged-out #app { visibility: hidden; }
 
 /* Advanced windows: where a dragged window will snap (half or whole area) */
 #mdi-snap { position: absolute; z-index: 99990; pointer-events: none; border: 2px solid var(--accent, #2b6cb0); border-radius: 10px; background: color-mix(in srgb, var(--accent, #2b6cb0) 12%, transparent); box-sizing: border-box; transition: left 0.08s, width 0.08s; }
+
+/* router switcher (the router card) and the small menus it and the account button open */
+#btn-connect, #btn-new-window { display: none !important; }
+#router-card { cursor: pointer; }
+#router-card:hover { border-color: var(--accent, #2b6cb0); }
+#router-card:focus-visible { outline: 2px solid var(--accent, #2b6cb0); outline-offset: 2px; }
+#router-card .switch-chevron { margin-left: auto; color: var(--muted); display: flex; transform: rotate(90deg); }
+.pop-menu { position: fixed; z-index: 3000; background: var(--panel, #fff); color: var(--text); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 12px 32px rgba(16, 24, 40, 0.18); padding: 6px; max-width: min(360px, calc(100vw - 16px)); max-height: 70vh; overflow: auto; }
+.pop-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 6px 10px 4px; }
+.pop-sep { border-top: 1px solid var(--border); margin: 6px 0; }
+.pop-row { display: flex; align-items: center; gap: 2px; }
+.pop-item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 0 !important; background: transparent !important; font: inherit; font-size: 13px; color: var(--text) !important; padding: 8px 10px !important; border-radius: 6px !important; cursor: pointer; box-shadow: none !important; }
+.pop-item:hover { background: var(--select) !important; }
+.pop-accent { color: var(--accent, #2b6cb0) !important; font-weight: 600; }
+.pop-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: #9ca3af; }
+.pop-dot.ok { background: #16a34a; } .pop-dot.bad { background: #dc2626; }

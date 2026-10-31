@@ -7,6 +7,7 @@ import { modal, formDialog, alertBox } from "./lib/dialog.js";
 import { isDesktop, setLoginHandler, webSession, webLogin, webLogout, webChangePassword } from "./lib/platform.js";
 import { initToolbar, isConnected, setConnected, session, saveNow } from "./lib/session.js";
 import { showConnectDialog } from "./components/connect.js";
+import { initRouterSwitcher } from "./components/switcher.js";
 import { openInterfaces } from "./components/interfaces.js";
 import { openRoutes } from "./components/routes.js";
 import { openVpn } from "./components/vpn.js";
@@ -378,6 +379,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   showView("dashboard", { remember: false }); // the welcome screen until a router is connected
   renderMenu();
   document.getElementById("btn-connect").addEventListener("click", toggleConnect);
+  initRouterSwitcher(() => (isConnected() ? toggleConnect() : Promise.resolve()));
   document.getElementById("btn-new-window").addEventListener("click", () => api.newWindow().catch((e) => setStatus(errorText(e), true)));
   document.getElementById("btn-terminal").addEventListener("click", () => openTerminal());
   if (!isDesktop) {
