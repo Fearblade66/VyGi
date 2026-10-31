@@ -30,13 +30,22 @@ struct Stored {
     known_ips: Vec<String>,
 }
 
-/// A logged-in browser.
+/// A logged-in browser. Kept in `sessions.json` under the SHA-256 of its
+/// token (the cookie), so the file can't be used to log in.
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 struct Session {
-    expires: Instant,
+    /// unix ms
+    expires: u64,
     created: u64,
     last_seen: u64,
     ip: String,
     agent: String,
+}
+
+fn token_hash(token: &str) -> String {
+    use sha2::{Digest, Sha256};
+    hex::encode(Sha256::digest(token.as_bytes()))
 }
 
 /// What the session list shows (never the token itself).
@@ -53,6 +62,8 @@ pub struct SessionInfo {
 
 pub struct Auth {
     file: PathBuf,
+    /// sessions.json (empty path: not kept, in tests)
+    sessions_file: PathBuf,
     hash: StdMutex<String>,
     known_ips: StdMutex<Vec<String>>,
     sessions: StdMutex<HashMap<String, Session>>,
@@ -70,8 +81,7 @@ fn now_ms() -> u64 {
 /// A short, stable id for a session (shown in lists and the activity log;
 /// it can't be turned back into the cookie).
 pub fn session_id(token: &str) -> String {
-    use sha2::{Digest, Sha256};
-    hex::encode(Sha256::digest(token.as_bytes()))[..10].to_string()
+    token_hash(token)[..10].to_string()
 }
 
 /// Writes a file only the owner can read (secrets, keys).
@@ -122,6 +132,8 @@ impl Auth {
             .ok()
             .and_then(|t| serde_json::from_str(&t).ok())
             .unwrap_or_default();
+        // a password set or reset from Docker (VYGI_PASSWORD) logs every browser out
+        let mut reset = false;
         let hash = match (env_password, stored.password_hash.is_empty()) {
             (Some(pw), _) => {
                 if pw.chars().count() < MIN_PASSWORD {
@@ -132,6 +144,7 @@ impl Auth {
                 if verify(pw, &stored.password_hash) {
                     stored.password_hash
                 } else {
+                    reset = true;
                     hash_password(pw)?
                 }
             }
@@ -145,11 +158,22 @@ impl Auth {
                 hash_password(&pw)?
             }
         };
+        // logins survive restarts and updates (a new password ends them all, see below)
+        let sessions_file = data.join("sessions.json");
+        let now = now_ms();
+        let sessions: HashMap<String, Session> = std::fs::read_to_string(&sessions_file)
+            .ok()
+            .and_then(|t| serde_json::from_str::<HashMap<String, Session>>(&t).ok())
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|(_, s)| s.expires > now && !reset)
+            .collect();
         let auth = Auth {
             file,
+            sessions_file,
             hash: StdMutex::new(hash),
             known_ips: StdMutex::new(stored.known_ips),
-            sessions: StdMutex::new(HashMap::new()),
+            sessions: StdMutex::new(sessions),
             fails: StdMutex::new(Vec::new()),
             secure,
         };
@@ -174,6 +198,18 @@ impl Auth {
         )
     }
 
+    /// Writes the logged-in browsers (hashed tokens) to sessions.json.
+    fn save_sessions(&self) {
+        if self.sessions_file.as_os_str().is_empty() {
+            return;
+        }
+        let text = serde_json::to_string(&*self.sessions.lock().unwrap_or_else(|e| e.into_inner()))
+            .unwrap_or_default();
+        if let Err(e) = write_private(&self.sessions_file, text.as_bytes()) {
+            eprintln!("Couldn't save the logins: {e}");
+        }
+    }
+
     fn cookie(&self, value: &str, max_age: u64) -> String {
         format!(
             "{COOKIE}={value}; Path=/; HttpOnly; SameSite=Strict; Max-Age={max_age}{}",
@@ -196,8 +232,8 @@ impl Auth {
             .find(|(k, _)| *k == COOKIE)
             .map(|(_, v)| v.to_string())?;
         let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
-        match sessions.get_mut(&token) {
-            Some(s) if s.expires > Instant::now() => {
+        match sessions.get_mut(&token_hash(&token)) {
+            Some(s) if s.expires > now_ms() => {
                 s.last_seen = now_ms();
                 Some(token)
             }
@@ -207,7 +243,8 @@ impl Auth {
 
     /// Logged-in browsers, newest first; `current` marks the asking one.
     pub fn sessions(&self, current: &str) -> Vec<SessionInfo> {
-        let now = Instant::now();
+        let now = now_ms();
+        let current = token_hash(current);
         let mut out: Vec<SessionInfo> = self
             .sessions
             .lock()
@@ -215,12 +252,12 @@ impl Auth {
             .iter()
             .filter(|(_, s)| s.expires > now)
             .map(|(t, s)| SessionInfo {
-                id: session_id(t),
+                id: t[..10].to_string(),
                 created: s.created,
                 last_seen: s.last_seen,
                 ip: s.ip.clone(),
                 agent: s.agent.clone(),
-                current: t == current,
+                current: *t == current,
             })
             .collect();
         out.sort_by_key(|s| std::cmp::Reverse(s.last_seen));
@@ -229,10 +266,16 @@ impl Auth {
 
     /// Ends the session with this id (from [`Auth::sessions`]); true if found.
     pub fn end_session(&self, id: &str) -> bool {
-        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
-        let before = sessions.len();
-        sessions.retain(|t, _| session_id(t) != id);
-        before != sessions.len()
+        let ended = {
+            let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+            let before = sessions.len();
+            sessions.retain(|t, _| !t.starts_with(id) || id.len() < 10);
+            before != sessions.len()
+        };
+        if ended {
+            self.save_sessions();
+        }
+        ended
     }
 
     /// Notes a successful login's address; true when it's one never seen before.
@@ -286,15 +329,16 @@ impl Auth {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .insert(
-                token.clone(),
+                token_hash(&token),
                 Session {
-                    expires: Instant::now() + SESSION_TTL,
+                    expires: now + SESSION_TTL.as_millis() as u64,
                     created: now,
                     last_seen: now,
                     ip: ip.to_string(),
                     agent: agent.chars().take(160).collect(),
                 },
             );
+        self.save_sessions();
         Ok((self.cookie(&token, SESSION_TTL.as_secs()), token))
     }
 
@@ -303,7 +347,8 @@ impl Auth {
             self.sessions
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
-                .remove(&t);
+                .remove(&token_hash(&t));
+            self.save_sessions();
         }
     }
 
@@ -342,7 +387,8 @@ impl Auth {
         self.sessions
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .retain(|t, _| t == keep);
+            .retain(|t, _| *t == token_hash(keep));
+        self.save_sessions();
         Ok(())
     }
 
@@ -361,11 +407,13 @@ impl Auth {
 
     /// Drops expired sessions.
     pub fn expire(&self) {
-        let now = Instant::now();
+        let now = now_ms();
         self.sessions
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .retain(|_, s| s.expires > now);
+        // also keeps "last used" in the file reasonably fresh
+        self.save_sessions();
     }
 }
 
@@ -377,6 +425,7 @@ mod tests {
     fn lockout_is_per_address() {
         let a = Auth {
             file: PathBuf::new(),
+            sessions_file: PathBuf::new(),
             hash: StdMutex::new(String::new()),
             known_ips: StdMutex::new(Vec::new()),
             sessions: StdMutex::new(HashMap::new()),
@@ -408,7 +457,7 @@ mod tests {
         assert!(!verify("x", "not a hash"));
     }
 
-    fn sess(expires: Instant) -> Session {
+    fn sess(expires: u64) -> Session {
         Session {
             expires,
             created: 0,
@@ -422,11 +471,12 @@ mod tests {
     fn session_cookie_parsing() {
         let auth = Auth {
             file: PathBuf::new(),
+            sessions_file: PathBuf::new(),
             hash: StdMutex::new(String::new()),
             known_ips: StdMutex::new(Vec::new()),
             sessions: StdMutex::new(HashMap::from([
-                ("abc".into(), sess(Instant::now() + SESSION_TTL)),
-                ("old".into(), sess(Instant::now() - Duration::from_secs(1))),
+                (token_hash("abc"), sess(now_ms() + 60_000)),
+                (token_hash("old"), sess(now_ms() - 1_000)),
             ])),
             fails: StdMutex::new(Vec::new()),
             secure: true,
@@ -477,7 +527,7 @@ mod tests {
         auth.change_password(&mine, "first password 1", "second password 2")
             .await
             .unwrap();
-        let has = |t: &str| auth.sessions.lock().unwrap().contains_key(t);
+        let has = |t: &str| auth.sessions.lock().unwrap().contains_key(&token_hash(t));
         assert!(has(&mine) && !has(&other));
         assert!(auth
             .login("first password 1", "1.2.3.4", "test")
@@ -497,5 +547,18 @@ mod tests {
         // new addresses are noticed once
         assert!(auth.new_ip("10.0.0.9"));
         assert!(!auth.new_ip("10.0.0.9"));
+        // logins survive a restart, and the file holds no usable token
+        let again = Auth::load(&dir, Some("second password 2"), true).unwrap();
+        let mut h = HeaderMap::new();
+        h.insert(
+            header::COOKIE,
+            format!("vygi_session={mine}").parse().unwrap(),
+        );
+        assert_eq!(again.session(&h).as_deref(), Some(mine.as_str()));
+        let file = std::fs::read_to_string(dir.join("sessions.json")).unwrap();
+        assert!(!file.contains(&mine) && file.contains(&token_hash(&mine)));
+        // a reset from Docker logs everyone out
+        let reset = Auth::load(&dir, Some("third password 3"), true).unwrap();
+        assert_eq!(reset.session(&h), None);
     }
 }

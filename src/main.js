@@ -1,6 +1,7 @@
 import "./styles.css";
 import { api, errorText } from "./lib/api.js";
 import { h, clear, setStatus } from "./lib/dom.js";
+import { logo } from "./lib/icons.js";
 import { closeAllWindows } from "./lib/mdi.js";
 import { modal, formDialog, alertBox } from "./lib/dialog.js";
 import { isDesktop, setLoginHandler, webSession, webLogin, webLogout, webChangePassword } from "./lib/platform.js";
@@ -276,19 +277,50 @@ function initSidebarResize() {
   });
 }
 
-/** Web version: the VyGi server's own password, before anything else. */
-let loginOpen = false;
-async function webLoginDialog() {
-  if (loginOpen) return;
-  loginOpen = true;
-  await formDialog("Log in to VyGi", [
-    { name: "password", label: "Password", type: "password", hint: "The VyGi web password (shown in the server's log on first start, or set with VYGI_PASSWORD)." },
-  ], async (v) => {
-    await webLogin(v.password);
-    return true;
-  }, { okLabel: "Log in" });
-  loginOpen = false;
-  if (!(await webSession().catch(() => false))) return webLoginDialog();
+/** Web version: the VyGi server's own password, on a page of its own before anything else. */
+let loginOpen = null;
+function webLoginDialog() {
+  if (loginOpen) return loginOpen;
+  loginOpen = new Promise((done) => {
+    const pw = h("input#login-password", { type: "password", autocomplete: "current-password", placeholder: "Password" });
+    const err = h("div.login-err", { hidden: true });
+    const btn = h("button.primary", { type: "submit" }, "Log in");
+    const help = h("div.login-help", { hidden: true },
+      h("p", "On first start VyGi shows a password once in its log (", h("code", "docker logs vygi"), ")."),
+      h("p", "To set a new one, add it to VyGi in your Docker compose file and restart VyGi; this also logs every browser out:"),
+      h("pre", "environment:\n  - VYGI_PASSWORD=a-new-long-password"),
+      h("pre", "docker compose up -d vygi"),
+      h("p", "After too many wrong passwords, logins from that address pause for 5 minutes."));
+    const form = h("form.login-card",
+      { on: { submit: async (e) => {
+        e.preventDefault();
+        btn.disabled = true;
+        err.hidden = true;
+        try {
+          await webLogin(pw.value);
+          page.remove();
+          document.body.classList.remove("logged-out");
+          loginOpen = null;
+          done();
+        } catch (x) {
+          err.textContent = x.message || "Login failed";
+          err.hidden = false;
+          pw.select();
+        }
+        btn.disabled = false;
+      } } },
+      logo(56),
+      h("h1", "VyGi"),
+      h("div.hint", "Log in to manage your routers"),
+      pw, err, btn,
+      h("button.link", { type: "button", on: { click: () => { help.hidden = !help.hidden; } } }, "Forgot the password?"),
+      help);
+    const page = h("div#login-page", form);
+    document.body.classList.add("logged-out");
+    document.body.append(page);
+    setTimeout(() => pw.focus(), 50);
+  });
+  return loginOpen;
 }
 
 function initWebAccount() {
