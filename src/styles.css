@@ -967,3 +967,18 @@ body.logged-out #app { visibility: hidden; }
 .item-issues { margin: 8px 0 2px; cursor: default; }
 .item-issues .sec-list { gap: 6px; }
 .set-section > .item-issues { margin: 10px 0 0; }
+
+/* Phones: small tables in dialogs and settings become one card per row */
+@media (max-width: 760px) {
+  :is(.dialog, .set-section) table.grid { table-layout: auto; }
+  :is(.dialog, .set-section) table.grid thead { display: none; }
+  :is(.dialog, .set-section) table.grid, :is(.dialog, .set-section) table.grid tbody { display: block; }
+  :is(.dialog, .set-section) table.grid tr { display: block; padding: 8px 10px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 10px; }
+  :is(.dialog, .set-section) table.grid td { display: flex; gap: 10px; justify-content: space-between; align-items: center; height: auto; padding: 3px 0; border: 0; white-space: normal; overflow: visible; text-overflow: clip; text-align: right; }
+  :is(.dialog, .set-section) table.grid td::before { content: attr(data-label); color: var(--muted); text-align: left; flex: none; }
+  :is(.dialog, .set-section) table.grid td:first-child { font-weight: 600; text-align: left; }
+  :is(.dialog, .set-section) table.grid td:first-child::before { content: none; }
+  :is(.dialog, .set-section) table.grid td:last-child:not([data-label]) { justify-content: flex-end; padding-top: 6px; }
+  :is(.dialog, .set-section) table.grid tr:hover td { background: transparent; }
+  #drawer-safe .tb-check { white-space: nowrap; }
+}

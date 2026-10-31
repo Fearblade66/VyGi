@@ -247,7 +247,7 @@ export function initClients() {
       let traffic;
       let macGroups;
       [{ clients, traffic }, sum, macGroups] = await Promise.all([
-        collectClients(),
+        collectClients({ onLate: () => !root.hidden && load() }),
         dnsSummary().catch(() => null),
         api.getConfig(["firewall", "group", "mac-group"]).catch(() => ({})),
       ]);

@@ -91,3 +91,13 @@ test("edge readiness: installer, nightly build, other logins, IPv6 to devices", 
   assert.ok(wanBlocked(fixed.firewall.ipv6.forward.filter, "eth0"));
   assert.ok(!ids(fixed, base).includes("wan-forward6"));
 });
+
+test("behind another router (private internet address): advice, not a problem", () => {
+  const cfg = { interfaces: { ethernet: { eth0: { address: "192.168.88.6/24" } } } };
+  const wan = securityFindings(cfg, { ...ctx, wanCidr: "192.168.88.6/24", mgmtHost: "192.168.88.6" }).find((x) => x.id === "wan-input");
+  assert.equal(wan.level, "warn");
+  assert.match(wan.text, /private, so another router sits in front/);
+  assert.match(wan.text, /won't block this for you/);
+  assert.equal(wan.fix, null);
+  assert.equal(securityFindings({}, ctx).find((x) => x.id === "wan-input").level, "bad");
+});

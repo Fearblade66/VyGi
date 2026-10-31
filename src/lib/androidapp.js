@@ -2,7 +2,7 @@
 // app's alert notifications, and "change server". The native side is in
 // android/ (window.VyGiApp).
 import { h, toast } from "./dom.js";
-import { androidApp, webTokenCreate } from "./platform.js";
+import { androidApp, webTokenCreate, webTokens, webTokenRevoke } from "./platform.js";
 import { closeMenu } from "./menu.js";
 import { showView, currentView } from "./views.js";
 
@@ -33,8 +33,10 @@ async function ensureToken() {
   if (androidApp.hasToken()) return;
   const name = `Android app (${androidApp.deviceName()})`;
   try {
-    // an earlier install's token is useless (its secret is gone): make a new one
+    // an earlier install's token is useless (its secret is gone): replace it
+    const old = (await webTokens().catch(() => [])).filter((t) => t.name === name && t.scope !== "full");
     const { token, secret } = await webTokenCreate(name, "read");
+    for (const t of old) await webTokenRevoke(t.id).catch(() => {});
     androidApp.setToken(secret, token.id);
     toast("Phone notifications are on: the app checks the VyGi server for new alerts every 15 minutes.");
   } catch (e) {

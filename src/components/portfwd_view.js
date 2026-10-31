@@ -1,5 +1,6 @@
 // Port Forwarding page: send a port from the internet to one device (game
 // server, NAS, cameras), with an on/off switch per forward.
+import { soon } from "../lib/soon.js";
 import { itemIssues } from "./doctor.js";
 import { itemMenu, itemCommands } from "./itemref.js";
 import { api, errorText } from "../lib/api.js";
@@ -18,11 +19,11 @@ import { parseForwards, forwardCommands, deleteForwardCommands, toggleForwardCom
 const IP_IN = /(\d{1,3}(?:\.\d{1,3}){3})\s*$/;
 const PROTO = { tcp: "TCP", udp: "UDP", tcp_udp: "TCP + UDP", all: "all" };
 
-async function loadState() {
+async function loadState(onLate = null) {
   const [cfg, w, { clients }] = await Promise.all([
     api.getConfig([]),
     wanInfo(),
-    collectClients().catch(() => ({ clients: [] })),
+    soon("collectClients", () => collectClients().catch(() => ({ clients: [] })), { fallback: { clients: [] }, onLate }),
   ]);
   return { cfg: cfg || {}, ...w, clients: clients.filter((c) => c.ip && c.kind !== "vpn") };
 }
@@ -44,7 +45,7 @@ export function initPortForwards() {
     if (!root.querySelector(".page")) clear(root).append(loadingPage(2));
     let next;
     try {
-      next = await loadState();
+      next = await loadState(() => !root.hidden && render());
     } catch (e) {
       if (seq === renderSeq) clear(root).append(h("div.page", h("div.err-box", errorText(e))));
       return;

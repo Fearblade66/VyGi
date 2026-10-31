@@ -17,7 +17,34 @@ export function isPhone() {
   return typeof matchMedia === "function" && matchMedia(PHONE).matches;
 }
 
+/**
+ * Small tables in dialogs and settings (API tokens, logged-in browsers) are
+ * shown as one card per row on phones: each cell gets its column's name as
+ * data-label for the CSS to show.
+ */
+function labelTableCells() {
+  let queued = false;
+  const run = () => {
+    queued = false;
+    for (const t of document.querySelectorAll(".dialog table.grid, .set-section table.grid")) {
+      const heads = [...t.querySelectorAll("thead th")].map((th) => th.textContent.trim());
+      for (const tr of t.querySelectorAll("tbody tr")) {
+        [...tr.children].forEach((td, i) => {
+          if (!td.dataset.label && heads[i]) td.dataset.label = heads[i];
+        });
+      }
+    }
+  };
+  new MutationObserver(() => {
+    if (!queued) {
+      queued = true;
+      requestAnimationFrame(run);
+    }
+  }).observe(document.body, { childList: true, subtree: true });
+}
+
 export function initPhone() {
+  labelTableCells();
   const app = document.getElementById("app");
   const side = document.getElementById("sidebar");
   const toolbar = document.getElementById("toolbar");

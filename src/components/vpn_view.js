@@ -1,6 +1,7 @@
 // VPN page (UniFi Teleport-style): a WireGuard server per card, its devices
 // with online status, data used and where they connect from; add a device
 // (QR code), pause or remove it.
+import { soon } from "../lib/soon.js";
 import { itemIssues } from "./doctor.js";
 import { itemMenu, itemCommands } from "./itemref.js";
 import { api, errorText } from "../lib/api.js";
@@ -21,10 +22,10 @@ import { vpnClientSection } from "./vpnclient_view.js";
 
 const ONLINE_SECS = 180; // a WireGuard handshake happens at least every 2 minutes while in use
 
-async function loadState() {
+async function loadState(onLate = null) {
   const [full, dump, w] = await Promise.all([
     api.getConfig([]).catch(() => ({})),
-    api.wireguardDump().catch(() => ""),
+    soon("wgDump", () => api.wireguardDump().catch(() => ""), { wait: 3000, fallback: "", onLate }),
     wanInfo(),
   ]);
   const wg = vpnServers(full?.interfaces?.wireguard);
@@ -61,7 +62,7 @@ export function initVpnPage() {
     if (!root.querySelector(".page")) clear(root).append(loadingPage(2));
     let st;
     try {
-      st = await loadState();
+      st = await loadState(() => !root.hidden && render());
     } catch (e) {
       if (seq === renderSeq) clear(root).append(h("div.page", h("div.err-box", errorText(e))));
       return;

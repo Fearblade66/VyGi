@@ -1,5 +1,6 @@
 // Traffic Rules page: block the internet or sites for devices/networks, always
 // or on a schedule (e.g. kids' bedtime), with an on/off switch per rule.
+import { soon } from "../lib/soon.js";
 import { itemMenu, itemCommands } from "./itemref.js";
 import { api, errorText } from "../lib/api.js";
 import { h, clear, every } from "../lib/dom.js";
@@ -16,11 +17,11 @@ const MAC_IN = /([0-9a-f]{2}(?::[0-9a-f]{2}){5})\s*$/i;
 const CIDR_IN = /(\d{1,3}(?:\.\d{1,3}){3}\/\d{1,2})\s*$/;
 
 
-async function loadState() {
+async function loadState(onLate = null) {
   const [cfg, routes, clients, time] = await Promise.all([
     api.getConfig([]),
     api.routes(4, "default").catch(() => []),
-    deviceList(),
+    soon("deviceList", () => deviceList(), { fallback: [], onLate }),
     api.routerTime().then((t) => ({ ...t, readAt: Date.now() })).catch(() => null),
   ]);
   const clientData = { clients };
@@ -46,7 +47,7 @@ export function initRules() {
     if (!root.querySelector(".page")) clear(root).append(loadingPage(2));
     let next;
     try {
-      next = await loadState();
+      next = await loadState(() => !root.hidden && render());
     } catch (e) {
       if (seq !== renderSeq) return;
       clear(root).append(h("div.page", h("div.err-box", errorText(e))));

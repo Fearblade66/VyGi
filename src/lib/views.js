@@ -125,6 +125,9 @@ function renderSubnav(group, name) {
     const on = it.view === name && (!it.tab || it.tab === tab);
     nav.append(h(`button${on ? ".on" : ""}`, { on: { click: () => showView(it.view, { tab: it.tab }) } }, it.label || VIEWS[it.view].title));
   }
+  // narrow screens: the tabs scroll sideways; keep the open one in sight
+  const on = nav.querySelector("button.on");
+  if (on && nav.scrollWidth > nav.clientWidth) nav.scrollLeft = Math.max(0, on.offsetLeft - (nav.clientWidth - on.offsetWidth) / 2);
 }
 
 const anyView = [];

@@ -103,11 +103,17 @@ export function securityFindings(cfg, ctx) {
           { op: "set", path: [...b, "description"], value: WAN_BLOCK_DESC },
         );
       }
+      // A private internet address: another router (the provider's modem/router, or
+      // a home router in a lab) is in front, so the internet only gets through
+      // what that router forwards. Still worth blocking, not urgent.
+      const wanIp = parseIpv4Cidr(ctx.wanCidr || "")?.ip || ctx.wanIp || "";
+      const behind = wanIp && !(open6 && usesIpv6(cfg, ctx.wan)) && PRIVATE.some((c) => ipv4InCidr(wanIp, c));
       out.push({
-        id: "wan-input", level: "bad", title: "The router can be reached from the internet",
+        id: "wan-input", level: behind ? "warn" : "bad", title: behind ? "Nothing blocks the internet side of the router" : "The router can be reached from the internet",
         text: `Nothing stops new connections from the internet (${ctx.wan}) to the router itself, so anyone can try to log in over SSH or the API.${open4 && !open6 ? "" : open6 && !open4 ? " (IPv6 only.)" : ""} The fix blocks new connections arriving on ${ctx.wan}; replies to your own traffic, port forwards and VPN ports you opened earlier keep working.`,
         fix: viaWan ? null : cmds, fixLabel: "Block it",
         ...(viaWan ? { text: `Nothing stops new connections from the internet (${ctx.wan}) to the router itself. VyGi is connected through ${ctx.wan}, so it won't block this for you: blocking it would cut VyGi off. Connect from your home network and fix it from there.` } : {}),
+        ...(behind ? { text: `Nothing stops new connections arriving on ${ctx.wan} to the router itself. Its address there (${wanIp}) is private, so another router sits in front and the internet only reaches this one through ports that router forwards: not urgent now, but block it before this router faces the internet directly.${viaWan ? ` VyGi connects through ${ctx.wan}, so it won't block this for you (that would cut VyGi off): connect from a network behind this router first.` : ""}` } : {}),
       });
     }
   }

@@ -1,6 +1,7 @@
 // Builds a UniFi-style client list from what the router knows:
 // ARP/NDP neighbors, DHCP leases and static mappings, static DNS names,
 // WireGuard peers, and active connections per address.
+import { soon } from "./soon.js";
 import { api } from "./api.js";
 import { isVpnClient } from "./vpnclient.js";
 import { toArray, flattenInterfaces, parseIpv4Cidr, ipv4InCidr } from "./vyos.js";
@@ -143,19 +144,23 @@ export function lanTester(networks) {
 }
 
 /** Fetches everything and merges. Failures of optional sources are ignored. */
-export async function collectClients() {
+/** onLate: called when slow parts (DHCP leases, VPN status) arrive after the list was drawn without them. */
+export async function collectClients({ onLate = null } = {}) {
   const safe = (p, fallback) => p.catch(() => fallback);
-  const [neighbors, leases, dhcpConfig, hosts, wgDump, ifaces, flows, groups, routes] = await Promise.all([
+  // One read of the whole config (VyOS answers one request at a time, so
+  // several small reads take longer); slow live data may arrive later.
+  const [neighbors, leases, cfg, wgDump, flows, routes] = await Promise.all([
     safe(api.neighbors(), []),
-    safe(api.dhcpLeases(4), []),
-    safe(api.getConfig(["service", "dhcp-server"]), {}),
-    safe(api.getConfig(["system", "static-host-mapping", "host-name"]), {}),
-    safe(api.wireguardDump(), ""),
-    safe(api.getConfig(["interfaces"]), {}),
-    safe(api.connections(), []),
-    safe(api.getConfig(["firewall", "group", "mac-group", BLOCK_GROUP]), {}),
+    soon("dhcpLeases4", () => safe(api.dhcpLeases(4), []), { wait: 3000, fallback: [], onLate }),
+    safe(api.getConfig([]), {}),
+    soon("wgDump", () => safe(api.wireguardDump(), ""), { wait: 3000, fallback: "", onLate }),
+    soon("connections", () => safe(api.connections(), []), { wait: 3000, fallback: [], maxAge: 5000, onLate }),
     safe(api.routes(4, "default"), []),
   ]);
+  const dhcpConfig = cfg?.service?.["dhcp-server"] || {};
+  const hosts = cfg?.system?.["static-host-mapping"]?.["host-name"] || {};
+  const ifaces = cfg?.interfaces || {};
+  const groups = cfg?.firewall?.group?.["mac-group"]?.[BLOCK_GROUP] || {};
   const def = routes.find((r) => r.dst === "default");
   const wan = def?.dev || (def?.nexthops || [])[0]?.dev || "";
   const clients = mergeClients({

@@ -1,6 +1,7 @@
 // Networks page (UniFi-style): every LAN/VLAN as a card, plus a guided
 // "New network" form that sets up the interface, DHCP, DNS, NAT, internet
 // access and isolation in one Safe Mode commit.
+import { soon } from "../lib/soon.js";
 import { itemIssues } from "./doctor.js";
 import { itemMenu, itemCommands } from "./itemref.js";
 import { api, errorText } from "../lib/api.js";
@@ -30,13 +31,13 @@ const PRESETS = {
   iot: { label: "IoT / cameras (isolated, no internet)", internet: false, isolate: true },
 };
 
-async function loadState() {
+async function loadState(onLate = null) {
   const [cfg, routes, links, neighbors, leases] = await Promise.all([
     api.getConfig([]),
     api.routes(4, "default").catch(() => []),
     api.interfaceStats().then((s) => s.links || []).catch(() => []),
     api.neighbors().catch(() => []),
-    api.dhcpLeases(4).catch(() => []),
+    soon("dhcpLeases4", () => api.dhcpLeases(4).catch(() => []), { fallback: [], onLate }),
   ]);
   const def = routes.find((r) => r.dst === "default");
   const wan = def?.dev || (def?.nexthops || [])[0]?.dev || "";
@@ -73,7 +74,7 @@ export function initNetworks() {
     if (!root.querySelector(".page")) clear(root).append(loadingPage(3));
     let next;
     try {
-      next = await loadState();
+      next = await loadState(() => !root.hidden && render());
     } catch (e) {
       if (seq === renderSeq) clear(root).append(h("div.page", h("div.err-box", errorText(e))));
       return;
