@@ -510,7 +510,7 @@ button.danger { color: var(--bad); }
 /* Narrow windows: the sidebar becomes an icon rail (not on Advanced, which needs the tool list). Phones: see the end. */
 @media (min-width: 761px) and (max-width: 1000px) {
   [data-ui="modern"] #app:not([data-view="windows"]) #sidebar { width: 68px; }
-  [data-ui="modern"] #app:not([data-view="windows"]) :is(.nav-text, .brand-name, .router-text, #sidebar-foot, #router-card .icon-btn) { display: none; }
+  [data-ui="modern"] #app:not([data-view="windows"]) :is(.nav-text, .brand-name, .router-text, .account-chevron, #router-card .icon-btn) { display: none; }
   [data-ui="modern"] #app:not([data-view="windows"]) #brand { justify-content: center; padding: 16px 0 12px; }
   [data-ui="modern"] #app:not([data-view="windows"]) #router-card { justify-content: center; margin: 0 10px; padding: 10px 0; }
   [data-ui="modern"] #app:not([data-view="windows"]) #btn-connect { margin: 8px 10px 4px; padding: 6px 0; }
@@ -944,3 +944,15 @@ body.logged-out #app { visibility: hidden; }
 .pop-accent { color: var(--accent, #2b6cb0) !important; font-weight: 600; }
 .pop-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: #9ca3af; }
 .pop-dot.ok { background: #16a34a; } .pop-dot.bad { background: #dc2626; }
+
+/* account menu: one button at the bottom of the sidebar; the controls it works stay hidden */
+#sidebar-foot > :is(#web-account, .autosave, #theme) { display: none !important; }
+#account-btn { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: transparent; padding: 8px 6px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 13px; color: var(--text); text-align: left; }
+#account-btn:hover { background: var(--select); }
+.account-avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--select); color: var(--accent, #2b6cb0); display: flex; align-items: center; justify-content: center; flex: none; }
+.account-chevron { color: var(--muted); display: flex; transform: rotate(-90deg); }
+.pop-menu select { font: inherit; font-size: 12px; max-width: 170px; }
+@media (min-width: 761px) and (max-width: 1000px) {
+  [data-ui="modern"] #app:not([data-view="windows"]) #sidebar-foot { padding: 8px 0; display: flex; justify-content: center; }
+  [data-ui="modern"] #app:not([data-view="windows"]) #account-btn { width: auto; padding: 6px; }
+}

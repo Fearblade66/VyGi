@@ -8,6 +8,7 @@ import { isDesktop, setLoginHandler, webSession, webLogin, webLogout, webChangeP
 import { initToolbar, isConnected, setConnected, session, saveNow } from "./lib/session.js";
 import { showConnectDialog } from "./components/connect.js";
 import { initRouterSwitcher } from "./components/switcher.js";
+import { initAccountMenu } from "./components/account.js";
 import { openInterfaces } from "./components/interfaces.js";
 import { openRoutes } from "./components/routes.js";
 import { openVpn } from "./components/vpn.js";
@@ -380,6 +381,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   renderMenu();
   document.getElementById("btn-connect").addEventListener("click", toggleConnect);
   initRouterSwitcher(() => (isConnected() ? toggleConnect() : Promise.resolve()));
+  initAccountMenu();
   document.getElementById("btn-new-window").addEventListener("click", () => api.newWindow().catch((e) => setStatus(errorText(e), true)));
   document.getElementById("btn-terminal").addEventListener("click", () => openTerminal());
   if (!isDesktop) {
