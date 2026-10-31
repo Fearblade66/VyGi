@@ -7,7 +7,7 @@ import { openClaudeSetup } from "./claude_setup.js";
 
 const when = (ms) => (ms ? new Date(ms).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "never");
 
-function copyBox(text) {
+export function copyBox(text) {
   const area = h("textarea.copy-box", { readOnly: true, rows: Math.min(6, text.split("\n").length + 1), value: text });
   const btn = h("button", { on: { click: async () => {
     try {

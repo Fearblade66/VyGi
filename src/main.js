@@ -26,7 +26,8 @@ import { openDhcp, openDhcpLeases } from "./components/dhcp.js";
 import { openDns } from "./components/dns.js";
 import { openUsers } from "./components/users.js";
 import { runCheckup } from "./components/checkup.js";
-import { initViews, showView, onAnyView } from "./lib/views.js";
+import { initViews, showView, onAnyView, setWelcomeExtra } from "./lib/views.js";
+import { firstRunGuide } from "./components/newrouter.js";
 import { initPhone } from "./lib/phone.js";
 import { initAndroidApp } from "./lib/androidapp.js";
 import { initNetworks } from "./components/networks.js";
@@ -372,6 +373,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initAlerts();
   initHistory();
   initInsights();
+  setWelcomeExtra(() => firstRunGuide((pre) => showConnectDialog(pre)));
   initSearch(MENU.flatMap((m) => (m.children ? m.children.map((c) => ({ label: c.label, parent: m.label, open: c.open })) : [{ label: m.label, parent: null, open: m.open }])));
   showView("dashboard", { remember: false }); // the welcome screen until a router is connected
   renderMenu();
@@ -383,5 +385,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (!(await webSession().catch(() => false))) await webLoginDialog();
     initAndroidApp();
   }
-  showConnectDialog();
+  // no router yet: the welcome page's setup steps lead to Connect (with the address filled in)
+  if ((await api.listRouters().catch(() => [])).length) showConnectDialog();
 });

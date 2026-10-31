@@ -7,7 +7,8 @@ import { setConnected, refreshTx } from "../lib/session.js";
 import { runCheckup } from "./checkup.js";
 import { showView, savedView, currentView } from "../lib/views.js";
 
-export async function showConnectDialog() {
+/** prefill: { host, user } for a new router (the first-run steps). */
+export async function showConnectDialog(prefill = null) {
   const routers = await api.listRouters().catch(() => []);
 
   const f = {
@@ -75,6 +76,9 @@ export async function showConnectDialog() {
   if (pick) {
     fill(pick).then(() => savedFor && setTimeout(() => [...document.querySelectorAll(".dialog-buttons button.primary")].find((b) => b.textContent === "Connect")?.click(), 50));
     list.children[routers.indexOf(pick)]?.classList.add("sel");
+  } else if (prefill?.host) {
+    f.host.value = prefill.host;
+    f.sshUser.value = prefill.user || "vyos";
   } else if (routers.length) fill(routers[0]);
 
   const content = h(

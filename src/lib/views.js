@@ -137,6 +137,12 @@ export function loadingPage(cards = 3) {
 }
 
 /** Empty state for pages that need a router. */
+let welcomeExtra = null;
+/** Something shown under the welcome card (the first-run setup steps). */
+export function setWelcomeExtra(fn) {
+  welcomeExtra = fn;
+}
+
 export function welcome(onConnect) {
   return h("div.welcome",
     h("div.welcome-card",
@@ -144,7 +150,8 @@ export function welcome(onConnect) {
       h("h2", "Welcome to VyGi"),
       h("p", "Manage your VyOS router: devices, networks, traffic rules, VPN and every setting, with Safe Mode undoing anything that cuts you off."),
       h("button.primary", { on: { click: onConnect } }, "Connect to a router"),
-      h("p.hint", "Tip: the window button next to the router name opens another window for a second router.")));
+      h("p.hint", "Tip: the window button next to the router name opens another window for a second router.")),
+    welcomeExtra ? welcomeExtra() : null);
 }
 
 // Coming back from minimized: refresh the page (its timers skipped runs while hidden).
