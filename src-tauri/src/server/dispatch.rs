@@ -83,6 +83,7 @@ pub async fn call(
         "connect" => json(connection::connect(st(), w(), arg(&a, "req")?).await),
         "disconnect" => json(connection::disconnect(w()).await),
         "use_own_login" => json(connection::use_own_login(st(), w()).await),
+        "use_ssh_key" => json(connection::use_ssh_key(st(), w()).await),
         "change_login_password" => json(
             connection::change_login_password(
                 st(),
@@ -361,6 +362,7 @@ pub fn audit_entry(cmd: &str, a: &Value) -> Option<(String, String)> {
         "image_delete" => entry("VyOS image deleted", s("name")),
         "change_login_password" => entry("router password changed", String::new()),
         "use_own_login" => entry("VyGi's own router login made", String::new()),
+        "use_ssh_key" => entry("VyGi's router login switched to an SSH key", String::new()),
         "restore_over_ssh" => entry("backup restored over SSH", String::new()),
         "connect" => {
             let p = a.pointer("/req/profile").cloned().unwrap_or(Value::Null);

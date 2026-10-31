@@ -425,7 +425,26 @@ impl Watcher {
             }
             store.save(&saved);
             let cursor = Arc::new(StdMutex::new(saved.cursor.clone()));
-            let journal = start_journal(&ws, store.clone(), cursor.clone()).await;
+            let logins = Arc::new(StdMutex::new(Vec::new()));
+            let mut fails = FailedLogins::default();
+            // VyGi's own logins (its user, from its address) aren't news
+            let me = match ws.conn().await {
+                Ok(conn) => (
+                    self.app
+                        .profiles
+                        .find(&id)
+                        .map(|p| p.ssh_user)
+                        .unwrap_or_default(),
+                    conn.ssh
+                        .exec_ok("echo $SSH_CLIENT")
+                        .await
+                        .ok()
+                        .and_then(|o| o.split_whitespace().next().map(str::to_string))
+                        .unwrap_or_default(),
+                ),
+                Err(_) => Default::default(),
+            };
+            let journal = start_journal(&ws, store.clone(), cursor.clone(), logins.clone()).await;
             let mut ctx = Counters::default();
             let mut last_cleanup = 0u64;
             loop {
@@ -466,6 +485,17 @@ impl Watcher {
                 if !changed.is_empty() {
                     store.add_alerts(&changed);
                     if let Err(e) = self.notify(&name, &changed).await {
+                        lock(&status).error = Some(format!("Couldn't send a notification: {e}"));
+                    }
+                }
+                let events = std::mem::take(&mut *lock(&logins));
+                let found: Vec<Alert> = login_alerts(events, &me, &mut fails, now_ms())
+                    .into_iter()
+                    .filter(|a| rw.on(&a.kind))
+                    .collect();
+                if !found.is_empty() {
+                    store.add_alerts(&found);
+                    if let Err(e) = self.notify(&name, &found).await {
                         lock(&status).error = Some(format!("Couldn't send a notification: {e}"));
                     }
                 }
@@ -581,10 +611,157 @@ fn valid_host(h: &str) -> bool {
 
 /// Follows the router's journal, appending lines to the log files and
 /// remembering the position. Returns the stream's session id.
+/// A login to the router seen in its journal.
+#[derive(Debug, PartialEq)]
+pub enum LoginEvent {
+    /// SSH: (user, address, "password" / "publickey" / …)
+    Ssh(String, String, String),
+    /// a wrong password or unknown user over SSH: (user, address)
+    Failed(String, String),
+    /// on the router's console (keyboard and screen, or the VM console)
+    Console(String),
+    /// SSH brute-force protection blocked an address: (address, seconds)
+    Blocked(String, u64),
+}
+
+/// Recognises a login in one journal line (identifier, message). Pure.
+pub fn login_event(id: &str, m: &str) -> Option<LoginEvent> {
+    let word_after = |s: &str, key: &str| -> Option<String> {
+        let rest = &s[s.find(key)? + key.len()..];
+        rest.split_whitespace().next().map(str::to_string)
+    };
+    if id.starts_with("sshd") {
+        if let Some(rest) = m.strip_prefix("Accepted ") {
+            let method = rest.split_whitespace().next()?.to_string();
+            return Some(LoginEvent::Ssh(
+                word_after(m, " for ")?,
+                word_after(m, " from ")?,
+                method,
+            ));
+        }
+        if m.starts_with("Failed password for ") {
+            let user = word_after(m, "Failed password for invalid user ")
+                .or_else(|| word_after(m, "Failed password for "))?;
+            return Some(LoginEvent::Failed(user, word_after(m, " from ")?));
+        }
+        if let Some(rest) = m.strip_prefix("Invalid user ") {
+            return Some(LoginEvent::Failed(
+                rest.split_whitespace().next()?.to_string(),
+                word_after(m, " from ")?,
+            ));
+        }
+        return None;
+    }
+    if id == "sshguard" {
+        let rest = m.strip_prefix("Blocking \"")?;
+        let ip = rest
+            .split('"')
+            .next()?
+            .trim_end_matches("/32")
+            .trim_end_matches("/128");
+        let secs = word_after(m, " for ")?.parse().ok()?;
+        return Some(LoginEvent::Blocked(ip.to_string(), secs));
+    }
+    if id == "login" {
+        let user = word_after(m, "session opened for user ")?;
+        return Some(LoginEvent::Console(user.split('(').next()?.to_string()));
+    }
+    None
+}
+
+/// Wrong SSH logins per address (times, ms) and when each was last alerted.
+#[derive(Default)]
+pub struct FailedLogins {
+    recent: HashMap<String, Vec<u64>>,
+    alerted: HashMap<String, u64>,
+}
+
+/// Alerts for the logins since the last check. `me`: VyGi's own (user, address),
+/// left out. Wrong logins: [`FAILED_LOGINS_ALERT`] from one address within
+/// [`FAILED_WINDOW_MS`] (sshd slows guessing down, so they spread over minutes),
+/// at most one alert per address an hour.
+fn login_alerts(
+    events: Vec<LoginEvent>,
+    me: &(String, String),
+    fails: &mut FailedLogins,
+    now: u64,
+) -> Vec<Alert> {
+    let mut out = Vec::new();
+    let mut alert = |text: String, level: &str| {
+        out.push(Alert {
+            kind: "login".into(),
+            text,
+            level: level.into(),
+            at: now_ms(),
+        })
+    };
+    for e in events {
+        match e {
+            LoginEvent::Ssh(user, ip, method) => {
+                if user == me.0 && ip == me.1 {
+                    continue;
+                }
+                let how = if method == "publickey" {
+                    "with a key"
+                } else {
+                    "with a password"
+                };
+                alert(
+                    format!("Someone logged into the router over SSH as {user} from {ip} ({how})."),
+                    "warn",
+                );
+            }
+            LoginEvent::Console(user) => {
+                alert(
+                    format!("Someone logged into the router's console as {user}."),
+                    "warn",
+                );
+            }
+            LoginEvent::Failed(_, ip) => fails.recent.entry(ip).or_default().push(now),
+            LoginEvent::Blocked(ip, secs) => {
+                // this says it better than a count of wrong logins
+                fails.alerted.insert(ip.clone(), now);
+                alert(
+                    format!(
+                        "The router blocked {ip} for {} after repeated wrong SSH logins (brute-force protection).",
+                        alerts::duration(secs * 1000)
+                    ),
+                    "bad",
+                );
+            }
+        }
+    }
+    fails.recent.retain(|_, ts| {
+        ts.retain(|t| now.saturating_sub(*t) < FAILED_WINDOW_MS);
+        !ts.is_empty()
+    });
+    fails
+        .alerted
+        .retain(|_, t| now.saturating_sub(*t) < 3_600_000);
+    for (ip, ts) in &fails.recent {
+        if ts.len() >= FAILED_LOGINS_ALERT && !fails.alerted.contains_key(ip) {
+            alert(
+                format!(
+                    "{} wrong logins for the router over SSH from {ip} in the last 10 minutes.",
+                    ts.len()
+                ),
+                "bad",
+            );
+            fails.alerted.insert(ip.clone(), now);
+        }
+    }
+    out
+}
+
+/// Wrong SSH logins from one address within [`FAILED_WINDOW_MS`] before that's an alert.
+const FAILED_LOGINS_ALERT: usize = 5;
+const FAILED_WINDOW_MS: u64 = 10 * 60 * 1000;
+
 async fn start_journal(
     ws: &Arc<WindowState>,
     store: Arc<Store>,
     cursor: Arc<StdMutex<Option<String>>>,
+    logins: Arc<StdMutex<Vec<LoginEvent>>>,
 ) -> Option<u32> {
     let pending = Arc::new(StdMutex::new(String::new()));
     let kind =
@@ -600,6 +777,9 @@ async fn start_journal(
         while let Some(i) = buf.find('\n') {
             let line: String = buf.drain(..=i).collect();
             if let Some((l, c)) = parse_journal(line.trim()) {
+                if let Some(e) = login_event(&l.id, &l.m) {
+                    lock(&logins).push(e);
+                }
                 lines.push(l);
                 *lock(&cursor) = Some(c);
             }
@@ -1329,6 +1509,94 @@ async fn record_traffic(
 
 #[cfg(test)]
 mod config_tests {
+    use super::{login_alerts, login_event, FailedLogins, LoginEvent};
+
+    #[test]
+    fn router_logins() {
+        let ssh = login_event(
+            "sshd",
+            "Accepted password for vyos from 192.168.88.20 port 51234 ssh2",
+        );
+        assert_eq!(
+            ssh,
+            Some(LoginEvent::Ssh(
+                "vyos".into(),
+                "192.168.88.20".into(),
+                "password".into()
+            ))
+        );
+        assert_eq!(
+            login_event(
+                "sshd-session",
+                "Accepted publickey for vygi from 192.168.88.31 port 40000 ssh2: ED25519 SHA256:x"
+            ),
+            Some(LoginEvent::Ssh(
+                "vygi".into(),
+                "192.168.88.31".into(),
+                "publickey".into()
+            ))
+        );
+        assert_eq!(
+            login_event(
+                "sshd",
+                "Failed password for invalid user admin from 10.0.0.9 port 2 ssh2"
+            ),
+            Some(LoginEvent::Failed("admin".into(), "10.0.0.9".into()))
+        );
+        assert_eq!(
+            login_event(
+                "login",
+                "pam_unix(login:session): session opened for user vyos(uid=1000) by LOGIN(uid=0)"
+            ),
+            Some(LoginEvent::Console("vyos".into()))
+        );
+        assert_eq!(
+            login_event("sshd", "Connection closed by 10.0.0.9 port 2"),
+            None
+        );
+        assert_eq!(
+            login_event("sshguard", "Blocking \"172.17.0.1/32\" for 240 secs (5 attacks in 152 secs, after 2 abuses over 302 secs.)"),
+            Some(LoginEvent::Blocked("172.17.0.1".into(), 240))
+        );
+        assert_eq!(
+            login_event(
+                "sshguard",
+                "Attack from \"172.17.0.1\" on service SSH with danger 10."
+            ),
+            None
+        );
+
+        let me = ("vygi".to_string(), "192.168.88.31".to_string());
+        let mut fails = FailedLogins::default();
+        let fail = |ip: &str, n: usize| {
+            (0..n)
+                .map(|_| LoginEvent::Failed("root".into(), ip.into()))
+                .collect::<Vec<_>>()
+        };
+        let mut events = vec![
+            LoginEvent::Ssh("vygi".into(), "192.168.88.31".into(), "publickey".into()),
+            LoginEvent::Ssh("vyos".into(), "192.168.88.20".into(), "password".into()),
+        ];
+        events.extend(fail("10.0.0.9", 3));
+        events.extend(fail("10.0.0.8", 2));
+        let a = login_alerts(events, &me, &mut fails, 0);
+        assert_eq!(
+            a.len(),
+            1,
+            "VyGi's own login and a few wrong logins aren't alerts"
+        );
+        assert!(a[0]
+            .text
+            .contains("as vyos from 192.168.88.20 (with a password)"));
+        // guesses spread over minutes still add up, and alert once
+        let a = login_alerts(fail("10.0.0.9", 2), &me, &mut fails, 4 * 60_000);
+        assert!(
+            a.len() == 1 && a[0].text.contains("5 wrong logins") && a[0].text.contains("10.0.0.9")
+        );
+        assert!(login_alerts(fail("10.0.0.9", 3), &me, &mut fails, 5 * 60_000).is_empty());
+        // ones older than 10 minutes don't count
+        assert!(login_alerts(fail("10.0.0.8", 3), &me, &mut fails, 20 * 60_000).is_empty());
+    }
 
     #[test]
     fn boot_alert_text() {

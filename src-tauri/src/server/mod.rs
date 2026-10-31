@@ -178,6 +178,7 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         .route("/api/stream", get(stream))
         .route("/api/tokens", get(tokens_list).post(token_create))
         .route("/api/tokens/{id}/revoke", post(token_revoke))
+        .route("/api/tokens/{id}/allow", post(token_allow))
         .route("/api/audit", get(audit_list))
         .route("/api/sessions", get(sessions_list))
         .route("/api/sessions/{id}/end", post(session_end))
@@ -682,6 +683,14 @@ struct TokenReq {
     /// days until the token stops working (None or 0 = never)
     #[serde(default)]
     days: Option<u64>,
+    /// or hours (wins over days)
+    #[serde(default)]
+    hours: Option<u64>,
+}
+
+#[derive(Deserialize)]
+struct AllowReq {
+    hours: u64,
 }
 
 async fn token_create(
@@ -693,10 +702,14 @@ async fn token_create(
     if !ui_session(&s, &headers) {
         return plain_error(StatusCode::UNAUTHORIZED, "Log in first");
     }
-    match s
-        .tokens
-        .create(&req.name, req.scope, watch::now_ms(), req.days)
-    {
+    match s.tokens.create(
+        &req.name,
+        req.scope,
+        watch::now_ms(),
+        req.hours
+            .map(|h| h * 3_600_000)
+            .or(req.days.map(|d| d * 86_400_000)),
+    ) {
         Ok((info, secret)) => {
             let who = s
                 .auth
@@ -720,6 +733,40 @@ async fn token_create(
             Json(json!({ "token": info, "secret": secret })).into_response()
         }
         Err(e) => plain_error(StatusCode::BAD_REQUEST, &e),
+    }
+}
+
+/// An expired token works again for a few hours (Claude keeps its setup).
+async fn token_allow(
+    State(s): State<Arc<Server>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(req): Json<AllowReq>,
+) -> Response {
+    if !ui_session(&s, &headers) {
+        return plain_error(StatusCode::UNAUTHORIZED, "Log in first");
+    }
+    let hours = req.hours.clamp(1, 24 * 365);
+    match s.tokens.allow(&id, watch::now_ms() + hours * 3_600_000) {
+        Ok(Some(t)) => {
+            let who = s
+                .auth
+                .session(&headers)
+                .map(|t| web_who(&t))
+                .unwrap_or_default();
+            s.log(
+                &who,
+                &s.client_ip(addr, &headers),
+                "API token allowed",
+                "",
+                format!("{} for {hours} h", t.name),
+                true,
+            );
+            Json(json!({ "token": t })).into_response()
+        }
+        Ok(None) => plain_error(StatusCode::NOT_FOUND, "no such token"),
+        Err(e) => plain_error(StatusCode::INTERNAL_SERVER_ERROR, &e),
     }
 }
 

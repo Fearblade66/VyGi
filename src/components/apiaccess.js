@@ -2,7 +2,7 @@
 // commands to connect Claude Code or Claude Desktop.
 import { h, clear, setStatus } from "../lib/dom.js";
 import { modal, formDialog, confirmBox, alertBox } from "../lib/dialog.js";
-import { webTokens, webTokenCreate, webTokenRevoke } from "../lib/platform.js";
+import { webTokens, webTokenCreate, webTokenRevoke, webTokenAllow } from "../lib/platform.js";
 import { openClaudeSetup } from "./claude_setup.js";
 
 const when = (ms) => (ms ? new Date(ms).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "never");
@@ -55,6 +55,18 @@ export async function showNewToken(info, secret) {
   });
 }
 
+/** How long a new token works ("4h", "7d", "0" = never): Claude gets a few hours at a time. */
+export const LIFETIMES = [
+  { value: "1h", label: "1 hour" },
+  { value: "4h", label: "4 hours" },
+  { value: "12h", label: "12 hours" },
+  { value: "1d", label: "1 day" },
+  { value: "7d", label: "7 days" },
+  { value: "30d", label: "30 days" },
+  { value: "0", label: "never (scripts, Home Assistant)" },
+];
+export const lifetime = (v) => (v.endsWith("h") ? { hours: parseInt(v, 10) } : v.endsWith("d") ? { days: parseInt(v, 10) } : {});
+
 export async function openApiAccess() {
   const list = h("div.token-list");
   async function load() {
@@ -64,8 +76,14 @@ export async function openApiAccess() {
         ? h("table.grid", h("thead", h("tr", h("th", "Name"), h("th", "Access"), h("th", "Made"), h("th", "Last used"), h("th", "Expires"), h("th", ""))),
             h("tbody", tokens.map((t) => h("tr",
               h("td", t.name), h("td", t.scope === "full" ? "full (changes with Safe Mode)" : "read-only"), h("td", when(t.created)), h("td", when(t.lastUsed)),
-              h("td", !t.expires ? "never" : t.expires < Date.now() ? h("span.badge.bad", "expired") : when(t.expires)),
-              h("td", h("button.danger", { on: { click: async () => {
+              h("td", !t.expires ? "never" : t.expires < Date.now() ? h("span.badge.bad", "ended") : `until ${when(t.expires)}`),
+              h("td", { style: { whiteSpace: "nowrap" } }, t.expires ? h("button", {
+                title: "Let this token work for the next 4 hours (the computer using it keeps its setup)",
+                on: { click: async () => {
+                  await webTokenAllow(t.id, 4).catch((e) => alertBox("Allow", e.message));
+                  load();
+                } },
+              }, t.expires < Date.now() ? "Allow for 4 hours" : "Extend 4 hours") : null, " ", h("button.danger", { on: { click: async () => {
                 if (!(await confirmBox("Revoke token", `Revoke "${t.name}"? Anything using it (Claude, scripts) stops working.`, "Revoke"))) return;
                 await webTokenRevoke(t.id).catch((e) => alertBox("Revoke", e.message));
                 load();
@@ -83,15 +101,10 @@ export async function openApiAccess() {
         { value: "full", label: "Full: read and change settings (always with Safe Mode)" },
         { value: "read", label: "Read-only: settings, devices, history, logs" },
       ] },
-      { name: "days", label: "Expires", type: "select", value: "90", options: [
-        { value: "7", label: "in 7 days" },
-        { value: "30", label: "in 30 days" },
-        { value: "90", label: "in 90 days" },
-        { value: "365", label: "in a year" },
-        { value: "0", label: "never" },
-      ], hint: "A token that's left lying around stops working on its own." },
+      { name: "life", label: "Works for", type: "select", value: "4h", options: LIFETIMES,
+        hint: "Afterwards it stops working on its own; \"Allow for 4 hours\" here turns it back on without a new setup." },
     ], async (v) => {
-      made = await webTokenCreate(v.name, v.scope, Number(v.days) || null);
+      made = await webTokenCreate(v.name, v.scope, lifetime(v.life));
       return true;
     }, { okLabel: "Create" });
     if (made) {

@@ -4,7 +4,7 @@ import { h } from "../lib/dom.js";
 import { modal, formDialog, alertBox } from "../lib/dialog.js";
 import { webTokenCreate } from "../lib/platform.js";
 import { setupScript, certCovers } from "../lib/claudesetup.js";
-import { showNewToken } from "./apiaccess.js";
+import { showNewToken, LIFETIMES, lifetime } from "./apiaccess.js";
 
 const FILE = "vygi-claude-setup.mjs";
 
@@ -44,20 +44,16 @@ export async function openClaudeSetup() {
       { value: "desktop", label: "Claude Desktop (app)" },
       { value: "both", label: "Both" },
     ], hint: "On the computer where you'll use Claude. It must be on your home network (or its VPN)." },
-    { name: "scope", label: "Claude may", type: "select", value: "full", options: [
-      { value: "full", label: "Read and change settings (changes always use Safe Mode)" },
+    { name: "scope", label: "Claude may", type: "select", value: "read", options: [
       { value: "read", label: "Only read: settings, devices, history, logs" },
+      { value: "full", label: "Read and change settings (changes always use Safe Mode)" },
     ] },
-    { name: "days", label: "Access ends", type: "select", value: "90", options: [
-      { value: "30", label: "in 30 days" },
-      { value: "90", label: "in 90 days" },
-      { value: "365", label: "in a year" },
-      { value: "0", label: "never" },
-    ], hint: "Run the setup again for a new token when it ends." },
+    { name: "life", label: "Access ends after", type: "select", value: "4h", options: LIFETIMES.filter((o) => o.value !== "0"),
+      hint: "When it ends, turn it back on under API Access (\"Allow for 4 hours\"): your computer keeps the same setup." },
   ], async (v) => {
     apps = { code: v.app !== "desktop", desktop: v.app !== "code" };
     const name = v.app === "both" ? "Claude" : v.app === "code" ? "Claude Code" : "Claude Desktop";
-    made = await webTokenCreate(name, v.scope, Number(v.days) || null);
+    made = await webTokenCreate(name, v.scope, lifetime(v.life));
     return true;
   }, {
     okLabel: "Make setup file",

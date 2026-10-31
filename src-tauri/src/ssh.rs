@@ -69,6 +69,32 @@ pub struct ExecOutput {
     pub exit_code: Option<u32>,
 }
 
+/// A saved SSH secret that is a private key (OpenSSH format) rather than a password.
+pub fn is_private_key(secret: &str) -> bool {
+    secret
+        .trim_start()
+        .starts_with("-----BEGIN OPENSSH PRIVATE KEY-----")
+}
+
+/// A new Ed25519 key for VyGi's login: (private key in OpenSSH format, public key line).
+pub fn new_key(comment: &str) -> AppResult<(String, String)> {
+    use russh::keys::ssh_key::private::Ed25519Keypair;
+    use russh::keys::ssh_key::LineEnding;
+    let mut seed = [0u8; 32];
+    getrandom::fill(&mut seed).map_err(|e| AppError::Invalid(e.to_string()))?;
+    let mut key = russh::keys::PrivateKey::from(Ed25519Keypair::from_seed(&seed));
+    key.set_comment(comment);
+    let private = key
+        .to_openssh(LineEnding::LF)
+        .map_err(|e| AppError::Invalid(e.to_string()))?
+        .to_string();
+    let public = key
+        .public_key()
+        .to_openssh()
+        .map_err(|e| AppError::Invalid(e.to_string()))?;
+    Ok((private, public))
+}
+
 impl SshClient {
     pub async fn connect(
         host: &str,
@@ -109,11 +135,25 @@ impl SshClient {
             }
         };
 
-        let auth = handle.authenticate_password(user, password).await?;
+        // the saved secret is a password, or (VyGi's own login) a private key
+        let auth = if is_private_key(password) {
+            let key = russh::keys::PrivateKey::from_openssh(password)
+                .map_err(|e| AppError::Invalid(format!("the saved SSH key can't be read: {e}")))?;
+            handle
+                .authenticate_publickey(
+                    user,
+                    russh::keys::PrivateKeyWithHashAlg::new(Arc::new(key), None),
+                )
+                .await?
+        } else {
+            handle.authenticate_password(user, password).await?
+        };
         if !auth.success() {
-            return Err(AppError::AuthFailed(
-                "SSH username/password rejected".into(),
-            ));
+            return Err(AppError::AuthFailed(if is_private_key(password) {
+                "the router didn't accept VyGi's SSH key".into()
+            } else {
+                "SSH username/password rejected".into()
+            }));
         }
         let host_fingerprint = seen.lock().ok().and_then(|g| g.clone()).unwrap_or_default();
         Ok(Self {

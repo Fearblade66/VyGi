@@ -42,6 +42,8 @@ pub struct ConnectInfo {
     revert_action: String,
     /// The login still uses the VyOS default password ("vyos").
     default_password: bool,
+    /// VyGi logs in with its SSH key (not a password).
+    key_login: bool,
     /// Set when "remember" was requested but the OS keychain refused (says
     /// whether the file fallback was used).
     keychain_error: Option<String>,
@@ -206,6 +208,7 @@ pub async fn connect(state: St, win: Win, req: ConnectRequest) -> AppResult<Conn
     state.profiles.upsert(&profile)?;
     // A missing OS keychain (e.g. Linux without a keyring service) must not block connecting.
     let default_password = ssh_password == "vyos";
+    let key_login = crate::ssh::is_private_key(&ssh_password);
     // Not saving must not block connecting; the UI says what happened.
     let keychain_error = if req.remember {
         let secrets = Secrets {
@@ -238,6 +241,7 @@ pub async fn connect(state: St, win: Win, req: ConnectRequest) -> AppResult<Conn
         version,
         revert_action,
         default_password,
+        key_login,
         keychain_error,
     })
 }
@@ -369,6 +373,74 @@ pub async fn use_own_login(state: St, win: Win) -> AppResult<String> {
     security::store_secrets(&dir, &profile, &secrets)?;
     state.profiles.upsert(&profile)?;
     Ok(OWN_LOGIN.into())
+}
+
+/// VyGi's own login uses an SSH key instead of a password: a new Ed25519 key,
+/// its public half on the router, checked, then the login's password replaced
+/// by a random one nobody keeps (so it can only log in with the key).
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn use_ssh_key(state: St, win: Win) -> AppResult<()> {
+    let conn = win.conn().await?;
+    let profile = state.profiles.find(&conn.profile_id)?;
+    if profile.ssh_user != OWN_LOGIN {
+        return Err(AppError::Invalid(
+            "Make VyGi's own login first (Set up this router): your own login keeps its password"
+                .into(),
+        ));
+    }
+    if crate::transactions::confirm_pending(&conn).await {
+        return Err(AppError::Invalid(
+            "A Safe Mode change is waiting for Confirm. Confirm it (or let it revert) first."
+                .into(),
+        ));
+    }
+    let dir = state.profiles.dir();
+    let mut secrets = security::load_secrets(&dir, &profile)?
+        .ok_or_else(|| AppError::Invalid("VyGi's login isn't saved".into()))?;
+    let (private, public) = crate::ssh::new_key("vygi")?;
+    let mut parts = public.split_whitespace();
+    let (kind, body) = (
+        parts.next().unwrap_or_default(),
+        parts.next().unwrap_or_default(),
+    );
+    let base = ["system", "login", "user", OWN_LOGIN, "authentication"];
+    let set = |leaf: &[&str], value: &str| crate::vyos_api::ConfigCommand {
+        op: "set".into(),
+        path: base.iter().chain(leaf).map(|s| s.to_string()).collect(),
+        value: Some(value.to_string()),
+    };
+    conn.api
+        .configure(
+            &[
+                set(&["public-keys", "vygi", "type"], kind),
+                set(&["public-keys", "vygi", "key"], body),
+            ],
+            0,
+        )
+        .await?;
+    // only rely on the key once it works
+    SshClient::connect(
+        &profile.host,
+        profile.ssh_port,
+        OWN_LOGIN,
+        &private,
+        profile.ssh_fingerprint.clone(),
+    )
+    .await
+    .map_err(|e| {
+        AppError::Invalid(format!(
+            "the router didn't accept the new key, so VyGi keeps using the password: {e}"
+        ))
+    })?;
+    let mut pw = [0u8; 24];
+    getrandom::fill(&mut pw).map_err(|e| AppError::Invalid(e.to_string()))?;
+    conn.api
+        .configure(&[set(&["plaintext-password"], &hex::encode(pw))], 0)
+        .await?;
+    conn.api.save().await?;
+    secrets.ssh_password = private;
+    security::store_secrets(&dir, &profile, &secrets)?;
+    Ok(())
 }
 
 /// Turns on the HTTPS API with `key` (id "vygi") and makes Safe Mode revert by

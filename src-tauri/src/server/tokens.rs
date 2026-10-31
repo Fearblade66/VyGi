@@ -84,7 +84,7 @@ impl Tokens {
         name: &str,
         scope: Scope,
         now: u64,
-        days: Option<u64>,
+        lifetime_ms: Option<u64>,
     ) -> Result<(Token, String), String> {
         let name = name.trim();
         if name.is_empty() || name.chars().count() > 40 {
@@ -104,9 +104,9 @@ impl Tokens {
             scope,
             created: now,
             last_used: None,
-            expires: days
-                .filter(|d| *d > 0)
-                .map(|d| now + d.min(3650) * 86_400_000),
+            expires: lifetime_ms
+                .filter(|ms| *ms > 0)
+                .map(|ms| now + ms.min(3650 * 86_400_000)),
             hash: hash(&secret),
         };
         lock(&self.list).push(t.clone());
@@ -118,6 +118,23 @@ impl Tokens {
             },
             secret,
         ))
+    }
+
+    /// Lets an (expired) token work again until `until` (unix ms); the secret stays the same.
+    pub fn allow(&self, id: &str, until: u64) -> Result<Option<Token>, String> {
+        let t = {
+            let mut l = lock(&self.list);
+            let Some(t) = l.iter_mut().find(|t| t.id == id) else {
+                return Ok(None);
+            };
+            t.expires = Some(until);
+            Token {
+                hash: String::new(),
+                ..t.clone()
+            }
+        };
+        self.save()?;
+        Ok(Some(t))
     }
 
     pub fn revoke(&self, id: &str) -> Result<bool, String> {
@@ -184,9 +201,17 @@ mod tests {
         assert!(t.list()[0].hash.is_empty());
         assert!(t.create("", Scope::Read, 1, None).is_err());
         // a token past its expiry date stops working
-        let (_, short) = t.create("Week", Scope::Read, 1_000, Some(7)).unwrap();
-        assert!(t.check(&short, 1_000 + 6 * 86_400_000).is_some());
-        assert!(t.check(&short, 1_000 + 7 * 86_400_000).is_none());
+        let hour = 3_600_000;
+        let (w, short) = t
+            .create("Window", Scope::Full, 1_000, Some(4 * hour))
+            .unwrap();
+        assert!(t.check(&short, 1_000 + 3 * hour).is_some());
+        assert!(t.check(&short, 1_000 + 4 * hour).is_none());
+        // allowed again: the same secret works until the new end
+        t.allow(&w.id, 10 * hour).unwrap().unwrap();
+        assert!(t.check(&short, 9 * hour).is_some());
+        assert!(t.check(&short, 10 * hour).is_none());
+        assert!(t.allow("nope", 1).unwrap().is_none());
         assert!(t.revoke(&info.id).unwrap());
         assert!(t.check(&secret, 4).is_none());
         let _ = std::fs::remove_dir_all(dir);

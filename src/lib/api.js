@@ -8,7 +8,7 @@ import { call, stream, newWindow } from "./platform.js";
 // never shared: their speeds come from the difference between two reads.
 const SHARED_MS = { get_config: 5000, routes: 5000, dhcp_leases: 5000, neighbors: 3000 };
 const CHANGES = new Set(["connect", "disconnect", "apply_changes", "confirm_commit", "rollback_to", "set_revert_action",
-  "history_restore", "import_config", "import_config_text", "change_login_password", "use_own_login", "restore_over_ssh", "image_add", "image_set_default",
+  "history_restore", "import_config", "import_config_text", "change_login_password", "use_own_login", "use_ssh_key", "restore_over_ssh", "image_add", "image_set_default",
   "image_delete", "power", "term_write", "accounting_sync"]);
 const shared = new Map(); // "cmd args" -> { at, promise }
 
@@ -62,6 +62,7 @@ export const api = {
   newWindow,
   changeLoginPassword: (newPassword, user = null) => invoke("change_login_password", { newPassword, user }),
   useOwnLogin: () => invoke("use_own_login"),
+  useSshKey: () => invoke("use_ssh_key"),
   ddnsStatus: () => invoke("ddns_status"),
   routerTime: () => invoke("router_time"),
   wakeOnLan: (iface, mac) => invoke("wake_on_lan", { interface: iface, mac }),

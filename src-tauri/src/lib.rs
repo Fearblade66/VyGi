@@ -65,6 +65,7 @@ pub fn run() {
             connection::new_window,
             connection::change_login_password,
             connection::use_own_login,
+            connection::use_ssh_key,
             checkup::router_backups,
             checkup::restore_over_ssh,
             sysinfo::wake_on_lan,

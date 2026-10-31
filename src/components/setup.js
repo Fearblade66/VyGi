@@ -66,24 +66,7 @@ async function checks() {
       action: [nets.length ? "Networks" : "Create one", go("networks")],
     },
     addressCheck(cfg, host, mgmt, routes),
-    {
-      title: "VyGi's own login",
-      ok: user === "vygi" ? true : "warn",
-      text: user === "vygi"
-        ? "VyGi logs in as vygi, with a password only VyGi knows."
-        : `VyGi logs in as ${user}, the same login you use. With its own login, your password isn't stored in VyGi, the router's change history shows what VyGi changed, and you can shut VyGi out without touching your login. (Every VyOS login can change everything: this doesn't limit what VyGi can do.)`,
-      action: user === "vygi" ? null : ["Make one", async () => {
-        if (!(await confirmBox("VyGi's own login",
-          `VyGi creates the router login "vygi" with a long random password that only VyGi keeps, checks that it works, and uses it from then on.\n\nYour ${user} login doesn't change.`, "Make it"))) return;
-        try {
-          await api.useOwnLogin();
-          session.info.profile.sshUser = "vygi";
-        } catch (e) {
-          alertBox("VyGi's own login", errorText(e));
-        }
-        refresh();
-      }],
-    },
+    ownLogin(user),
     {
       title: "Router password",
       ok: !session.info?.defaultPassword,
@@ -127,6 +110,44 @@ async function checks() {
     },
   ];
   return list;
+}
+
+/** VyGi's own router login: a login of its own, then an SSH key instead of a password. */
+function ownLogin(user) {
+  const title = "VyGi's own login";
+  if (user !== "vygi") {
+    return {
+      title, ok: "warn",
+      text: `VyGi logs in as ${user}, the same login you use. With its own login, your password isn't stored in VyGi, the router's change history shows what VyGi changed, and you can shut VyGi out without touching your login. (Every VyOS login can change everything: this doesn't limit what VyGi can do.)`,
+      action: ["Make one", async () => {
+        if (!(await confirmBox(title,
+          `VyGi creates the router login "vygi" with a long random password that only VyGi keeps, checks that it works, and uses it from then on.\n\nYour ${user} login doesn't change.`, "Make it"))) return;
+        try {
+          await api.useOwnLogin();
+          session.info.profile.sshUser = "vygi";
+        } catch (e) {
+          alertBox(title, errorText(e));
+        }
+        refresh();
+      }],
+    };
+  }
+  if (session.info?.keyLogin) return { title, ok: true, text: "VyGi logs in as vygi with its own SSH key; that login has no password anyone knows." };
+  return {
+    title, ok: "warn",
+    text: "VyGi logs in as vygi with a password. An SSH key is stronger: it can't be guessed, and VyGi then turns off password login for vygi.",
+    action: ["Use a key", async () => {
+      if (!(await confirmBox(title,
+        "VyGi makes an SSH key, adds it to the vygi login on the router and checks that it works. Then vygi's password is replaced with a random one nobody keeps, so vygi can only log in with the key.\n\nYour own login doesn't change.", "Use a key"))) return;
+      try {
+        await api.useSshKey();
+        session.info.keyLogin = true;
+      } catch (e) {
+        alertBox(title, errorText(e));
+      }
+      refresh();
+    }],
+  };
 }
 
 /** The address VyGi reaches the router on: fixed, or from DHCP (and then it can change). */

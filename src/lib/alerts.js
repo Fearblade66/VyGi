@@ -13,8 +13,9 @@ export const KINDS = {
   ids: "Intrusion prevention: serious attacks (24/7 watching only)",
   config: "Settings changed outside VyGi, undone by Safe Mode, or different after a restart (24/7 watching only)",
   reach: "Router can't be reached for 5 minutes / back (24/7 watching only)",
+  login: "Someone logs into the router (other than VyGi), or keeps getting the password wrong (24/7 watching only)",
 };
-export const DEFAULT_ON = { internet: true, device: true, ddns: true, reboot: true, vpn: false, watch: true, update: true, ids: true, config: true, reach: true };
+export const DEFAULT_ON = { internet: true, device: true, ddns: true, reboot: true, vpn: false, watch: true, update: true, ids: true, config: true, reach: true, login: true };
 
 const DDNS_BAD = /fail|bad|abuse|noconnect|nohost|notfqdn|error|911|dnserr/i;
 const FAILS_FOR_DOWN = 2; // checks in a row before "internet down" (one lost ping isn't an outage)

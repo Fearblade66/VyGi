@@ -187,7 +187,9 @@ async function tokenFetch(path, opts = {}) {
   return body;
 }
 export const webTokens = () => tokenFetch("/api/tokens");
-export const webTokenCreate = (name, scope, days = null) => tokenFetch("/api/tokens", { method: "POST", body: JSON.stringify({ name, scope, days }) });
+/** lifetime: { hours } or { days }; none = never expires. */
+export const webTokenCreate = (name, scope, lifetime = {}) => tokenFetch("/api/tokens", { method: "POST", body: JSON.stringify({ name, scope, ...lifetime }) });
+export const webTokenAllow = (id, hours) => tokenFetch(`/api/tokens/${encodeURIComponent(id)}/allow`, { method: "POST", body: JSON.stringify({ hours }) });
 export const webTokenRevoke = (id) => tokenFetch(`/api/tokens/${encodeURIComponent(id)}/revoke`, { method: "POST" });
 
 // ---- web only: activity log and logged-in browsers
