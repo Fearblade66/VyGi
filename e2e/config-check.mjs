@@ -27,6 +27,7 @@ import { readInternet, internetCommands } from "../src/lib/wanconf.js";
 import { addClientCommands, readClients } from "../src/lib/vpnclient.js";
 import { logBlocksCommands } from "../src/lib/flows.js";
 import { blockSetupCommands, blockCommands, readIds } from "../src/lib/ids.js";
+import { quarantineCommands, approveCommands, readQuarantine } from "../src/lib/quarantine.js";
 import { describeChange } from "../src/lib/describe.js";
 
 const [ip, key = "vygi-test-key"] = process.argv.slice(2);
@@ -151,6 +152,10 @@ await step("network access: IoT may reach the NAS on TCP 445", (c) => policyComm
   (c) => (readPolicies(c).some((p) => p.name === "IoT to NAS") ? null : "policy not found"));
 await step("device discovery (mDNS) between Home and IoT", (c) => mdnsCommands(c, [LAN1, LAN2]),
   (c) => (readMdns(c).on ? null : "mDNS repeater not on"));
+await step("new-device quarantine on IoT", (c) => quarantineCommands(c, [LAN2], ["66:9a:59:c1:e6:d7"]),
+  (c) => (readQuarantine(c).ifaces.includes(LAN2) ? null : "quarantine rule not found"));
+await step("new-device quarantine: approve a device", (c) => approveCommands(c, "3a:5f:c1:9e:00:42"),
+  (c) => (readQuarantine(c).known.includes("3a:5f:c1:9e:00:42") ? null : "device not approved"));
 await step("log blocked connections (Flows)", (c) => logBlocksCommands(c));
 await step("region blocking: KP", (c) => regionCommands(c, ["kp"]),
   (c) => (parseRegions(c).countries.includes("kp") ? null : "country not found"));

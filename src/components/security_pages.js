@@ -9,6 +9,7 @@ import { readNetworks } from "../lib/netplan.js";
 import { wanInfo } from "../lib/wan.js";
 import { policySection, mdnsSection } from "./policies_view.js";
 import { idsSection } from "./ids_view.js";
+import { quarantineSection } from "./protect_view.js";
 
 async function loadState() {
   const [cfg, w] = await Promise.all([api.getConfig([]).then((c) => c || {}), wanInfo()]);
@@ -48,6 +49,9 @@ export function initSecurityPages() {
     if (!nets.length) return [h("div.empty", "No local networks yet: create one on the Networks page.")];
     return [policySection(st, nets, render), nets.length > 1 ? mdnsSection(st, nets, render) : ""];
   });
+  simplePage("protect", "protectpage", "Keep unknown devices and known-bad addresses out.", (st, render) => [
+    h("section.card.policy-section", quarantineSection(st, render)),
+  ]);
   simplePage("ids", "idspage", "Suricata on the router watches traffic for known attacks, scans and infected devices.", (st, render) => [
     h("section.card.policy-section", idsSection(st, render)),
   ]);

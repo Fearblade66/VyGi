@@ -17,6 +17,7 @@ import { openDhcp } from "./dhcp.js";
 import { popupMenu } from "../lib/menu.js";
 import { openGroups, editDeviceGroups } from "./groups.js";
 import { readGroups, groupsOf } from "../lib/devgroups.js";
+import { readQuarantine, isQuarantined, approveCommands } from "../lib/quarantine.js";
 import { dnsSummary, dnsHitsByIp, openDnsServer } from "./technitium.js";
 import { loadSites, siteRows, sitesFootnote } from "../lib/activity.js";
 import { iconsEnabled, setIconsEnabled } from "../lib/siteicon.js";
@@ -29,6 +30,7 @@ const FILTERS = [
   ["vpn", "VPN", (c) => c.kind === "vpn"],
   ["fixed", "Fixed IP", (c) => c.fixedIp],
   ["blocked", "Blocked", (c) => c.blocked],
+  ["held", "Held", (c) => c.held],
 ];
 
 /** Commands to block a MAC: add it to the VyGi mac-group, create the drop rule once. */
@@ -87,6 +89,7 @@ export function initClients() {
   let dnsHits = null; // ip -> DNS queries in the last hour, when Technitium is linked
   let filter = "all";
   let groups = []; // device groups (devgroups.js)
+  let fwCfg = {}; // { firewall } for quarantine
   let search = "";
   let selectedKey = null;
   let timer = null;
@@ -105,7 +108,7 @@ export function initClients() {
       { key: "ip", label: "IP Address", width: "112px" },
       { key: "network", label: "Network", width: "84px", render: (c) => c.network || c.iface || "" },
       { key: "kind", label: "Connection", width: "100px", sortValue: (c) => (c.kind === "vpn" ? "VPN" : "Wired"), render: (c) => (c.kind === "vpn" ? "VPN" : "Wired / LAN") },
-      { key: "tags", label: "", width: "150px", sort: false, render: (c) => h("span", c.blocked ? h("span.tag.bad", "blocked") : null, ...groupsOf(groups, c.mac || "").map((g) => h("span.tag.group", g.name)), c.fixedIp ? h("span.tag", "fixed IP") : null, c.privateMac ? h("span.tag", "private MAC") : null, c.source.includes("dhcp") ? h("span.tag", "DHCP") : null) },
+      { key: "tags", label: "", width: "150px", sort: false, render: (c) => h("span", c.blocked ? h("span.tag.bad", "blocked") : null, c.held ? h("span.tag.bad", { title: "New device: held by quarantine until you approve it" }, "held") : null, ...groupsOf(groups, c.mac || "").map((g) => h("span.tag.group", g.name)), c.fixedIp ? h("span.tag", "fixed IP") : null, c.privateMac ? h("span.tag", "private MAC") : null, c.source.includes("dhcp") ? h("span.tag", "DHCP") : null) },
       { key: "activity", label: "Activity", width: "190px", className: "num", sortValue: (c) => (c.down != null ? c.down + c.up : c.connections || 0), render: activity },
       { key: "menu", label: "", width: "34px", sort: false, render: (c) => {
         const b = h("button.row-menu", { title: "Actions", "aria-label": `Actions for ${c.label}` }, "⋯");
@@ -172,7 +175,7 @@ export function initClients() {
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "start", gap: "8px" } },
         h("h2", c.label),
         h("button", { title: "Close", on: { click: () => { selectedKey = null; side.hidden = true; } } }, "✕")),
-      h("div", h(`span.pill.${c.online ? "ok" : "muted"}`, c.online ? "online" : "offline"), " ", c.blocked ? h("span.pill.bad", "blocked") : null),
+      h("div", h(`span.pill.${c.online ? "ok" : "muted"}`, c.online ? "online" : "offline"), " ", c.blocked ? h("span.pill.bad", "blocked") : null, c.held ? h("span.pill.bad", "held: new device") : null),
       h("dl.kv-list",
         ...row("IP address", c.ip),
         ...row("IPv6", c.ip6?.join(", ")),
@@ -208,6 +211,7 @@ export function initClients() {
       lan ? { label: "Groups…", fn: async () => (await editDeviceGroups(c.mac, c.label)) && load() } : null,
       !isDesktop && (c.mac || c.ip) ? { label: "Data usage", title: "Data this device used per day (Activity)", fn: () => { showUsageFor(c.mac || c.ip, c.label); showView("insights"); } } : null,
       c.ip && !c.ip.includes(":") && c.kind !== "vpn" ? { label: "What can it reach?", title: "Which rules let this device reach the internet and other networks, or block it", fn: () => openReach(c) } : null,
+      c.held ? { label: "Approve", title: "Let this new device out of quarantine", color: "var(--ok)", fn: () => approve(c) } : null,
       lan ? { label: c.blocked ? "Unblock" : "Block", color: c.blocked ? "var(--ok)" : "var(--bad)", danger: !c.blocked, fn: () => toggleBlock(c) } : null,
       c.ip && c.kind !== "vpn" && !c.ip.includes(":") ? { label: "Limit speed", title: "Limit this device's download/upload speed (Simple Queue)", fn: () => editQueue({ ip: c.ip, name: c.name }) } : null,
       c.ip ? { label: "Ping", fn: () => { showView("windows"); openPing(); setTimeout(() => { const i = document.querySelector(".mdi-win.active input"); if (i) i.value = c.ip; }, 0); } } : null,
@@ -245,13 +249,16 @@ export function initClients() {
     try {
       let sum;
       let traffic;
-      let macGroups;
-      [{ clients, traffic }, sum, macGroups] = await Promise.all([
+      let fw;
+      [{ clients, traffic }, sum, fw] = await Promise.all([
         collectClients({ onLate: () => !root.hidden && load() }),
         dnsSummary().catch(() => null),
-        api.getConfig(["firewall", "group", "mac-group"]).catch(() => ({})),
+        api.getConfig(["firewall"]).catch(() => ({})),
       ]);
-      groups = readGroups({ firewall: { group: { "mac-group": macGroups || {} } } });
+      fwCfg = { firewall: fw || {} };
+      groups = readGroups(fwCfg);
+      const q = readQuarantine(fwCfg);
+      for (const c of clients) c.held = c.kind !== "vpn" && isQuarantined(q, c.mac, c.iface);
       acctBanner.hidden = traffic.accounting || !clients.some((c) => c.connections);
       if (traffic.accounting && !traffic.ready) setTimeout(() => !root.hidden && load(), 3000); // second sample for rates
       dnsHits = sum && !sum.error ? dnsHitsByIp(sum) : null;
@@ -321,6 +328,15 @@ export function initClients() {
       await load();
       return true;
     }, { okLabel: "Apply" });
+  }
+
+  async function approve(c) {
+    try {
+      await applyChanges(approveCommands(fwCfg, c.mac), `approve ${c.label}`);
+    } catch (e) {
+      if (!/^Cancelled/.test(e?.message || "")) alertBox("Approve", errorText(e));
+    }
+    await load();
   }
 
   async function toggleBlock(c) {

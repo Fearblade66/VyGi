@@ -47,6 +47,7 @@ With two or more routers on the web version, **Your routers** shows each one's 2
 Every device the router knows about, from ARP, DHCP, fixed IPs, local DNS names and the VPN, with live speeds. Click one for its details and actions:
 
 - **Wake up** (Wake-on-LAN), **Rename**, **Fixed IP**, **Limit speed**, **Block**, **Ping**;
+- **Approve**: for a new device held by [quarantine](#protection) (tagged *held*; the **Held** filter lists them);
 - **What can it reach?**: for the internet and each other network, which rule decides, what only blocks part of it (a schedule, sites, ports, countries), and the page that made each rule;
 - **Data usage** (web version) and **DNS log** (with Technitium).
 
@@ -121,6 +122,10 @@ From inside your network, use the device's local address: forwards don't loop ba
 
 - **Region blocking**: block countries, using VyOS's GeoIP firewall matching.
 - **Ad and tracker blocking**: through a linked [Technitium DNS Server](https://technitium.com/dns/) (Advanced → IP → DNS Server).
+
+### Protection
+
+- **New-device quarantine**: on the networks you choose, a device the router hasn't seen before gets an address and can reach the router (DHCP, DNS), but nothing else, until you approve it here or on the Devices page. Turning it on approves every device the router knows at that moment (online, with a fixed IP, or in a device group), so nothing that works stops working. Approved devices are a firewall MAC group (`VYGI-KNOWN`); turning quarantine off keeps the list. Limits: devices on the same switch or Wi-Fi reach each other directly, without the router; phones with private (random) MAC addresses look new when they change it; a device that copies an approved MAC gets through.
 
 ### Intrusion Prevention
 

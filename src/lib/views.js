@@ -12,6 +12,7 @@ const VIEWS = {
   access: { title: "Network Policies", icon: "networks", el: "access" },
   ports: { title: "Port Forwarding", icon: "forward", el: "ports" },
   filtering: { title: "Content Filtering", icon: "ban", el: "filtering" },
+  protect: { title: "Protection", icon: "shield", el: "protectpage" },
   ids: { title: "Intrusion Prevention", icon: "shield", el: "idspage" },
   vpn: { title: "VPN", icon: "vpn", el: "vpnpage" },
   history: { title: "Changes & Backups", icon: "clock", el: "history" },
@@ -28,7 +29,7 @@ const GROUPS = {
     { view: "networks" },
     { view: "vpn" },
   ] },
-  security: { title: "Security", icon: "shield", items: [{ view: "rules" }, { view: "access" }, { view: "ports" }, { view: "filtering" }, { view: "ids" }] },
+  security: { title: "Security", icon: "shield", items: [{ view: "rules" }, { view: "access" }, { view: "ports" }, { view: "filtering" }, { view: "protect" }, { view: "ids" }] },
   activity: { title: "Activity", icon: "activity", items: [{ view: "insights", webOnly: true }, { view: "history" }] },
   system: { title: "System", icon: "gear", items: [
     { view: "settings", tab: "router", label: "Router" },

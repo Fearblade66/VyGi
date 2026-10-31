@@ -32,6 +32,7 @@ export const SYNONYMS = [
   [["alert", "notify", "notification", "watch", "netwatch", "monitor"], ["a:alerts"]],
   [["isolate", "isolation", "who can reach", "access", "between networks", "mdns", "casting", "airplay", "chromecast"], ["p:access"]],
   [["intrusion", "ids", "ips", "suricata", "attack", "hacker", "scan"], ["p:ids"]],
+  [["quarantine", "new device", "unknown device", "approve", "blocklist", "threat", "spamhaus", "firehol", "crowdsec", "honeypot", "encrypted dns", "dns over tls", "dot"], ["p:protect"]],
   [["device", "devices", "client", "phone", "laptop", "wake", "wol"], ["p:clients"]],
   [["traffic", "usage", "sites", "where"], ["p:clients", "p:dashboard"]],
   [["ping", "traceroute", "scan", "torch", "sniffer", "capture"], ["t:Ping", "t:Traceroute", "t:IP Scan", "t:Torch"]],
